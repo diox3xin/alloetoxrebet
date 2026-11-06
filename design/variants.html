@@ -1,0 +1,528 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<title>ST Phone — варианты</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Cormorant+Garamond:ital,wght@0,300;0,400;0,600;1,300;1,400&family=Cormorant+SC:wght@400;600&family=Playfair+Display:ital,wght@0,400;0,600;1,400&family=Unbounded:wght@300;400;600&family=Space+Grotesk:wght@300;400;500&family=Jost:wght@300;400;500&family=Inter:wght@300;400;500&family=JetBrains+Mono:wght@300;400&display=swap" rel="stylesheet">
+<style>
+  * { box-sizing: border-box; }
+  body {
+    margin: 0; padding: 22px 24px 34px;
+    background: #0b0b0d;
+    background-image:
+      radial-gradient(1200px 600px at 20% -10%, rgba(120,120,140,.10), transparent 60%),
+      radial-gradient(900px 500px at 90% 110%, rgba(90,60,110,.13), transparent 60%);
+    color: #cfcbc4;
+    font-family: 'Inter', system-ui, sans-serif;
+    font-size: 13px;
+    -webkit-font-smoothing: antialiased;
+  }
+  .head { display: flex; align-items: baseline; gap: 14px; margin-bottom: 20px; }
+  .head h1 {
+    font-family: 'Unbounded', sans-serif; font-weight: 300;
+    font-size: 15px; letter-spacing: .22em; text-transform: uppercase;
+    margin: 0; color: #e9e4da;
+  }
+  .head span { font-size: 11px; letter-spacing: .12em; color: #6d6a66; text-transform: uppercase; }
+  .grid { display: grid; grid-template-columns: repeat(2, 290px); gap: 30px 34px; }
+
+  .card { width: 290px; }
+  .name {
+    font-family: 'Unbounded', sans-serif; font-weight: 300; font-size: 10.5px;
+    letter-spacing: .2em; text-transform: uppercase; color: #b9b3a9;
+    display: flex; align-items: center; gap: 8px; margin-bottom: 4px;
+  }
+  .name b { font-weight: 600; color: #fff; }
+  .desc { font-size: 11px; line-height: 1.45; color: #77736e; margin: 0 0 11px; min-height: 32px; }
+  .pick {
+    margin-top: 11px; width: 100%; padding: 9px 0;
+    background: transparent; color: #d8d2c7; cursor: pointer;
+    border: 1px solid #33302c; border-radius: 7px;
+    font-family: 'Unbounded', sans-serif; font-size: 9.5px;
+    letter-spacing: .18em; text-transform: uppercase;
+    transition: .18s;
+  }
+  .pick:hover { background: #171614; border-color: #55504a; color: #fff; }
+
+  /* ─── device shell ─────────────────────────────── */
+  .phone {
+    position: relative; width: 290px; height: 570px;
+    border-radius: 38px; overflow: hidden;
+    display: flex; flex-direction: column;
+  }
+  .notch {
+    position: absolute; top: 9px; left: 50%; transform: translateX(-50%);
+    width: 74px; height: 18px; border-radius: 20px; z-index: 9;
+  }
+  .statusbar {
+    position: relative; z-index: 8;
+    display: flex; align-items: center; justify-content: space-between;
+    padding: 12px 20px 0; font-size: 9.5px; letter-spacing: .06em;
+  }
+  .sb-r { display: flex; align-items: center; gap: 6px; }
+  .bars { display: flex; align-items: flex-end; gap: 1.5px; }
+  .bars i { width: 2px; background: currentColor; opacity: .85; display: block; border-radius: 1px; }
+  .bars i:nth-child(1){height:2.5px} .bars i:nth-child(2){height:4px}
+  .bars i:nth-child(3){height:5.5px} .bars i:nth-child(4){height:7px; opacity:.28}
+  .batt { width: 17px; height: 8px; border: 1px solid currentColor; border-radius: 2px; position: relative; opacity: .8; }
+  .batt::before { content:''; position:absolute; left:1px; top:1px; bottom:1px; width: 30%; background: currentColor; border-radius: 1px; }
+  .batt::after { content:''; position:absolute; right:-3px; top:2.5px; width:2px; height:3px; background: currentColor; border-radius:0 1px 1px 0; }
+
+  .apphead {
+    position: relative; z-index: 8;
+    display: flex; align-items: center; gap: 9px;
+    padding: 14px 16px 12px;
+  }
+  .back { font-size: 18px; opacity: .52; line-height: 1; width: 14px; text-align: left; flex: none; }
+  .ava {
+    width: 30px; height: 30px; border-radius: 50%; flex: none;
+    display: grid; place-items: center;
+    font-family: 'Cormorant Garamond', serif; font-size: 14px; font-style: italic;
+  }
+  .who { flex: 1; min-width: 0; }
+  .who .n { font-size: 12.5px; line-height: 1.15; letter-spacing: .02em; }
+  .who .s { font-size: 9px; letter-spacing: .1em; text-transform: uppercase; margin-top: 2px; }
+  .dots { font-size: 13px; opacity: .45; letter-spacing: .1em; }
+
+  .thread {
+    position: relative; z-index: 5;
+    flex: 1; display: flex; flex-direction: column; gap: 8px;
+    padding: 8px 16px 10px; overflow: hidden;
+  }
+  .daytag { position: relative; z-index: 6; align-self: center; font-size: 8px; letter-spacing: .22em; text-transform: uppercase; margin-bottom: 2px; }
+  .msg { position: relative; z-index: 6; max-width: 83%; font-size: 11.5px; line-height: 1.5; padding: 8px 11px; }
+  .msg.in  { align-self: flex-start; }
+  .msg.out { align-self: flex-end; }
+  .msg .t { display: block; font-size: 7.5px; letter-spacing: .1em; margin-top: 4px; opacity: .5; }
+  .typing { align-self: flex-start; display: flex; gap: 3px; padding: 9px 12px; }
+  .typing i { width: 3.5px; height: 3.5px; border-radius: 50%; background: currentColor; display: block; opacity: .5; }
+  .typing i:nth-child(2){opacity:.75} .typing i:nth-child(3){animation: bl 1.4s infinite}
+  @keyframes bl { 0%,100%{opacity:.35} 50%{opacity:1} }
+
+  .composer {
+    position: relative; z-index: 8;
+    margin: 0 12px 14px; padding: 9px 13px;
+    display: flex; align-items: center; justify-content: space-between; gap: 8px;
+    font-size: 11px;
+  }
+  .send { width: 22px; height: 22px; border-radius: 50%; display: grid; place-items: center; font-size: 10px; flex: none; }
+
+  /* grain overlay */
+  .grain::after {
+    content: ''; position: absolute; inset: 0; z-index: 20; pointer-events: none;
+    background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='180' height='180'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='.85' numOctaves='3'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)' opacity='.5'/%3E%3C/svg%3E");
+    opacity: .07; mix-blend-mode: overlay;
+  }
+
+  /* ═══════════════ A — КРОВЬ И ШЁЛК (готика / эмо) ═══════════════ */
+  .v-goth {
+    background: radial-gradient(120% 80% at 50% 0%, #151017 0%, #08060a 55%, #050407 100%);
+    border: 1px solid rgba(221,211,198,.13);
+    box-shadow: 0 26px 60px -22px #000, inset 0 0 60px rgba(192,42,69,.07);
+    color: #ddd3c6; font-family: 'Cormorant Garamond', serif;
+  }
+  .v-goth .notch { background: #050407; border: 1px solid rgba(221,211,198,.08); }
+  .v-goth .statusbar { color: #8f8578; font-family: 'Jost', sans-serif; }
+  .v-goth .apphead { border-bottom: 1px solid rgba(221,211,198,.10); }
+  .v-goth .ava { background: radial-gradient(circle at 35% 25%, #3c1420, #120a0f); border: 1px solid rgba(192,42,69,.5); color: #e8b4bf; }
+  .v-goth .who .n { font-family: 'Cormorant Garamond', serif; font-size: 15px; font-style: italic; letter-spacing: .04em; color: #efe3d4; }
+  .v-goth .who .s { color: #c07a8b; font-family: 'Jost', sans-serif; font-size: 8px; }
+  .v-goth .daytag { color: #8a7f72; font-family: 'Jost', sans-serif; }
+  .v-goth .msg { font-family: 'Cormorant Garamond', serif; font-size: 12.5px; border-radius: 3px; }
+  .v-goth .msg.in  { background: linear-gradient(160deg, #171219, #100b12); border: 1px solid rgba(221,211,198,.10); border-left: 1.5px solid rgba(192,42,69,.55); color: #d5cabc; box-shadow: 0 6px 18px -10px #000; }
+  .v-goth .msg.out { background: linear-gradient(160deg, #3a0f1b, #1c0710); border: 1px solid rgba(192,42,69,.45); color: #f2e6da; box-shadow: 0 6px 18px -10px #000; }
+  .v-goth .msg .t { font-family: 'Jost', sans-serif; font-size: 8px; opacity: .68; }
+  .v-goth .typing { border: 1px solid rgba(221,211,198,.09); border-radius: 3px; color: #b06476; }
+  .v-goth .composer { background: rgba(255,255,255,.025); border: 1px solid rgba(221,211,198,.12); border-radius: 3px; color: #6f6559; font-style: italic; font-size: 12px; }
+  .v-goth .send { background: #8e1f33; color: #f4e6d8; }
+  .v-goth .sigil {
+    position: absolute; z-index: 0; left: 50%; top: 52%; transform: translate(-50%,-50%);
+    width: 270px; height: 270px; opacity: .17; color: #c02a45;
+    filter: blur(1.4px);
+    -webkit-mask-image: radial-gradient(circle at 50% 50%, transparent 24%, #000 62%, transparent 92%);
+    mask-image: radial-gradient(circle at 50% 50%, transparent 24%, #000 62%, transparent 92%);
+  }
+  .v-goth .vig { position: absolute; inset: 0; z-index: 2; pointer-events: none;
+    background: radial-gradient(75% 55% at 50% 45%, transparent 30%, rgba(5,4,7,.72) 100%); }
+
+  /* ═══════════════ B — КИБЕРСИГИЛ ═══════════════ */
+  .v-cyber {
+    background: #000;
+    border: 1px solid #1e1e1e;
+    box-shadow: 0 26px 60px -22px #000, 0 0 0 1px rgba(200,255,60,.05);
+    color: #f2f4ef; font-family: 'Space Grotesk', sans-serif;
+  }
+  .v-cyber .notch { background: #0a0a0a; border-radius: 3px; border: 1px solid #202020; }
+  .v-cyber .statusbar { color: #b9c582; font-family: 'JetBrains Mono', monospace; font-size: 9px; }
+  .v-cyber .apphead { border-bottom: 1px solid #1b1b1b; }
+  .v-cyber .ava {
+    border-radius: 2px; background: #c6ff2e; color: #000;
+    font-family: 'Unbounded', sans-serif; font-style: normal; font-size: 12px; font-weight: 600;
+    clip-path: polygon(0 0, 100% 0, 100% 72%, 72% 100%, 0 100%);
+  }
+  .v-cyber .who .n { font-family: 'Unbounded', sans-serif; font-size: 11.5px; font-weight: 400; letter-spacing: .1em; text-transform: uppercase;
+    background: linear-gradient(180deg,#fff,#9aa0a6); -webkit-background-clip: text; background-clip: text; color: transparent; }
+  .v-cyber .who .s { color: #6f7a3a; font-family: 'JetBrains Mono', monospace; font-size: 8px; letter-spacing: .16em; }
+  .v-cyber .daytag { color: #707070; font-family: 'JetBrains Mono', monospace; font-size: 7.5px; }
+  .v-cyber .msg { border-radius: 0; font-size: 11.5px; }
+  .v-cyber .msg.in {
+    background: #0c0c0c; border: 1px solid #232323; color: #d6dbd0;
+    clip-path: polygon(0 0, 100% 0, 100% 100%, 8px 100%, 0 calc(100% - 8px));
+  }
+  .v-cyber .msg.out {
+    background: #c6ff2e; color: #07090a; font-weight: 500;
+    clip-path: polygon(0 0, 100% 0, 100% calc(100% - 8px), calc(100% - 8px) 100%, 0 100%);
+  }
+  .v-cyber .msg .t { font-family: 'JetBrains Mono', monospace; opacity: .62; }
+  .v-cyber .typing { background: #0c0c0c; border: 1px solid #232323; color: #c6ff2e; }
+  .v-cyber .composer { background: #0a0a0a; border: 1px solid #262626; border-radius: 0; color: #5c6157;
+    font-family: 'JetBrains Mono', monospace; font-size: 9.5px; letter-spacing: .08em;
+    clip-path: polygon(0 0, 100% 0, 100% 100%, 10px 100%, 0 calc(100% - 10px)); }
+  .v-cyber .send { background: #c6ff2e; color: #000; border-radius: 0;
+    clip-path: polygon(0 0, 100% 0, 100% 70%, 70% 100%, 0 100%); }
+  .v-cyber .sigil { position: absolute; z-index: 0; left: 50%; top: 50%; transform: translate(-50%,-50%);
+    width: 320px; height: 320px; opacity: .13; color: #c6ff2e; filter: blur(1.6px);
+    -webkit-mask-image: radial-gradient(circle at 50% 50%, transparent 26%, #000 58%, transparent 90%);
+    mask-image: radial-gradient(circle at 50% 50%, transparent 26%, #000 58%, transparent 90%); }
+  .v-cyber .scan { position: absolute; inset: 0; z-index: 3; pointer-events: none; opacity: .35;
+    background: repeating-linear-gradient(0deg, rgba(255,255,255,.035) 0 1px, transparent 1px 3px); }
+
+  /* ═══════════════ C — РЕНТГЕН-ФЛОРА ═══════════════ */
+  .v-xray {
+    background: radial-gradient(110% 70% at 60% 0%, #08211c 0%, #04120f 45%, #020908 100%);
+    border: 1px solid rgba(126,240,192,.18);
+    box-shadow: 0 26px 60px -22px #000, inset 0 0 70px rgba(88,215,232,.06);
+    color: #cfe9e0; font-family: 'Jost', sans-serif;
+  }
+  .v-xray .notch { background: #020908; border: 1px solid rgba(126,240,192,.12); }
+  .v-xray .statusbar { color: #5e9e8d; font-size: 9px; }
+  .v-xray .apphead { border-bottom: 1px solid rgba(126,240,192,.14); }
+  .v-xray .ava { background: radial-gradient(circle at 30% 30%, rgba(126,240,192,.42), rgba(88,215,232,.10));
+    border: 1px solid rgba(126,240,192,.45); color: #d6f7ec; }
+  .v-xray .who .n { font-family: 'Cormorant Garamond', serif; font-size: 14.5px; letter-spacing: .1em; color: #e2f7f0; }
+  .v-xray .who .s { color: #4e8d7d; font-size: 8px; letter-spacing: .18em; }
+  .v-xray .daytag { color: #6fb5a3; }
+  .v-xray .msg { font-size: 11.5px; }
+  .v-xray .msg.in {
+    background: linear-gradient(150deg, rgba(126,240,192,.10), rgba(88,215,232,.04));
+    border: 1px solid rgba(126,240,192,.34);
+    border-radius: 14px 4px 14px 4px; color: #cfeee4;
+    box-shadow: 0 0 24px -12px rgba(126,240,192,.55), inset 0 0 20px rgba(126,240,192,.05);
+  }
+  .v-xray .msg.out {
+    background: linear-gradient(150deg, rgba(88,215,232,.13), rgba(126,240,192,.05));
+    border: 1px solid rgba(88,215,232,.40);
+    border-radius: 4px 14px 4px 14px; color: #daf5f8;
+    box-shadow: 0 0 24px -12px rgba(88,215,232,.6);
+  }
+  .v-xray .msg .t { font-size: 7.5px; letter-spacing: .14em; }
+  .v-xray .typing { border: 1px solid rgba(126,240,192,.3); border-radius: 16px 3px 16px 3px; color: #7ef0c0; }
+  .v-xray .composer { background: rgba(126,240,192,.05); border: 1px solid rgba(126,240,192,.28);
+    border-radius: 14px 3px 14px 3px; color: #4d8577; font-size: 11px; }
+  .v-xray .send { background: rgba(126,240,192,.16); border: 1px solid rgba(126,240,192,.5); color: #bff5e3; }
+  .v-xray .sigil { position: absolute; z-index: 0; right: -84px; top: 6%; width: 300px; height: 340px; opacity: .17; color: #7ef0c0; filter: blur(2.2px); }
+  .v-xray .glow { position: absolute; z-index: 0; width: 220px; height: 220px; border-radius: 50%;
+    left: -60px; bottom: -40px; background: radial-gradient(circle, rgba(88,215,232,.16), transparent 70%); filter: blur(6px); }
+
+  /* ═══════════════ D — СКЛЕП (victorian) ═══════════════ */
+  .v-crypt {
+    background:
+      radial-gradient(90% 60% at 50% 0%, #1a1512 0%, #12100e 50%, #0b0908 100%);
+    border: 1px solid rgba(176,141,87,.35);
+    box-shadow: 0 26px 60px -22px #000, inset 0 0 0 3px rgba(14,12,10,.9), inset 0 0 0 4px rgba(176,141,87,.16);
+    color: #e8e0d2; font-family: 'Cormorant Garamond', serif;
+  }
+  .v-crypt .notch { background: #0b0908; border: 1px solid rgba(176,141,87,.25); border-radius: 4px; }
+  .v-crypt .statusbar { color: #9c8a6b; font-family: 'Cormorant SC', serif; font-size: 9px; letter-spacing: .12em; }
+  .v-crypt .apphead { border-bottom: 1px solid rgba(176,141,87,.28); padding-bottom: 13px; position: relative; }
+  .v-crypt .apphead::after { content: ''; position: absolute; left: 16px; right: 16px; bottom: 3px; height: 1px; background: rgba(176,141,87,.16); }
+  .v-crypt .ava { background: radial-gradient(circle at 32% 26%, #3a1c20, #150c0d);
+    border: 1px solid rgba(176,141,87,.6); box-shadow: 0 0 0 2px rgba(11,9,8,1), 0 0 0 3px rgba(176,141,87,.22); color: #d9b978; }
+  .v-crypt .who .n { font-family: 'Cormorant SC', serif; font-size: 13.5px; letter-spacing: .14em; color: #f0e7d6; }
+  .v-crypt .who .s { color: #8a7355; font-family: 'Cormorant Garamond', serif; font-size: 8.5px; letter-spacing: .2em; font-style: italic; text-transform: none; }
+  .v-crypt .daytag { color: #6d5c44; font-family: 'Cormorant SC', serif; letter-spacing: .3em; }
+  .v-crypt .msg { border-radius: 1px; font-size: 12.5px; }
+  .v-crypt .msg.in  { background: rgba(255,250,240,.035); border: 1px solid rgba(176,141,87,.34); color: #ded4c2; }
+  .v-crypt .msg.out { background: linear-gradient(160deg, rgba(109,21,32,.55), rgba(58,12,18,.5)); border: 1px solid rgba(176,141,87,.42); color: #f2e9da; }
+  .v-crypt .msg .t { font-family: 'Cormorant SC', serif; letter-spacing: .14em; }
+  .v-crypt .typing { border: 1px solid rgba(176,141,87,.3); color: #b08d57; }
+  .v-crypt .composer { background: rgba(255,250,240,.03); border: 1px solid rgba(176,141,87,.34); border-radius: 1px;
+    color: #7d6a4f; font-style: italic; font-size: 12px; }
+  .v-crypt .send { background: rgba(176,141,87,.16); border: 1px solid rgba(176,141,87,.55); color: #e2c894; }
+  .v-crypt .sigil { position: absolute; z-index: 0; left: 50%; top: 50%; transform: translate(-50%,-50%);
+    width: 280px; height: 280px; opacity: .2; color: #b08d57; filter: blur(1.5px);
+    -webkit-mask-image: radial-gradient(circle at 50% 50%, transparent 22%, #000 60%, transparent 92%);
+    mask-image: radial-gradient(circle at 50% 50%, transparent 22%, #000 60%, transparent 92%); }
+
+  /* ═══════════════ E — АСТРАЛ ═══════════════ */
+  .v-astral {
+    background:
+      radial-gradient(80% 50% at 15% 8%, rgba(122,60,190,.35), transparent 60%),
+      radial-gradient(70% 45% at 88% 78%, rgba(255,110,190,.22), transparent 60%),
+      linear-gradient(170deg, #120826 0%, #0a0417 55%, #06030d 100%);
+    border: 1px solid rgba(201,163,255,.24);
+    box-shadow: 0 26px 60px -22px #000, inset 0 0 70px rgba(150,90,255,.10);
+    color: #e6dcf7; font-family: 'Jost', sans-serif;
+  }
+  .v-astral .notch { background: #06030d; border: 1px solid rgba(201,163,255,.2); }
+  .v-astral .statusbar { color: #b9a3d8; font-size: 9px; }
+  .v-astral .apphead { border-bottom: 1px solid rgba(201,163,255,.18); }
+  .v-astral .ava { background: radial-gradient(circle at 30% 28%, rgba(255,157,224,.55), rgba(122,60,190,.35));
+    border: 1px solid rgba(232,190,255,.6); color: #fff; box-shadow: 0 0 18px -6px rgba(255,157,224,.8); }
+  .v-astral .who .n { font-family: 'Cormorant Garamond', serif; font-size: 14.5px; font-style: italic; letter-spacing: .08em; color: #f3eaff; }
+  .v-astral .who .s { color: #9a7fc4; font-size: 8px; letter-spacing: .2em; }
+  .v-astral .daytag { color: #7c66a6; letter-spacing: .28em; font-size: 7.5px; }
+  .v-astral .msg { font-size: 11.5px; }
+  .v-astral .msg.in {
+    background: linear-gradient(150deg, rgba(255,255,255,.09), rgba(255,255,255,.03));
+    border: 1px solid rgba(201,163,255,.28); border-radius: 14px 14px 14px 3px;
+    color: #e8ddf8; backdrop-filter: blur(6px);
+    box-shadow: 0 8px 26px -16px rgba(180,120,255,.9);
+  }
+  .v-astral .msg.out {
+    background: linear-gradient(150deg, rgba(255,157,224,.24), rgba(122,60,190,.28));
+    border: 1px solid rgba(255,157,224,.42); border-radius: 14px 14px 3px 14px;
+    color: #fff; box-shadow: 0 8px 26px -14px rgba(255,120,200,.75);
+  }
+  .v-astral .msg .t { font-size: 7.5px; letter-spacing: .16em; }
+  .v-astral .typing { background: rgba(255,255,255,.06); border: 1px solid rgba(201,163,255,.3);
+    border-radius: 14px 14px 14px 3px; color: #ffc9ee; }
+  .v-astral .composer { background: rgba(255,255,255,.06); border: 1px solid rgba(201,163,255,.3);
+    border-radius: 13px; color: #9b86c2; font-size: 11px; backdrop-filter: blur(8px); }
+  .v-astral .send { background: linear-gradient(150deg, #ff9de0, #9d5cea); color: #fff; }
+  .v-astral .stars { position: absolute; inset: 0; z-index: 0; opacity: .8; }
+  .v-astral .sigil { position: absolute; z-index: 0; left: 50%; top: 48%; transform: translate(-50%,-50%);
+    width: 320px; height: 320px; opacity: .16; color: #d8b4ff; filter: blur(1.8px);
+    -webkit-mask-image: radial-gradient(circle at 50% 50%, transparent 24%, #000 58%, transparent 90%);
+    mask-image: radial-gradient(circle at 50% 50%, transparent 24%, #000 58%, transparent 90%); }
+</style>
+</head>
+<body>
+<div class="head">
+  <h1>ST&nbsp;Phone</h1>
+  <span>5 направлений · выбери то, в котором строим</span>
+</div>
+
+<div class="grid">
+
+<!-- ══════════ A ══════════ -->
+<div class="card">
+  <div class="name"><b>A</b> · Кровь и шёлк</div>
+  <p class="desc">Эмо-готика: чёрное стекло, венозная обводка, Cormorant курсивом, зерно и сигил под слоем.</p>
+  <div class="phone v-goth grain">
+    <div class="notch"></div>
+    <svg class="sigil" viewBox="0 0 200 200" fill="none" stroke="currentColor" stroke-width="1.1">
+      <circle cx="100" cy="100" r="66"/><circle cx="100" cy="100" r="52" stroke-dasharray="2 6"/>
+      <path d="M100 26v148M100 26l-9 16h18z"/><path d="M62 66h76"/>
+      <circle cx="100" cy="100" r="30" stroke-dasharray="1 4"/>
+      <path d="M54 140c14-10 22-4 32-12m60 12c-14-10-22-4-32-12"/>
+    </svg>
+    <div class="vig"></div>
+    <div class="statusbar"><span>03:47</span><div class="sb-r"><span class="bars"><i></i><i></i><i></i><i></i></span><span class="batt"></span></div></div>
+    <div class="apphead">
+      <span class="back">‹</span>
+      <div class="ava">Л</div>
+      <div class="who"><div class="n">Лиза Воронова</div><div class="s">в сети</div></div>
+      <span class="dots">···</span>
+    </div>
+    <div class="thread">
+      <div class="daytag">сегодня</div>
+      <div class="msg in">Ты не спишь?<span class="t">03:41</span></div>
+      <div class="msg out">Смотрю в потолок. Как обычно.<span class="t">03:42 · прочитано</span></div>
+      <div class="msg in">У меня руки дрожат с трёх ночи. Не спрашивай почему.<span class="t">03:43</span></div>
+      <div class="msg out">Хочешь, приеду?<span class="t">03:44 · прочитано</span></div>
+      <div class="msg in">Не надо. Просто говори со мной. Что угодно.<span class="t">03:45</span></div>
+      <div class="typing"><i></i><i></i><i></i></div>
+    </div>
+    <div class="composer"><span>сообщение…</span><span class="send">↑</span></div>
+  </div>
+  <button class="pick" data-hermes-send="Беру вариант A — Кровь и шёлк">Взять это</button>
+</div>
+
+<!-- ══════════ B ══════════ -->
+<div class="card">
+  <div class="name"><b>B</b> · Киберсигил</div>
+  <p class="desc">Чёрное поле, кислотный лайм, срезанные углы, хромовый Unbounded, моно-цифры. Агрессивно и стерильно.</p>
+  <div class="phone v-cyber">
+    <div class="notch"></div>
+    <svg class="sigil" viewBox="0 0 200 200" fill="none" stroke="currentColor" stroke-width="1">
+      <path d="M100 10v180M10 100h180M36 36l128 128M164 36L36 164"/>
+      <path d="M100 10l-6 40h12zM100 190l-6-40h12z"/>
+      <circle cx="100" cy="100" r="44"/><circle cx="100" cy="100" r="72" stroke-dasharray="40 8 4 8"/>
+      <path d="M100 56l-12 44 12 44 12-44z"/>
+    </svg>
+    <div class="scan"></div>
+    <div class="statusbar"><span>03:47</span><div class="sb-r"><span class="bars"><i></i><i></i><i></i><i></i></span><span class="batt"></span></div></div>
+    <div class="apphead">
+      <span class="back">‹</span>
+      <div class="ava">L</div>
+      <div class="who"><div class="n">Лиза В.</div><div class="s">online · now</div></div>
+      <span class="dots">···</span>
+    </div>
+    <div class="thread">
+      <div class="daytag">// сегодня</div>
+      <div class="msg in">Ты не спишь?<span class="t">03:41</span></div>
+      <div class="msg out">Смотрю в потолок. Как обычно.<span class="t">03:42 ✓</span></div>
+      <div class="msg in">У меня руки дрожат с трёх ночи. Не спрашивай почему.<span class="t">03:43</span></div>
+      <div class="msg out">Хочешь, приеду?<span class="t">03:44 ✓</span></div>
+      <div class="msg in">Не надо. Просто говори со мной. Что угодно.<span class="t">03:45</span></div>
+      <div class="typing"><i></i><i></i><i></i></div>
+    </div>
+    <div class="composer"><span>&gt; сообщение…</span><span class="send">↑</span></div>
+  </div>
+  <button class="pick" data-hermes-send="Беру вариант B — Киберсигил">Взять это</button>
+</div>
+
+<!-- ══════════ C ══════════ -->
+<div class="card">
+  <div class="name"><b>C</b> · Рентген-флора</div>
+  <p class="desc">Ботаническая рентгенограмма: мята и циан на чёрно-зелёном, светящиеся лепестки вместо пузырей, Cormorant.</p>
+  <div class="phone v-xray">
+    <div class="notch"></div>
+    <div class="glow"></div>
+    <svg class="sigil" viewBox="0 0 200 220" fill="none" stroke="currentColor" stroke-width=".9">
+      <path d="M100 218C100 150 96 96 74 40"/>
+      <path d="M100 218c0-68 4-122 26-178"/>
+      <circle cx="74" cy="40" r="17"/><circle cx="126" cy="40" r="17"/>
+      <circle cx="74" cy="40" r="7" stroke-dasharray="1 3"/>
+      <circle cx="126" cy="40" r="7" stroke-dasharray="1 3"/>
+      <path d="M96 120c-16-6-34-2-44 10 14 10 34 8 44-10zM104 120c16-6 34-2 44 10-14 10-34 8-44-10z"/>
+      <path d="M97 158c-14-6-30-3-40 8 12 9 30 7 40-8zM103 158c14-6 30-3 40 8-12 9-30 7-40-8z"/>
+      <path d="M100 96c-10-8-10-22 0-30 10 8 10 22 0 30z"/>
+      <circle cx="100" cy="176" r="26" stroke-dasharray="2 5"/>
+    </svg>
+    <div class="statusbar"><span>03:47</span><div class="sb-r"><span class="bars"><i></i><i></i><i></i><i></i></span><span class="batt"></span></div></div>
+    <div class="apphead">
+      <span class="back">‹</span>
+      <div class="ava">Л</div>
+      <div class="who"><div class="n">Лиза Воронова</div><div class="s">в сети</div></div>
+      <span class="dots">···</span>
+    </div>
+    <div class="thread">
+      <div class="daytag">сегодня</div>
+      <div class="msg in">Ты не спишь?<span class="t">03:41</span></div>
+      <div class="msg out">Смотрю в потолок. Как обычно.<span class="t">03:42 · прочитано</span></div>
+      <div class="msg in">У меня руки дрожат с трёх ночи. Не спрашивай почему.<span class="t">03:43</span></div>
+      <div class="msg out">Хочешь, приеду?<span class="t">03:44 · прочитано</span></div>
+      <div class="msg in">Не надо. Просто говори со мной. Что угодно.<span class="t">03:45</span></div>
+      <div class="typing"><i></i><i></i><i></i></div>
+    </div>
+    <div class="composer"><span>сообщение…</span><span class="send">↑</span></div>
+  </div>
+  <button class="pick" data-hermes-send="Беру вариант C — Рентген-флора">Взять это</button>
+</div>
+
+<!-- ══════════ D ══════════ -->
+<div class="card">
+  <div class="name"><b>D</b> · Склеп</div>
+  <p class="desc">Викторианский гравюрный: кость, оксблад, сусальное золото, тонкие двойные линейки, камея вместо аватара.</p>
+  <div class="phone v-crypt grain">
+    <div class="notch"></div>
+    <svg class="sigil" viewBox="0 0 200 200" fill="none" stroke="currentColor" stroke-width="1">
+      <path d="M100 20c22 0 34 16 34 34 0 20-14 26-14 40h-40c0-14-14-20-14-40 0-18 12-34 34-34z"/>
+      <path d="M80 108h40M84 118h32M100 126v20"/>
+      <path d="M100 146l-10 34h20z"/>
+      <path d="M46 60c14 0 22 8 22 20M154 60c-14 0-22 8-22 20"/>
+      <circle cx="100" cy="70" r="10" stroke-dasharray="2 3"/>
+    </svg>
+    <div class="statusbar"><span>03:47</span><div class="sb-r"><span class="bars"><i></i><i></i><i></i><i></i></span><span class="batt"></span></div></div>
+    <div class="apphead">
+      <span class="back">‹</span>
+      <div class="ava">Л</div>
+      <div class="who"><div class="n">Лиза Воронова</div><div class="s">в сети</div></div>
+      <span class="dots">···</span>
+    </div>
+    <div class="thread">
+      <div class="daytag">сегодня</div>
+      <div class="msg in">Ты не спишь?<span class="t">03:41</span></div>
+      <div class="msg out">Смотрю в потолок. Как обычно.<span class="t">03:42 · прочитано</span></div>
+      <div class="msg in">У меня руки дрожат с трёх ночи. Не спрашивай почему.<span class="t">03:43</span></div>
+      <div class="msg out">Хочешь, приеду?<span class="t">03:44 · прочитано</span></div>
+      <div class="msg in">Не надо. Просто говори со мной. Что угодно.<span class="t">03:45</span></div>
+      <div class="typing"><i></i><i></i><i></i></div>
+    </div>
+    <div class="composer"><span>сообщение…</span><span class="send">↑</span></div>
+  </div>
+  <button class="pick" data-hermes-send="Беру вариант D — Склеп">Взять это</button>
+</div>
+
+<!-- ══════════ E ══════════ -->
+<div class="card">
+  <div class="name"><b>E</b> · Астрал</div>
+  <p class="desc">Космическое стекло: туманности, сияние, матовое размытие, розово-фиолетовый градиент на отправленных.</p>
+  <div class="phone v-astral">
+    <div class="notch"></div>
+    <svg class="stars" viewBox="0 0 290 570" fill="none">
+      <g fill="#fff"><circle cx="34" cy="72" r=".9" opacity=".7"/><circle cx="212" cy="46" r="1.3" opacity=".9"/><circle cx="156" cy="120" r=".7" opacity=".5"/>
+      <circle cx="66" cy="190" r="1" opacity=".6"/><circle cx="248" cy="168" r=".8" opacity=".7"/><circle cx="118" cy="60" r=".6" opacity=".5"/>
+      <circle cx="26" cy="330" r="1.1" opacity=".6"/><circle cx="268" cy="300" r=".9" opacity=".5"/><circle cx="198" cy="404" r=".7" opacity=".4"/>
+      <circle cx="84" cy="470" r="1" opacity=".5"/><circle cx="232" cy="520" r=".8" opacity=".45"/><circle cx="150" cy="240" r=".6" opacity=".4"/>
+      <circle cx="54" cy="410" r=".7" opacity=".35"/><circle cx="262" cy="418" r=".9" opacity=".4"/></g>
+    </svg>
+    <svg class="sigil" viewBox="0 0 200 200" fill="none" stroke="currentColor" stroke-width=".9">
+      <circle cx="100" cy="100" r="70" stroke-dasharray="1 7"/>
+      <circle cx="100" cy="100" r="48"/>
+      <path d="M100 30l16 54-16 66-16-66z"/>
+      <path d="M30 100l54 16 66-16-66-16z"/>
+      <circle cx="100" cy="100" r="10" stroke-dasharray="2 3"/>
+      <path d="M100 10l4 14h-8zM100 190l4-14h-8z"/>
+    </svg>
+    <div class="statusbar"><span>03:47</span><div class="sb-r"><span class="bars"><i></i><i></i><i></i><i></i></span><span class="batt"></span></div></div>
+    <div class="apphead">
+      <span class="back">‹</span>
+      <div class="ava">✦</div>
+      <div class="who"><div class="n">Лиза Воронова</div><div class="s">в сети</div></div>
+      <span class="dots">···</span>
+    </div>
+    <div class="thread">
+      <div class="daytag">сегодня</div>
+      <div class="msg in">Ты не спишь?<span class="t">03:41</span></div>
+      <div class="msg out">Смотрю в потолок. Как обычно.<span class="t">03:42 · прочитано</span></div>
+      <div class="msg in">У меня руки дрожат с трёх ночи. Не спрашивай почему.<span class="t">03:43</span></div>
+      <div class="msg out">Хочешь, приеду?<span class="t">03:44 · прочитано</span></div>
+      <div class="msg in">Не надо. Просто говори со мной. Что угодно.<span class="t">03:45</span></div>
+      <div class="typing"><i></i><i></i><i></i></div>
+    </div>
+    <div class="composer"><span>сообщение…</span><span class="send">↑</span></div>
+  </div>
+  <button class="pick" data-hermes-send="Беру вариант E — Астрал">Взять это</button>
+</div>
+
+<!-- ══════════ F ══════════ -->
+<div class="card">
+  <div class="name"><b>F</b> · Микс</div>
+  <p class="desc">Гибрид: чёрное стекло A + кислотный акцент B + рентген-свечение C. Скажи, какие две нравятся — соберу между ними.</p>
+  <div class="phone v-goth grain" style="--mix:1">
+    <div class="notch"></div>
+    <svg class="sigil" viewBox="0 0 200 200" fill="none" stroke="#c6ff2e" stroke-width="1">
+      <path d="M100 14v172M14 100h172"/><circle cx="100" cy="100" r="58"/>
+      <circle cx="100" cy="100" r="76" stroke-dasharray="30 6 3 6"/>
+      <path d="M100 42l-10 58 10 58 10-58z"/>
+    </svg>
+    <div class="vig" style="background:radial-gradient(70% 50% at 50% 42%, transparent 25%, rgba(3,6,4,.8) 100%)"></div>
+    <div class="statusbar"><span>03:47</span><div class="sb-r"><span class="bars"><i></i><i></i><i></i><i></i></span><span class="batt"></span></div></div>
+    <div class="apphead">
+      <span class="back">‹</span>
+      <div class="ava" style="background:#0c1208;border-color:rgba(198,255,46,.6);color:#d8ff5e">Л</div>
+      <div class="who"><div class="n" style="color:#eefbe0">Лиза Воронова</div><div class="s" style="color:#8fae3f;font-family:'JetBrains Mono',monospace">в сети</div></div>
+      <span class="dots">···</span>
+    </div>
+    <div class="thread">
+      <div class="daytag">сегодня</div>
+      <div class="msg in" style="border-left-color:rgba(198,255,46,.55);background:linear-gradient(160deg,#0e1310,#080b09);border-color:rgba(198,255,46,.14)">Ты не спишь?<span class="t">03:41</span></div>
+      <div class="msg out" style="background:linear-gradient(160deg,#243d05,#101c02);border-color:rgba(198,255,46,.4);color:#eaffc2">Смотрю в потолок. Как обычно.<span class="t">03:42 · прочитано</span></div>
+      <div class="msg in" style="border-left-color:rgba(198,255,46,.55);background:linear-gradient(160deg,#0e1310,#080b09);border-color:rgba(198,255,46,.14)">У меня руки дрожат с трёх ночи. Не спрашивай почему.<span class="t">03:43</span></div>
+      <div class="msg out" style="background:linear-gradient(160deg,#243d05,#101c02);border-color:rgba(198,255,46,.4);color:#eaffc2">Хочешь, приеду?<span class="t">03:44 · прочитано</span></div>
+      <div class="msg in" style="border-left-color:rgba(198,255,46,.55);background:linear-gradient(160deg,#0e1310,#080b09);border-color:rgba(198,255,46,.14)">Не надо. Просто говори со мной. Что угодно.<span class="t">03:45</span></div>
+      <div class="typing" style="color:#c6ff2e;border-color:rgba(198,255,46,.3)"><i></i><i></i><i></i></div>
+    </div>
+    <div class="composer" style="border-color:rgba(198,255,46,.2);color:#7d8f5c"><span>сообщение…</span><span class="send" style="background:#c6ff2e;color:#080b06">↑</span></div>
+  </div>
+  <button class="pick" data-hermes-send="Хочу микс: расскажи какие два варианта лучше сочетаются и собери между ними">Собрать микс</button>
+</div>
+
+</div>
+</body>
+</html>
