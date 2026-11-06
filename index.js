@@ -408,31 +408,67 @@ function injectPromptBlock(context) {
  * Also wires up /seed-contacts slash command for manual trigger.
  */
 function registerContactSeeder(context) {
-    // Auto-seed: hook into the phone's open() to run once silently
-    const origOpen = core.open.bind(core);
-    core.open = function(...args) {
-        origOpen(...args);
-        if (!seeder.isSeeded()) {
-            _runSeed(false).catch(err =>
-                console.warn('[Astral Phone] auto-seed failed:', err));
+    /**
+     * Автосид запускается ТОЛЬКО при открытии приложения Messages.
+     *
+     * Раньше он висел на CHAT_CHANGED — событие стреляет и вне телефона, прямо
+     * на главном экране SillyTavern, поэтому генерация стартовала, пока
+     * пользователь ещё не собирался ничего открывать, и подвешивала чат.
+     * Теперь сигнал подаёт сам пользователь: зашёл в переписки — телефон
+     * дозаполняется; не зашёл — ничего не происходит.
+     */
+    // Одна попытка на чат: openApp зовётся повторно из refresh() после каждого
+    // события, и без этого флага неудачный сид повторялся бы бесконечно.
+    let seedInFlight = false;
+    let seedTried = false;
+
+    const origOpenApp = core.openApp.bind(core);
+    core.openApp = function (appId, ...args) {
+        const result = origOpenApp(appId, ...args);
+
+        if (appId !== 'messages' || seedInFlight || seedTried) return result;
+
+        try {
+            if (seeder.isSeeded()) {
+                seedTried = true;
+                return result;
+            }
+
+            seedInFlight = true;
+            globalThis.__astralSeeding = true;
+            core.refresh();
+
+            // не блокируем открытие: рендер уже произошёл, сид идёт фоном
+            _runSeed(false, { silent: true })
+                .catch(err => console.warn('[Astral Phone] auto-seed failed:', err))
+                .finally(() => {
+                    seedInFlight = false;
+                    seedTried = true;
+                    globalThis.__astralSeeding = false;
+                    core.refresh();
+                });
+        } catch (err) {
+            console.warn('[Astral Phone] seeder check failed:', err);
+            seedInFlight = false;
         }
+
+        return result;
     };
 
-    // Also re-seed on chat switch (new chat = new seeder state)
-    const origSwitch = core._onChatSwitch?.bind(core) || null;
-    const ctx = context;
-    ctx.eventSource?.on?.(ctx.event_types?.CHAT_CHANGED, () => {
-        // Small delay so storage has time to invalidate
-        setTimeout(() => {
-            if (!seeder.isSeeded()) {
-                _runSeed(false).catch(() => {});
-            }
-        }, 800);
+    // При смене чата счётчик сбрасывается — у каждого чата свой телефон
+    context.eventSource?.on?.(context.event_types?.CHAT_CHANGED, () => {
+        seedInFlight = false;
+        seedTried = false;
     });
 }
 
-async function _runSeed(force = false) {
+async function _runSeed(force = false, opts = {}) {
+    const silent = opts.silent === true;
     const toast = (msg, kind = 'info') => {
+        if (silent) {
+            console.debug('[Astral Phone]', msg);
+            return;
+        }
         try { (window.toastr?.[kind] || window.toastr?.info)?.(msg); } catch {}
     };
 

@@ -2543,11 +2543,17 @@ ${prompt2}
       const messages = state.messages || [];
       container.innerHTML = "";
       if (messages.length === 0) {
-        container.innerHTML = `
+        const seeding = globalThis.__astralSeeding === true;
+        container.innerHTML = seeding ? `
+                <div class="astral-empty-state astral-seeding">
+                    <div class="astral-seeding-dots"><span></span><span></span><span></span></div>
+                    <div>\u041D\u0430\u0431\u0438\u0440\u0430\u044E \u043F\u0435\u0440\u0435\u043F\u0438\u0441\u043A\u0443\u2026</div>
+                    <div class="astral-empty-hint">\u041F\u0435\u0440\u0441\u043E\u043D\u0430\u0436\u0438 \u043F\u0440\u0438\u0434\u0443\u043C\u044B\u0432\u0430\u044E\u0442, \u0447\u0442\u043E \u0442\u0435\u0431\u0435 \u043D\u0430\u043F\u0438\u0441\u0430\u0442\u044C</div>
+                </div>` : `
                 <div class="astral-empty-state">
                     <div class="astral-empty-state-icon">${ICONS.messages}</div>
                     <div>\u041D\u0435\u0442 \u043F\u0435\u0440\u0435\u043F\u0438\u0441\u043A\u0438</div>
-                    <div class="astral-empty-hint">\u0421\u043E\u043E\u0431\u0449\u0435\u043D\u0438\u044F \u043F\u043E\u044F\u0432\u044F\u0442\u0441\u044F \u0430\u0432\u0442\u043E\u043C\u0430\u0442\u0438\u0447\u0435\u0441\u043A\u0438 \u0438\u043B\u0438 \u043F\u043E\u0441\u043B\u0435 /seed-contacts</div>
+                    <div class="astral-empty-hint">\u041F\u0435\u0440\u0435\u043F\u0438\u0441\u043A\u0430 \u043F\u043E\u044F\u0432\u0438\u0442\u0441\u044F, \u043A\u043E\u0433\u0434\u0430 \u043E\u0442\u043A\u0440\u043E\u0435\u0448\u044C \u044D\u0442\u043E\u0442 \u044D\u043A\u0440\u0430\u043D \u0432\u043F\u0435\u0440\u0432\u044B\u0435</div>
                 </div>`;
         return;
       }
@@ -5272,27 +5278,45 @@ description \u043F\u0438\u0448\u0438 \u043A\u0430\u043A \u043F\u0440\u043E\u043C
   }
   __name(injectPromptBlock, "injectPromptBlock");
   function registerContactSeeder(context) {
-    const origOpen = core.open.bind(core);
-    core.open = function(...args) {
-      origOpen(...args);
-      if (!seeder.isSeeded()) {
-        _runSeed(false).catch((err) => console.warn("[Astral Phone] auto-seed failed:", err));
-      }
-    };
-    const origSwitch = core._onChatSwitch?.bind(core) || null;
-    const ctx = context;
-    ctx.eventSource?.on?.(ctx.event_types?.CHAT_CHANGED, () => {
-      setTimeout(() => {
-        if (!seeder.isSeeded()) {
-          _runSeed(false).catch(() => {
-          });
+    let seedInFlight = false;
+    let seedTried = false;
+    const origOpenApp = core.openApp.bind(core);
+    core.openApp = function(appId, ...args) {
+      const result = origOpenApp(appId, ...args);
+      if (appId !== "messages" || seedInFlight || seedTried) return result;
+      try {
+        if (seeder.isSeeded()) {
+          seedTried = true;
+          return result;
         }
-      }, 800);
+        seedInFlight = true;
+        globalThis.__astralSeeding = true;
+        core.refresh();
+        _runSeed(false, { silent: true }).catch((err) => console.warn("[Astral Phone] auto-seed failed:", err)).finally(() => {
+          seedInFlight = false;
+          seedTried = true;
+          globalThis.__astralSeeding = false;
+          core.refresh();
+        });
+      } catch (err) {
+        console.warn("[Astral Phone] seeder check failed:", err);
+        seedInFlight = false;
+      }
+      return result;
+    };
+    context.eventSource?.on?.(context.event_types?.CHAT_CHANGED, () => {
+      seedInFlight = false;
+      seedTried = false;
     });
   }
   __name(registerContactSeeder, "registerContactSeeder");
-  async function _runSeed(force = false) {
+  async function _runSeed(force = false, opts = {}) {
+    const silent = opts.silent === true;
     const toast = /* @__PURE__ */ __name((msg, kind = "info") => {
+      if (silent) {
+        console.debug("[Astral Phone]", msg);
+        return;
+      }
       try {
         (window.toastr?.[kind] || window.toastr?.info)?.(msg);
       } catch {

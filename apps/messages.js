@@ -36,11 +36,19 @@ export class MessagesApp {
         container.innerHTML = '';
 
         if (messages.length === 0) {
-            container.innerHTML = `
+            const seeding = globalThis.__astralSeeding === true;
+            container.innerHTML = seeding
+                ? `
+                <div class="astral-empty-state astral-seeding">
+                    <div class="astral-seeding-dots"><span></span><span></span><span></span></div>
+                    <div>Набираю переписку…</div>
+                    <div class="astral-empty-hint">Персонажи придумывают, что тебе написать</div>
+                </div>`
+                : `
                 <div class="astral-empty-state">
                     <div class="astral-empty-state-icon">${ICONS.messages}</div>
                     <div>Нет переписки</div>
-                    <div class="astral-empty-hint">Сообщения появятся автоматически или после /seed-contacts</div>
+                    <div class="astral-empty-hint">Переписка появится, когда откроешь этот экран впервые</div>
                 </div>`;
             return;
         }
