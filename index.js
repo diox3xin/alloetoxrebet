@@ -240,6 +240,7 @@ function registerChatSwitchHandler(context) {
 
     const onSwitch = () => {
         try {
+            core?.storage?.flush?.();
             core?.accountManager?.invalidate();
             core?.accountManager?.getCurrentAccount();
             if (core?.isOpen) {

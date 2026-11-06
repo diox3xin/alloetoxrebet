@@ -266,6 +266,11 @@
     }
     close() {
       if (!this.isOpen) return;
+      try {
+        this.storage?.flush?.();
+      } catch (err) {
+        console.warn("[Astral Phone] flush failed:", err);
+      }
       this.overlay.classList.remove("active");
       this.isOpen = false;
       this._stopClock();
@@ -426,7 +431,6 @@
     constructor(context) {
       this._seed = context || null;
       this.key = "astral_phone";
-      this.onChatChanged = null;
     }
     /** Fresh ST context. */
     _ctx() {
@@ -438,7 +442,12 @@
       }
       return this._seed || {};
     }
-    /** Identity of the chat currently loaded — used to detect switches. */
+    /** The live per-chat metadata object. */
+    _meta() {
+      const ctx = this._ctx();
+      return ctx.chatMetadata || ctx.chat_metadata || {};
+    }
+    /** Identity of the loaded chat — used to detect switches. */
     chatId() {
       const ctx = this._ctx();
       try {
@@ -452,15 +461,14 @@
       if (Array.isArray(ctx.chat) && ctx.chat.length) {
         const first = ctx.chat[0];
         const stamp = first?.send_date || first?.create_date || "";
-        return `${ctx.characterId ?? ctx.this_chid ?? 0}:${ctx.chat.length}:${stamp}`;
+        return `${ctx.characterId ?? 0}:${ctx.chat.length}:${stamp}`;
       }
-      return `${ctx.characterId ?? ctx.this_chid ?? 0}:empty`;
+      return `${ctx.characterId ?? 0}:empty`;
     }
     _root() {
-      const ctx = this._ctx();
-      if (!ctx.chat_metadata) ctx.chat_metadata = {};
-      if (!ctx.chat_metadata[this.key]) ctx.chat_metadata[this.key] = {};
-      return ctx.chat_metadata[this.key];
+      const meta = this._meta();
+      if (!meta[this.key]) meta[this.key] = {};
+      return meta[this.key];
     }
     _defaults() {
       return {
@@ -476,8 +484,8 @@
       };
     }
     /**
-     * Get state. The chat is implicit — chat_metadata is already per-chat,
-     * so the `chatId` argument is accepted for API compatibility and ignored.
+     * Get state. The chat is implicit — metadata is already per-chat, so the
+     * `chatId` argument exists only for API compatibility and is ignored.
      */
     getState() {
       const root = this._root();
@@ -490,6 +498,11 @@
       for (const k of Object.keys(d.creator)) {
         if (root.state.creator[k] === void 0) root.state.creator[k] = d.creator[k];
       }
+      for (const list of ["messages", "gallery", "spicy"]) {
+        if (!Array.isArray(root.state[list])) root.state[list] = [];
+      }
+      if (!Array.isArray(root.state.creator.posts)) root.state.creator.posts = [];
+      if (!Array.isArray(root.state.creator.fans)) root.state.creator.fans = [];
       return root.state;
     }
     setState(_chatId, state) {
@@ -510,11 +523,50 @@
       this.save();
       return state;
     }
+    /**
+     * Persist. State is mutated in place inside the live metadata object, so a
+     * chat save writes it to disk. `saveMetadata` = saveChatConditional, which
+     * rewrites the whole chat file — throttle it so a burst of clicks doesn't
+     * hammer the disk, with a trailing flush so nothing is lost.
+     */
     save() {
+      this._pending = true;
+      if (this._timer) return;
+      const delay = 800;
+      const flush = /* @__PURE__ */ __name(() => {
+        this._timer = null;
+        if (!this._pending) return;
+        this._pending = false;
+        const ctx = this._ctx();
+        try {
+          if (typeof ctx.saveMetadata === "function") {
+            Promise.resolve(ctx.saveMetadata()).catch((err) => console.warn("[Astral Phone] metadata save failed:", err));
+          } else if (typeof ctx.saveMetadataDebounced === "function") {
+            ctx.saveMetadataDebounced();
+          }
+        } catch (err) {
+          console.warn("[Astral Phone] could not persist chat metadata:", err);
+        }
+      }, "flush");
+      this._timer = setTimeout(flush, delay);
+    }
+    /** Force an immediate write — call before the phone closes. */
+    flush() {
+      if (!this._pending) return;
+      if (this._timer) {
+        clearTimeout(this._timer);
+        this._timer = null;
+      }
+      this._pending = false;
+      const ctx = this._ctx();
       try {
-        this._ctx().updateChatMetadata?.(null, true);
+        if (typeof ctx.saveMetadata === "function") {
+          Promise.resolve(ctx.saveMetadata()).catch((err) => console.warn("[Astral Phone] metadata save failed:", err));
+        } else if (typeof ctx.saveMetadataDebounced === "function") {
+          ctx.saveMetadataDebounced();
+        }
       } catch (err) {
-        console.warn("[Astral Phone] Could not persist chat metadata:", err);
+        console.warn("[Astral Phone] could not persist chat metadata:", err);
       }
     }
     reset() {
@@ -2633,6 +2685,7 @@ description \u043F\u0438\u0448\u0438 \u043A\u0430\u043A \u043F\u0440\u043E\u043C
     if (!eventSource || !event_types) return;
     const onSwitch = /* @__PURE__ */ __name(() => {
       try {
+        core?.storage?.flush?.();
         core?.accountManager?.invalidate();
         core?.accountManager?.getCurrentAccount();
         if (core?.isOpen) {

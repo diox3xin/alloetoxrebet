@@ -79,6 +79,7 @@ export class PhoneCore {
 
     close() {
         if (!this.isOpen) return;
+        try { this.storage?.flush?.(); } catch (err) { console.warn('[Astral Phone] flush failed:', err); }
         this.overlay.classList.remove('active');
         this.isOpen = false;
         this._stopClock();

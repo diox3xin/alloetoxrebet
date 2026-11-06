@@ -18,17 +18,23 @@
 /* Минимальный стаб SillyTavern, чтобы прогнать реальные модули расширения */
 const __chatStore = { demo: {} };
 let currentChatId = 'demo';
-Object.defineProperty(window, '__chat_metadata', { value: null, writable: true });
 let chat_metadata = __chatStore.demo;
+window.__saveCount = 0;
 window.__switchChat = (id) => {
   __chatStore[currentChatId] = chat_metadata;
   if (!__chatStore[id]) __chatStore[id] = {};
   currentChatId = id;
   chat_metadata = __chatStore[id];
 };
+window.__diskState = () => JSON.parse(JSON.stringify(__chatStore));
 window.SillyTavern = {
   getContext: () => ({
-    chat_metadata,
+    chatMetadata: chat_metadata,
+    saveMetadata: async () => {
+      window.__saveCount++;
+      __chatStore[currentChatId] = JSON.parse(JSON.stringify(chat_metadata));
+    },
+    saveMetadataDebounced: () => { window.__saveCount++; },
     getCurrentChatId: () => currentChatId,
     name2: 'Лиза Воронова',
     characters: [{ name: 'Лиза Воронова' }],
