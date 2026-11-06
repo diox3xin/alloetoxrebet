@@ -13,6 +13,7 @@ import { GalleryApp } from './apps/gallery.js';
 import { SpicyApp } from './apps/spicy.js';
 import { CreatorApp } from './apps/creator.js';
 import { SettingsApp } from './apps/settings.js';
+import { renderCharacterBookHTML, bindCharacterBook } from './apps/character-book.js';
 import { ContactSeeder } from './apps/contact-seeder.js';
 import { refreshPhonePrompt } from './apps/phone-prompt.js';
 
@@ -563,6 +564,10 @@ function injectSettingsPanel() {
             <option value="void">Пустота</option>
         </select>
         
+        <hr />
+        <b>Справочник внешности</b>
+        <div id="astral-charbook-host"></div>
+
         <small class="notes">Провайдер Haruspics использует настройки из расширения Haruspics Fusion. Остальные провайдеры требуют API-ключи в User Settings → API.</small>
     </div>
 </div>`;
@@ -578,6 +583,13 @@ function injectSettingsPanel() {
             drawer?.classList.toggle('openDrawer');
         });
         
+        // Character book editor
+        const bookHost = document.getElementById('astral-charbook-host');
+        if (bookHost) {
+            bookHost.innerHTML = renderCharacterBookHTML();
+            bindCharacterBook(bookHost);
+        }
+
         // Save on change
         document.getElementById('astral-phone-image-provider')?.addEventListener('change', saveSettings);
         document.getElementById('astral-phone-theme-accent')?.addEventListener('change', saveSettings);

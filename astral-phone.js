@@ -671,6 +671,185 @@
     }
   };
 
+  // apps/character-book.js
+  var MODULE = "[AstralCharBook]";
+  var SETTINGS_KEY = "astral_phone";
+  function loadCharacters() {
+    try {
+      const bag = globalThis.extension_settings;
+      const settings = bag?.[SETTINGS_KEY] || globalThis.SillyTavern?.getContext?.()?.extensionSettings?.[SETTINGS_KEY];
+      const list = settings?.characters;
+      if (!Array.isArray(list)) return [];
+      return list.filter((row) => row && typeof row === "object").map((row) => ({
+        name: String(row.name || "").trim(),
+        aliases: String(row.aliases || "").trim(),
+        appearance: String(row.appearance || "").trim(),
+        enabled: row.enabled !== false
+      })).filter((row) => row.name && row.appearance);
+    } catch (err) {
+      console.warn(`${MODULE} load failed:`, err?.message || err);
+      return [];
+    }
+  }
+  __name(loadCharacters, "loadCharacters");
+  function saveCharacters(list) {
+    try {
+      const ctx = globalThis.SillyTavern?.getContext?.();
+      const bag = globalThis.extension_settings || ctx?.extensionSettings;
+      if (!bag) throw new Error("extension_settings \u043D\u0435\u0434\u043E\u0441\u0442\u0443\u043F\u0435\u043D");
+      if (!bag[SETTINGS_KEY]) bag[SETTINGS_KEY] = {};
+      bag[SETTINGS_KEY].characters = (list || []).map((row) => ({
+        name: row.name || "",
+        aliases: row.aliases || "",
+        appearance: row.appearance || "",
+        enabled: row.enabled !== false
+      }));
+      if (typeof ctx?.saveSettingsDebounced === "function") {
+        ctx.saveSettingsDebounced();
+      } else if (typeof globalThis.saveSettingsDebounced === "function") {
+        globalThis.saveSettingsDebounced();
+      }
+      return true;
+    } catch (err) {
+      console.warn(`${MODULE} save failed:`, err?.message || err);
+      return false;
+    }
+  }
+  __name(saveCharacters, "saveCharacters");
+  function keysOf(row) {
+    const out = [row.name];
+    for (const alias of String(row.aliases || "").split(",")) {
+      const trimmed = alias.trim();
+      if (trimmed) out.push(trimmed);
+    }
+    return out.filter(Boolean);
+  }
+  __name(keysOf, "keysOf");
+  function escapeRe(str) {
+    return String(str).replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+  }
+  __name(escapeRe, "escapeRe");
+  function mentions(text, name) {
+    const n = String(name || "").trim();
+    if (!n) return false;
+    if (/^[A-Za-z0-9 _.'-]+$/.test(n)) {
+      const re = new RegExp(`(^|[^A-Za-z0-9])${escapeRe(n)}($|[^A-Za-z0-9])`, "i");
+      return re.test(text);
+    }
+    return text.toLowerCase().includes(n.toLowerCase());
+  }
+  __name(mentions, "mentions");
+  function matchCharacters(prompt) {
+    const text = String(prompt || "");
+    if (!text) return { appearance: [], names: [] };
+    const list = loadCharacters();
+    const appearance = [];
+    const names = [];
+    for (const row of list) {
+      if (!row.enabled) continue;
+      const hit = keysOf(row).some((key) => mentions(text, key));
+      if (!hit) continue;
+      if (!appearance.includes(row.appearance)) {
+        appearance.push(row.appearance);
+        names.push(row.name);
+      }
+    }
+    if (appearance.length) {
+      console.log(`${MODULE} \u043F\u043E\u0434\u0441\u0442\u0430\u0432\u043B\u0435\u043D\u0430 \u0432\u043D\u0435\u0448\u043D\u043E\u0441\u0442\u044C: ${names.join(", ")}`);
+    }
+    return { appearance, names };
+  }
+  __name(matchCharacters, "matchCharacters");
+  function injectAppearance(prompt) {
+    const text = String(prompt || "").trim();
+    if (!text) return text;
+    const { appearance } = matchCharacters(text);
+    if (!appearance.length) return text;
+    const missing = appearance.filter((a) => !text.toLowerCase().includes(a.toLowerCase()));
+    if (!missing.length) return text;
+    return `${missing.join(", ")}, ${text}`;
+  }
+  __name(injectAppearance, "injectAppearance");
+  function renderCharacterBookHTML() {
+    const list = loadCharacters();
+    const rows = list.map((row, i) => `
+        <div class="astral-charbook-row" data-index="${i}">
+            <input type="text" class="text_pole astral-charbook-name"
+                   value="${escAttr(row.name)}" placeholder="\u0418\u043C\u044F (\u043A\u0430\u043A \u0432 \u043F\u0440\u043E\u043C\u043F\u0442\u0435)" data-i="${i}" />
+            <input type="text" class="text_pole astral-charbook-aliases"
+                   value="${escAttr(row.aliases)}" placeholder="\u0410\u043B\u0438\u0430\u0441\u044B, \u0447\u0435\u0440\u0435\u0437 \u0437\u0430\u043F\u044F\u0442\u0443\u044E" data-i="${i}" />
+            <textarea class="text_pole astral-charbook-appearance" rows="2"
+                      placeholder="\u0412\u043D\u0435\u0448\u043D\u043E\u0441\u0442\u044C: \u0432\u043E\u043B\u043E\u0441\u044B, \u0433\u043B\u0430\u0437\u0430, \u0442\u0435\u043B\u043E\u0441\u043B\u043E\u0436\u0435\u043D\u0438\u0435, \u043E\u0434\u0435\u0436\u0434\u0430" data-i="${i}">${escText(row.appearance)}</textarea>
+            <div class="astral-charbook-actions">
+                <label class="astral-charbook-toggle">
+                    <input type="checkbox" class="astral-charbook-enabled" data-i="${i}" ${row.enabled ? "checked" : ""} />
+                    <span>\u0432\u043A\u043B</span>
+                </label>
+                <button class="menu_button astral-charbook-remove" data-i="${i}" title="\u0423\u0434\u0430\u043B\u0438\u0442\u044C">\u2715</button>
+            </div>
+        </div>
+    `).join("");
+    return `
+        <div class="astral-charbook">
+            <div class="astral-charbook-list">${rows || '<div class="astral-charbook-empty">\u041F\u043E\u043A\u0430 \u043F\u0443\u0441\u0442\u043E \u2014 \u0434\u043E\u0431\u0430\u0432\u044C\u0442\u0435 \u043F\u0435\u0440\u0432\u043E\u0433\u043E \u043F\u0435\u0440\u0441\u043E\u043D\u0430\u0436\u0430</div>'}</div>
+            <button class="menu_button astral-charbook-add">+ \u0414\u043E\u0431\u0430\u0432\u0438\u0442\u044C \u043F\u0435\u0440\u0441\u043E\u043D\u0430\u0436\u0430</button>
+            <small class="notes">\u0418\u043C\u044F \u0438\u0449\u0435\u0442\u0441\u044F \u0432 \u043F\u0440\u043E\u043C\u043F\u0442\u0435 (\u0438 \u0432 \u0430\u043B\u0438\u0430\u0441\u0430\u0445) \u0431\u0435\u0437 \u0443\u0447\u0451\u0442\u0430 \u0440\u0435\u0433\u0438\u0441\u0442\u0440\u0430. \u041D\u0430\u0439\u0434\u0435\u043D\u043D\u0430\u044F \u0432\u043D\u0435\u0448\u043D\u043E\u0441\u0442\u044C \u043F\u043E\u0434\u0441\u0442\u0430\u0432\u043B\u044F\u0435\u0442\u0441\u044F \u0432 \u043D\u0430\u0447\u0430\u043B\u043E \u043F\u0440\u043E\u043C\u043F\u0442\u0430 \u043F\u0440\u0438 \u0433\u0435\u043D\u0435\u0440\u0430\u0446\u0438\u0438 \u043B\u044E\u0431\u043E\u0433\u043E \u0438\u0437\u043E\u0431\u0440\u0430\u0436\u0435\u043D\u0438\u044F.</small>
+        </div>
+    `;
+  }
+  __name(renderCharacterBookHTML, "renderCharacterBookHTML");
+  function bindCharacterBook(root, onChange) {
+    const book = root?.querySelector(".astral-charbook");
+    if (!book) return;
+    const commit = /* @__PURE__ */ __name(() => {
+      const list = [];
+      book.querySelectorAll(".astral-charbook-row").forEach((row) => {
+        list.push({
+          name: row.querySelector(".astral-charbook-name")?.value || "",
+          aliases: row.querySelector(".astral-charbook-aliases")?.value || "",
+          appearance: row.querySelector(".astral-charbook-appearance")?.value || "",
+          enabled: row.querySelector(".astral-charbook-enabled")?.checked !== false
+        });
+      });
+      saveCharacters(list);
+      onChange?.(list);
+    }, "commit");
+    book.querySelectorAll(".astral-charbook-name, .astral-charbook-aliases, .astral-charbook-appearance").forEach((el) => el.addEventListener("input", commit));
+    book.querySelectorAll(".astral-charbook-enabled").forEach((el) => el.addEventListener("change", commit));
+    book.querySelectorAll(".astral-charbook-remove").forEach((btn) => {
+      btn.addEventListener("click", () => {
+        const i = Number(btn.dataset.i);
+        const list = loadCharacters();
+        list.splice(i, 1);
+        saveCharacters(list);
+        const host = root.querySelector(".astral-charbook");
+        if (host) host.outerHTML = renderCharacterBookHTML();
+        bindCharacterBook(root, onChange);
+        onChange?.(loadCharacters());
+      });
+    });
+    book.querySelector(".astral-charbook-add")?.addEventListener("click", () => {
+      const list = loadCharacters();
+      list.push({ name: "", aliases: "", appearance: "", enabled: true });
+      saveCharacters(list);
+      const host = root.querySelector(".astral-charbook");
+      if (host) host.outerHTML = renderCharacterBookHTML();
+      bindCharacterBook(root, onChange);
+      onChange?.(loadCharacters());
+      const rows = root.querySelectorAll(".astral-charbook-row");
+      rows[rows.length - 1]?.querySelector(".astral-charbook-name")?.focus();
+    });
+  }
+  __name(bindCharacterBook, "bindCharacterBook");
+  function escAttr(str) {
+    return String(str ?? "").replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" })[c]);
+  }
+  __name(escAttr, "escAttr");
+  function escText(str) {
+    return String(str ?? "").replace(/[&<>]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;" })[c]);
+  }
+  __name(escText, "escText");
+
   // apps/image-gen.js
   var HARUSPICS_MODULE_NAME = "inline_image_gen";
   var VALID_ASPECT_RATIOS = ["1:1", "2:3", "3:2", "3:4", "4:3", "4:5", "5:4", "9:16", "16:9", "21:9"];
@@ -1148,8 +1327,13 @@
      */
     async generate(prompt, metadata = {}) {
       const settings = this._settings();
-      const text = String(prompt ?? "").trim();
+      let text = String(prompt ?? "").trim();
       if (!text) throw new Error("\u041F\u0443\u0441\u0442\u043E\u0439 \u043F\u0440\u043E\u043C\u043F\u0442 \u0434\u043B\u044F \u0433\u0435\u043D\u0435\u0440\u0430\u0446\u0438\u0438 \u0438\u0437\u043E\u0431\u0440\u0430\u0436\u0435\u043D\u0438\u044F.");
+      try {
+        text = injectAppearance(text);
+      } catch (err) {
+        console.warn("[AstralImageGen] appearance injection skipped:", err?.message);
+      }
       const style = metadata.style !== void 0 ? String(metadata.style) : this.getStyle();
       const refs = metadata.refs !== void 0 ? metadata.refs : this._collectRefs();
       const dataUrl = await this._generateWithTimeout(text, settings, style, refs, metadata.negativePrompt);
@@ -2067,7 +2251,7 @@ REPLY (text only):`;
   };
 
   // apps/prompt-builder.js
-  var MODULE = "[AstralPrompt]";
+  var MODULE2 = "[AstralPrompt]";
   var QUALITY_TAGS = "masterpiece, best quality, very aesthetic, absurdres, highly detailed";
   var DEFAULT_NEGATIVE = "lowres, bad anatomy, bad hands, text, watermark, logo, blurry, jpeg artifacts, worst quality, low quality, deformed, extra limbs, extra fingers, cropped, out of frame";
   function deepWalk(root, visit, maxDepth = 5) {
@@ -2094,10 +2278,6 @@ REPLY (text only):`;
     return "";
   }
   __name(firstText, "firstText");
-  function normName(value) {
-    return String(value || "").toLowerCase().replace(/\.[a-z0-9]{2,5}$/, "").replace(/[_\s-]+/g, " ").trim();
-  }
-  __name(normName, "normName");
   function findStyle(raw) {
     if (!raw) return "";
     for (const k of ["style", "artStyle", "activeStyle", "stylePreset", "promptPrefix"]) {
@@ -2127,120 +2307,6 @@ REPLY (text only):`;
     return "";
   }
   __name(findStyle, "findStyle");
-  function candidateKeys(character, name, extra = []) {
-    const keys = [];
-    const avatar = String(character?.avatar || "").trim();
-    if (avatar) {
-      keys.push(`avatar:${avatar}`);
-      keys.push(avatar);
-      keys.push(avatar.replace(/\.[a-z0-9]{2,5}$/i, ""));
-      keys.push(`avatar:${avatar.replace(/\.[a-z0-9]{2,5}$/i, "")}`);
-    }
-    if (name) {
-      keys.push(`name:${name}`);
-      keys.push(name);
-    }
-    keys.push(...extra.filter(Boolean));
-    return [...new Set(keys)];
-  }
-  __name(candidateKeys, "candidateKeys");
-  function extractAppearance(entry) {
-    if (!entry || typeof entry !== "object") return { appearance: "", refs: [] };
-    const parts = [];
-    const refs = [];
-    const pushText = /* @__PURE__ */ __name((value) => {
-      const s = String(value ?? "").replace(/\s+/g, " ").trim();
-      if (s && !parts.includes(s)) parts.push(s);
-    }, "pushText");
-    const primary = entry.primary;
-    if (primary && typeof primary === "object" && primary.enabled !== false) {
-      pushText(primary.description || primary.text);
-      const p = String(primary.imagePath || "").trim();
-      if (p) refs.push(p);
-    }
-    for (const item of entry.appearanceItems || []) {
-      if (!item || typeof item !== "object") continue;
-      if (item.enabled === false) continue;
-      if (item.type === "image") {
-        const p = String(item.imagePath || item.path || "").trim();
-        if (p) refs.push(p);
-        continue;
-      }
-      pushText(item.description || item.text);
-    }
-    for (const d of entry.descriptions || []) {
-      if (typeof d === "string") {
-        pushText(d);
-        continue;
-      }
-      if (d && typeof d === "object" && d.enabled !== false) pushText(d.text || d.description);
-    }
-    for (const r of entry.references || []) {
-      if (!r || typeof r !== "object") continue;
-      if (r.enabled === false) continue;
-      const p = String(r.imagePath || "").trim();
-      if (p) refs.push(p);
-      pushText(r.description || r.text);
-    }
-    if (parts.length === 0) {
-      const skipKey = /^(id|type|imagePath|path|name|displayName|mimeType|kind|source)$/i;
-      const walk = /* @__PURE__ */ __name((node, depth) => {
-        if (!node || depth > 3) return;
-        if (typeof node === "string") return;
-        if (Array.isArray(node)) {
-          node.forEach((n) => walk(n, depth + 1));
-          return;
-        }
-        if (typeof node !== "object") return;
-        for (const [k, v] of Object.entries(node)) {
-          if (skipKey.test(k)) continue;
-          if (typeof v === "string") {
-            if (/[\/\\]/.test(v) && v.length < 200 && !/\s/.test(v)) continue;
-            if (/^[a-z0-9_-]{1,24}$/i.test(v)) continue;
-            pushText(v);
-          } else if (v && typeof v === "object") {
-            walk(v, depth + 1);
-          }
-        }
-      }, "walk");
-      walk(entry, 0);
-    }
-    const appearance = parts.join(", ").replace(/,\s*,/g, ",").trim();
-    return { appearance, refs: [...new Set(refs)] };
-  }
-  __name(extractAppearance, "extractAppearance");
-  function lookupEntry(library, bucketName, keys, displayName) {
-    const bucket = library?.[bucketName];
-    if (!bucket || typeof bucket !== "object") return null;
-    for (const key of keys) {
-      const hit = bucket[key];
-      if (hit && typeof hit === "object") return hit;
-    }
-    const all = Object.entries(bucket).filter(([, v]) => v && typeof v === "object");
-    const wanted = normName(displayName);
-    if (wanted) {
-      const byDisplay = all.find(([, v]) => normName(v.displayName) === wanted);
-      if (byDisplay) return byDisplay[1];
-    }
-    if (wanted) {
-      const bareOf = /* @__PURE__ */ __name((k) => normName(String(k).split(":").pop()), "bareOf");
-      const byBare = all.find(([k]) => {
-        const bare = bareOf(k);
-        return bare === wanted || bare.includes(wanted) || wanted.includes(bare);
-      });
-      if (byBare) return byBare[1];
-    }
-    if (wanted) {
-      const bySubstring = all.find(([k]) => normName(k).includes(wanted));
-      if (bySubstring) return bySubstring[1];
-    }
-    if (all.length === 1) {
-      console.warn(`${MODULE} \u043A\u043B\u044E\u0447 \u043D\u0435 \u0441\u043E\u0432\u043F\u0430\u043B, \u0438\u0441\u043F\u043E\u043B\u044C\u0437\u0443\u044E \u0435\u0434\u0438\u043D\u0441\u0442\u0432\u0435\u043D\u043D\u0443\u044E \u0437\u0430\u043F\u0438\u0441\u044C bucket="${bucketName}": ${all[0][0]}`);
-      return all[0][1];
-    }
-    return null;
-  }
-  __name(lookupEntry, "lookupEntry");
   function findLorebook(raw) {
     const out = [];
     const seen = /* @__PURE__ */ new WeakSet();
@@ -2341,46 +2407,30 @@ REPLY (text only):`;
     if (raw.refInstructionEnabled !== false) {
       out.refInstruction = String(raw.refInstruction || "").trim();
     }
-    const library = raw.characterReferenceLibrary || {};
-    const character = ctx?.characters?.[ctx?.characterId] || null;
-    const charKeys = candidateKeys(character, charName, [avatarHint ? `avatar:${avatarHint}` : ""]);
-    const charEntry = lookupEntry(library, "characters", charKeys, charName);
-    const charApp = extractAppearance(charEntry);
-    if (charApp.appearance || charApp.refs.length) {
-      out.chars.push({ name: charName, appearance: charApp.appearance, refs: charApp.refs });
-    }
-    const userKeys = userAvatar ? [`avatar:${userAvatar}`, userAvatar, userAvatar.replace(/\.[a-z0-9]{2,5}$/i, "")] : [];
-    const userEntry = lookupEntry(library, "users", [...userKeys, ...candidateKeys(null, userName)], userName);
-    if (userEntry && userEntry !== charEntry) {
-      const userApp = extractAppearance(userEntry);
-      if (userApp.appearance || userApp.refs.length) {
-        out.chars.push({ name: userName, appearance: userApp.appearance, refs: userApp.refs });
+    try {
+      const book = loadCharacters();
+      const pick = /* @__PURE__ */ __name((name) => {
+        const wanted = String(name || "").trim().toLowerCase();
+        if (!wanted) return null;
+        return book.find((row) => row.enabled && (row.name.toLowerCase() === wanted || row.aliases.toLowerCase().split(",").map((a) => a.trim()).includes(wanted)));
+      }, "pick");
+      const charRow = pick(charName);
+      if (charRow) out.chars.push({ name: charName, appearance: charRow.appearance, refs: [] });
+      const userRow = pick(userName);
+      if (userRow && userRow !== charRow) {
+        out.chars.push({ name: userName, appearance: userRow.appearance, refs: [] });
       }
+      if (book.length) {
+        console.log(`${MODULE2} \u0441\u043F\u0440\u0430\u0432\u043E\u0447\u043D\u0438\u043A: ${book.length} \u0437\u0430\u043F\u0438\u0441\u0435\u0439, \u0441\u043E\u0432\u043F\u0430\u043B\u043E ${out.chars.length}`);
+      }
+    } catch (_) {
     }
     out.lorebook = findLorebook(raw);
     out.sendCharAvatar = Boolean(raw.sendCharAvatar);
     out.sendUserAvatar = Boolean(raw.sendUserAvatar);
-    console.log(`${MODULE} Haruspics: style=${out.style ? "yes" : "no"} chars=${out.chars.length} lorebook=${out.lorebook.length} neg=${out.negative ? "yes" : "no"}`);
-    if (!out.chars.length && library && typeof library === "object") {
-      const entriesFound = [];
-      for (const bucket of ["characters", "users"]) {
-        for (const [k, v] of Object.entries(library[bucket] || {})) {
-          entriesFound.push({ bucket, key: k, type: typeof v, fields: v && typeof v === "object" ? Object.keys(v) : null });
-        }
-      }
-      console.warn(`${MODULE} \u0412\u041D\u0415\u0428\u041D\u041E\u0421\u0422\u042C \u041D\u0415 \u041D\u0410\u0419\u0414\u0415\u041D\u0410`);
-      console.warn(`${MODULE} \u0438\u0441\u043A\u0430\u043B \u043A\u043B\u044E\u0447\u0438      : ${JSON.stringify(charKeys)}`);
-      console.warn(`${MODULE} characters keys   : ${JSON.stringify(Object.keys(library.characters || {}))}`);
-      console.warn(`${MODULE} users keys        : ${JSON.stringify(Object.keys(library.users || {}))}`);
-      console.warn(`${MODULE} \u043F\u0435\u0440\u0441\u043E\u043D\u0430\u0436          : ${JSON.stringify({ name: charName, avatar: avatarHint })}`);
-      console.warn(`${MODULE} \u043D\u0430\u0439\u0434\u0435\u043D\u043D\u044B\u0435 \u0437\u0430\u043F\u0438\u0441\u0438  : ${JSON.stringify(entriesFound)}`);
-      const sampleChar = Object.values(library.characters || {})[0];
-      if (sampleChar && typeof sampleChar === "object") {
-        console.warn(`${MODULE} \u043F\u0440\u0438\u043C\u0435\u0440 \u0437\u0430\u043F\u0438\u0441\u0438 raw : ${JSON.stringify(sampleChar).slice(0, 900)}`);
-      }
-    }
+    console.log(`${MODULE2} Haruspics: style=${out.style ? "yes" : "no"} chars=${out.chars.length} lorebook=${out.lorebook.length} neg=${out.negative ? "yes" : "no"}`);
     if (!out.style && !out.chars.length && !out.lorebook.length) {
-      console.warn(`${MODULE} \u043D\u0438\u0447\u0435\u0433\u043E \u043D\u0435 \u043D\u0430\u0439\u0434\u0435\u043D\u043E. \u0420\u0435\u0430\u043B\u044C\u043D\u0430\u044F \u0441\u0442\u0440\u0443\u043A\u0442\u0443\u0440\u0430 inline_image_gen:`);
+      console.warn(`${MODULE2} \u043D\u0438\u0447\u0435\u0433\u043E \u043D\u0435 \u043D\u0430\u0439\u0434\u0435\u043D\u043E. \u0420\u0435\u0430\u043B\u044C\u043D\u0430\u044F \u0441\u0442\u0440\u0443\u043A\u0442\u0443\u0440\u0430 inline_image_gen:`);
       for (const line of dumpSettingsShape(raw)) console.warn(`  ${line}`);
     }
     return out;
@@ -2528,7 +2578,13 @@ RULES:
       else if (mode === "selfie") tags.push("looking at viewer");
       charBlocks.push(tags.filter(Boolean).join(", "));
     }
-    const prompt = [base.filter(Boolean).join(", "), ...charBlocks.filter(Boolean)].join(" | ");
+    let prompt = [base.filter(Boolean).join(", "), ...charBlocks.filter(Boolean)].join(" | ");
+    try {
+      const { appearance } = matchCharacters(prompt);
+      const missing = appearance.filter((a) => !prompt.toLowerCase().includes(a.toLowerCase()));
+      if (missing.length) prompt = `${missing.join(", ")}, ${prompt}`;
+    } catch (_) {
+    }
     const negative = h.negative ? cleanTags(h.negative) : DEFAULT_NEGATIVE;
     return { prompt, negative };
   }
@@ -2551,10 +2607,10 @@ RULES:
       const raw = await askModel(ask);
       structured = parseStructured(raw);
       if (!structured) {
-        console.warn(`${MODULE} model returned no parseable JSON:`, String(raw || "").slice(0, 200));
+        console.warn(`${MODULE2} model returned no parseable JSON:`, String(raw || "").slice(0, 200));
       }
     } catch (err) {
-      console.warn(`${MODULE} model call failed:`, err?.message || err);
+      console.warn(`${MODULE2} model call failed:`, err?.message || err);
     }
     if (!structured || !(structured.characters || []).some((c) => c.ref === charName)) {
       structured = structured || {};
@@ -3865,6 +3921,11 @@ ${ask}`,
                 </div>
 
                 <div class="astral-settings-section">
+                    <h3 class="astral-section-title">\u0412\u043D\u0435\u0448\u043D\u043E\u0441\u0442\u044C \u043F\u0435\u0440\u0441\u043E\u043D\u0430\u0436\u0435\u0439</h3>
+                    <div id="astral-app-charbook"></div>
+                </div>
+
+                <div class="astral-settings-section">
                     <h3 class="astral-section-title">\u0421\u0442\u0430\u0442\u0438\u0441\u0442\u0438\u043A\u0430</h3>
                     <div class="astral-stats-grid">
                         <div class="astral-stat-item">
@@ -3904,6 +3965,11 @@ ${ask}`,
       this.attachEvents(container);
     }
     attachEvents(container) {
+      const bookHost = container.querySelector("#astral-app-charbook");
+      if (bookHost) {
+        bookHost.innerHTML = renderCharacterBookHTML();
+        bindCharacterBook(bookHost);
+      }
       if (!this.accountManager) return;
       container.querySelector('[data-action="save-profile"]')?.addEventListener("click", () => {
         const name = container.querySelector("#astral-account-name")?.value || "";
@@ -4601,6 +4667,10 @@ description \u043F\u0438\u0448\u0438 \u043A\u0430\u043A \u043F\u0440\u043E\u043C
             <option value="void">\u041F\u0443\u0441\u0442\u043E\u0442\u0430</option>
         </select>
         
+        <hr />
+        <b>\u0421\u043F\u0440\u0430\u0432\u043E\u0447\u043D\u0438\u043A \u0432\u043D\u0435\u0448\u043D\u043E\u0441\u0442\u0438</b>
+        <div id="astral-charbook-host"></div>
+
         <small class="notes">\u041F\u0440\u043E\u0432\u0430\u0439\u0434\u0435\u0440 Haruspics \u0438\u0441\u043F\u043E\u043B\u044C\u0437\u0443\u0435\u0442 \u043D\u0430\u0441\u0442\u0440\u043E\u0439\u043A\u0438 \u0438\u0437 \u0440\u0430\u0441\u0448\u0438\u0440\u0435\u043D\u0438\u044F Haruspics Fusion. \u041E\u0441\u0442\u0430\u043B\u044C\u043D\u044B\u0435 \u043F\u0440\u043E\u0432\u0430\u0439\u0434\u0435\u0440\u044B \u0442\u0440\u0435\u0431\u0443\u044E\u0442 API-\u043A\u043B\u044E\u0447\u0438 \u0432 User Settings \u2192 API.</small>
     </div>
 </div>`;
@@ -4612,6 +4682,11 @@ description \u043F\u0438\u0448\u0438 \u043A\u0430\u043A \u043F\u0440\u043E\u043C
         const drawer = document.getElementById("astral-phone-settings");
         drawer?.classList.toggle("openDrawer");
       });
+      const bookHost = document.getElementById("astral-charbook-host");
+      if (bookHost) {
+        bookHost.innerHTML = renderCharacterBookHTML();
+        bindCharacterBook(bookHost);
+      }
       document.getElementById("astral-phone-image-provider")?.addEventListener("change", saveSettings);
       document.getElementById("astral-phone-theme-accent")?.addEventListener("change", saveSettings);
       document.getElementById("astral-phone-theme-bg")?.addEventListener("change", saveSettings);

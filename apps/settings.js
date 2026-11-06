@@ -3,6 +3,8 @@
  * Contract: constructor sets this.title / this.icon, render(container) writes into container.
  */
 
+import { renderCharacterBookHTML, bindCharacterBook } from './character-book.js';
+
 export class SettingsApp {
     constructor(context, storage, accountManager) {
         this.context = context;
@@ -42,6 +44,11 @@ export class SettingsApp {
 
                         <button class="astral-btn-primary" data-action="save-profile">Сохранить</button>
                     </div>
+                </div>
+
+                <div class="astral-settings-section">
+                    <h3 class="astral-section-title">Внешность персонажей</h3>
+                    <div id="astral-app-charbook"></div>
                 </div>
 
                 <div class="astral-settings-section">
@@ -86,6 +93,13 @@ export class SettingsApp {
     }
 
     attachEvents(container) {
+        // Справочник внешности — работает независимо от аккаунта
+        const bookHost = container.querySelector('#astral-app-charbook');
+        if (bookHost) {
+            bookHost.innerHTML = renderCharacterBookHTML();
+            bindCharacterBook(bookHost);
+        }
+
         if (!this.accountManager) return;
         container.querySelector('[data-action="save-profile"]')?.addEventListener('click', () => {
             const name = container.querySelector('#astral-account-name')?.value || '';

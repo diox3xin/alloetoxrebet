@@ -40,6 +40,8 @@
  * notifications and the iigLog ring buffer. Logging goes to console instead.
  */
 
+import { injectAppearance } from './character-book.js';
+
 const HARUSPICS_MODULE_NAME = 'inline_image_gen';
 
 const VALID_ASPECT_RATIOS = ['1:1', '2:3', '3:2', '3:4', '4:3', '4:5', '5:4', '9:16', '16:9', '21:9'];
@@ -556,8 +558,16 @@ export class ImageGenerator {
      */
     async generate(prompt, metadata = {}) {
         const settings = this._settings();
-        const text = String(prompt ?? '').trim();
+        let text = String(prompt ?? '').trim();
         if (!text) throw new Error('Пустой промпт для генерации изображения.');
+
+        // Справочник внешности: имена в промпте подтягивают описания.
+        // Работает для любой генерации — галерея, creator studio, спайси.
+        try {
+            text = injectAppearance(text);
+        } catch (err) {
+            console.warn('[AstralImageGen] appearance injection skipped:', err?.message);
+        }
 
         // Auto-sync style and character refs from Haruspics unless overridden
         const style = metadata.style !== undefined ? String(metadata.style) : this.getStyle();

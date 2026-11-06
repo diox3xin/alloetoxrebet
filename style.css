@@ -1897,3 +1897,79 @@
   transition: .16s;
 }
 .astral-camera-settings-textarea:focus { border-color: rgba(217,154,181,.45); }
+
+/* ═══════════════════════ Character book ═══════════════════════ */
+
+.astral-charbook-list {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  margin-bottom: 10px;
+}
+
+.astral-charbook-row {
+  display: grid;
+  grid-template-columns: 1fr 1fr auto;
+  grid-template-areas:
+    "name  aliases  actions"
+    "app   app      app";
+  gap: 6px;
+  padding: 10px;
+  border-radius: 10px;
+  background: rgba(217,154,181,.05);
+  border: 1px solid rgba(217,154,181,.18);
+}
+
+.astral-charbook-name    { grid-area: name; }
+.astral-charbook-aliases { grid-area: aliases; }
+.astral-charbook-appearance { grid-area: app; resize: vertical; min-height: 46px; }
+
+.astral-charbook-actions {
+  grid-area: actions;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.astral-charbook-toggle {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  font-size: 10px;
+  letter-spacing: .06em;
+  text-transform: uppercase;
+  color: var(--phone-muted, #A18D9B);
+  cursor: pointer;
+}
+
+.astral-charbook-toggle input { accent-color: #D99AB5; }
+
+.astral-charbook-remove {
+  width: 26px;
+  height: 26px;
+  padding: 0;
+  border-radius: 6px;
+  border: 1px solid rgba(220,53,69,.4);
+  background: rgba(220,53,69,.12);
+  color: #e07585;
+  cursor: pointer;
+  line-height: 1;
+  transition: .14s;
+}
+.astral-charbook-remove:hover { background: rgba(220,53,69,.28); color: #fff; }
+
+.astral-charbook-add { margin-top: 2px; }
+
+.astral-charbook-empty {
+  padding: 14px;
+  text-align: center;
+  font-size: 11px;
+  opacity: .55;
+  border: 1px dashed rgba(217,154,181,.25);
+  border-radius: 10px;
+}
+
+/* в панели ST поля шире — там сетка не нужна такой тесной */
+#astral-charbook-host .astral-charbook-row {
+  grid-template-columns: minmax(110px, 1fr) minmax(110px, 1fr) auto;
+}

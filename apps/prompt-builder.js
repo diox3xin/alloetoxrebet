@@ -16,6 +16,8 @@
  *   <outfit>, <expression>, <action>, <gaze> | ...
  */
 
+import { loadCharacters, matchCharacters } from './character-book.js';
+
 const MODULE = '[AstralPrompt]';
 
 /** Стандартные quality-теги NovelAI. */
@@ -424,27 +426,30 @@ export function collectHaruspics(imageGen, ctx) {
         out.refInstruction = String(raw.refInstruction || '').trim();
     }
 
-    /* ── внешность ── */
-    const library = raw.characterReferenceLibrary || {};
+    /* ── внешность: собственный справочник расширения ── */
+    try {
+        const book = loadCharacters();
+        const pick = (name) => {
+            const wanted = String(name || '').trim().toLowerCase();
+            if (!wanted) return null;
+            return book.find(row => row.enabled
+                && (row.name.toLowerCase() === wanted
+                    || row.aliases.toLowerCase().split(',').map(a => a.trim()).includes(wanted)));
+        };
 
-    const character = ctx?.characters?.[ctx?.characterId] || null;
-    const charKeys = candidateKeys(character, charName, [avatarHint ? `avatar:${avatarHint}` : '']);
-    const charEntry = lookupEntry(library, 'characters', charKeys, charName);
-    const charApp = extractAppearance(charEntry);
-    if (charApp.appearance || charApp.refs.length) {
-        out.chars.push({ name: charName, appearance: charApp.appearance, refs: charApp.refs });
-    }
+        const charRow = pick(charName);
+        if (charRow) out.chars.push({ name: charName, appearance: charRow.appearance, refs: [] });
 
-    const userKeys = userAvatar
-        ? [`avatar:${userAvatar}`, userAvatar, userAvatar.replace(/\.[a-z0-9]{2,5}$/i, '')]
-        : [];
-    const userEntry = lookupEntry(library, 'users', [...userKeys, ...candidateKeys(null, userName)], userName);
-    if (userEntry && userEntry !== charEntry) {
-        const userApp = extractAppearance(userEntry);
-        if (userApp.appearance || userApp.refs.length) {
-            out.chars.push({ name: userName, appearance: userApp.appearance, refs: userApp.refs });
+        const userRow = pick(userName);
+        if (userRow && userRow !== charRow) {
+            out.chars.push({ name: userName, appearance: userRow.appearance, refs: [] });
         }
-    }
+
+        if (book.length) {
+            console.log(`${MODULE} справочник: ${book.length} записей, `
+                + `совпало ${out.chars.length}`);
+        }
+    } catch (_) { /* ignore */ }
 
     /* ── лорбуки ── */
     out.lorebook = findLorebook(raw);
@@ -458,26 +463,7 @@ export function collectHaruspics(imageGen, ctx) {
         + `neg=${out.negative ? 'yes' : 'no'}`);
 
     // Ничего не нашлось — печатаем реальную структуру, чтобы починить точно
-    if (!out.chars.length && library && typeof library === 'object') {
-        const entriesFound = [];
-        for (const bucket of ['characters', 'users']) {
-            for (const [k, v] of Object.entries(library[bucket] || {})) {
-                entriesFound.push({ bucket, key: k, type: typeof v, fields: v && typeof v === 'object' ? Object.keys(v) : null });
-            }
-        }
-        console.warn(`${MODULE} ВНЕШНОСТЬ НЕ НАЙДЕНА`);
-        console.warn(`${MODULE} искал ключи      : ${JSON.stringify(charKeys)}`);
-        console.warn(`${MODULE} characters keys   : ${JSON.stringify(Object.keys(library.characters || {}))}`);
-        console.warn(`${MODULE} users keys        : ${JSON.stringify(Object.keys(library.users || {}))}`);
-        console.warn(`${MODULE} персонаж          : ${JSON.stringify({ name: charName, avatar: avatarHint })}`);
 
-        console.warn(`${MODULE} найденные записи  : ${JSON.stringify(entriesFound)}`);
-
-        const sampleChar = Object.values(library.characters || {})[0];
-        if (sampleChar && typeof sampleChar === 'object') {
-            console.warn(`${MODULE} пример записи raw : ${JSON.stringify(sampleChar).slice(0, 900)}`);
-        }
-    }
 
     if (!out.style && !out.chars.length && !out.lorebook.length) {
         console.warn(`${MODULE} ничего не найдено. Реальная структура inline_image_gen:`);
@@ -709,7 +695,17 @@ export function assemble(structured, haruspics, opts) {
         charBlocks.push(tags.filter(Boolean).join(', '));
     }
 
-    const prompt = [base.filter(Boolean).join(', '), ...charBlocks.filter(Boolean)].join(' | ');
+    let prompt = [base.filter(Boolean).join(', '), ...charBlocks.filter(Boolean)].join(' | ');
+
+    // Триггер по имени: любые персонажи справочника, упомянутые в промпте,
+    // получают свою внешность. Работает и для тех, кого модель не описала
+    // (NPC в кадре), и для тех, кто уже есть в блоках — дублей не будет.
+    try {
+        const { appearance } = matchCharacters(prompt);
+        const missing = appearance.filter(a => !prompt.toLowerCase().includes(a.toLowerCase()));
+        if (missing.length) prompt = `${missing.join(', ')}, ${prompt}`;
+    } catch (_) { /* ignore */ }
+
     const negative = h.negative ? cleanTags(h.negative) : DEFAULT_NEGATIVE;
 
     return { prompt, negative };
