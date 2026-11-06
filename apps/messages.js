@@ -152,6 +152,12 @@ export class MessagesApp {
                     <path d="M22 2L11 13M22 2l-7 20-4-9-9-4z"/>
                 </svg>
             </button>
+            <button class="astral-msg-reply-btn" id="astral-msg-reply-btn" title="Ответить от персонажа">
+                <svg viewBox="0 0 24 24" width="17" height="17" stroke="currentColor"
+                     fill="none" stroke-width="2.2">
+                    <path d="M20 15a2 2 0 0 1-2 2H4l-5 5V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/>
+                </svg>
+            </button>
         `;
         container.appendChild(composer);
 
@@ -166,6 +172,75 @@ export class MessagesApp {
         input.addEventListener('keydown', (e) => {
             if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); send(); }
         });
+
+        // ── reply button: trigger character response ──
+        composer.querySelector('#astral-msg-reply-btn').addEventListener('click', () => {
+            this._requestCharacterReply(character);
+        });
+    }
+
+    /** Ask the model to generate a reply from the character. */
+    async _requestCharacterReply(character) {
+        try {
+            const ctx = globalThis.SillyTavern?.getContext?.();
+            if (typeof ctx?.generateQuietPrompt !== 'function') {
+                alert('generateQuietPrompt недоступен — обновите SillyTavern.');
+                return;
+            }
+
+            // Find the last unread message from this character, or pick the latest
+            const state = this.storage.getState();
+            const thread = (state.messages || []).filter(m => m.character === character);
+            const lastMsg = thread[thread.length - 1];
+            const prompt = this._buildReplyPrompt(character, lastMsg, state);
+
+            const result = await ctx.generateQuietPrompt(prompt, false, false);
+            const text = String(result || '').trim();
+            if (!text) {
+                alert('Персонаж молчит');
+                return;
+            }
+
+            // Add as incoming message
+            state.messages.push({
+                id: `reply_${Date.now()}_${Math.random().toString(36).slice(2, 7)}`,
+                character,
+                role: thread.find(m => m.role)?.role || '',
+                text,
+                from: 'them',
+                isIncoming: true,
+                fromUser: false,
+                timestamp: Date.now(),
+            });
+            this.storage.save();
+            try { globalThis.__astralRefreshPrompt?.(); } catch { /* ignore */ }
+            this.render(document.querySelector('.astral-phone-body'), { character });
+        } catch (err) {
+            console.error('[Astral Phone] reply generation failed:', err);
+            console.error('Full error:', err);
+            alert(`Ошибка: ${err.message}`);
+        }
+    }
+
+    /** Build a prompt asking the character to respond. */
+    _buildReplyPrompt(character, lastMsg, state) {
+        const ctx = this.context || globalThis.SillyTavern?.getContext?.() || {};
+        const charName = ctx.name2 || 'персонаж';
+        const userName = ctx.name1 || 'ты';
+
+        const thread = (state.messages || [])
+            .filter(m => m.character === character)
+            .slice(-8)
+            .map(m => `${m.from === 'me' ? 'Ты' : 'Персонаж'}: ${m.text}`)
+            .join('\n');
+
+        return `[MESSAGE_REPLY] Character: ${charName}
+
+You are ${charName} messaging ${userName} on the phone. The last thing they wrote was: "${lastMsg?.text || '(no message)'}".
+
+Write a SHORT, natural TEXT REPLY from ${charName}'s perspective — one sentence or a few casual words. Keep it in character.
+
+REPLY (text only):`;
     }
 
     /** Append an outgoing message to the thread and persist it. */

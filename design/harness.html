@@ -29,22 +29,30 @@ window.__switchChat = (id) => {
 window.__diskState = () => JSON.parse(JSON.stringify(__chatStore));
 window.__quietPrompt = async (prompt) => {
   window.__lastPrompt = prompt;
-  return JSON.stringify({
-    contacts: [
-      { name: 'Мира', role: 'лучшая подруга', messages: [
-        { from: 'them', text: 'Ты где пропала?', minutesAgo: 120 },
-        { from: 'me', text: 'Прости, замоталась', minutesAgo: 110 },
-        { from: 'them', text: 'Пиши хоть иногда 🖤', minutesAgo: 100 }
-      ]},
-      { name: 'Кай', role: 'бывший', messages: [
-        { from: 'them', text: 'Не спишь?', minutesAgo: 40 },
-        { from: 'me', text: 'Сплю', minutesAgo: 35 }
-      ]},
-      { name: 'Босс', role: 'менеджер', messages: [
-        { from: 'them', text: 'Отчёт до утра', minutesAgo: 25 }
-      ]}
-    ]
-  });
+  // Detect what kind of generation was requested
+  if (prompt.includes('[MESSAGE_REPLY]')) {
+    // Message reply — return plain text
+    return 'Спасибо, что пишешь! Я рад слышать. 😊';
+  } else if (prompt.includes('[Astral Phone]') && prompt.includes('contacts')) {
+    // Contact seeding — return JSON
+    return JSON.stringify({
+      contacts: [
+        { name: 'Мира', role: 'лучшая подруга', messages: [
+          { from: 'them', text: 'Ты где пропала?', minutesAgo: 120 },
+          { from: 'me', text: 'Прости, замоталась', minutesAgo: 110 },
+          { from: 'them', text: 'Пиши хоть иногда 🖤', minutesAgo: 100 }
+        ]},
+        { name: 'Кай', role: 'бывший', messages: [
+          { from: 'them', text: 'Не спишь?', minutesAgo: 40 },
+          { from: 'me', text: 'Сплю', minutesAgo: 35 }
+        ]},
+        { name: 'Босс', role: 'менеджер', messages: [
+          { from: 'them', text: 'Отчёт до утра', minutesAgo: 25 }
+        ]}
+      ]
+    });
+  }
+  return 'Окей';
 };
 window.SillyTavern = {
   getContext: () => ({
