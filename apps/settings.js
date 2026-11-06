@@ -4,6 +4,7 @@
  */
 
 import { renderCharacterBookHTML, bindCharacterBook } from './character-book.js';
+import { loadApiSettings, saveApiSettings, isApiConfigured } from './prompt-llm.js';
 
 export class SettingsApp {
     constructor(context, storage, accountManager) {
@@ -44,6 +45,27 @@ export class SettingsApp {
 
                         <button class="astral-btn-primary" data-action="save-profile">Сохранить</button>
                     </div>
+                </div>
+
+                <div class="astral-settings-section">
+                    <h3 class="astral-section-title">Настройки API</h3>
+                    <div class="astral-form-group">
+                        <label>Endpoint</label>
+                        <input type="text" id="astral-api-endpoint" placeholder="https://api.openai.com/v1" />
+                    </div>
+                    <div class="astral-form-group">
+                        <label>API ключ</label>
+                        <input type="password" id="astral-api-key" placeholder="sk-..." />
+                    </div>
+                    <div class="astral-form-group">
+                        <label>Модель</label>
+                        <input type="text" id="astral-api-model" placeholder="gpt-4o-mini" />
+                    </div>
+                    <div class="astral-form-group">
+                        <label>Температура</label>
+                        <input type="number" id="astral-api-temp" min="0" max="2" step="0.1" value="0.7" />
+                    </div>
+                    <div class="astral-api-note" id="astral-api-status"></div>
                 </div>
 
                 <div class="astral-settings-section">
@@ -93,6 +115,40 @@ export class SettingsApp {
     }
 
     attachEvents(container) {
+        // Настройки API для модели, которая пишет промпты
+        const api = {
+            endpoint: container.querySelector('#astral-api-endpoint'),
+            apiKey: container.querySelector('#astral-api-key'),
+            model: container.querySelector('#astral-api-model'),
+            temperature: container.querySelector('#astral-api-temp'),
+        };
+        const status = container.querySelector('#astral-api-status');
+
+        const cur = loadApiSettings();
+        if (api.endpoint) api.endpoint.value = cur.endpoint;
+        if (api.apiKey) api.apiKey.value = cur.apiKey;
+        if (api.model) api.model.value = cur.model;
+        if (api.temperature) api.temperature.value = cur.temperature;
+
+        const refresh = () => {
+            if (status) {
+                status.textContent = isApiConfigured()
+                    ? '✓ Промпты пишет указанная модель'
+                    : 'Промпты пишет основная модель чата';
+            }
+        };
+        refresh();
+
+        Object.values(api).forEach(el => el?.addEventListener('change', () => {
+            saveApiSettings({
+                endpoint: api.endpoint?.value || '',
+                apiKey: api.apiKey?.value || '',
+                model: api.model?.value || '',
+                temperature: Number(api.temperature?.value) || 0.7,
+            });
+            refresh();
+        }));
+
         // Справочник внешности — работает независимо от аккаунта
         const bookHost = container.querySelector('#astral-app-charbook');
         if (bookHost) {

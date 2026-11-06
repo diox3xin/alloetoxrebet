@@ -39,6 +39,8 @@ const COMMENT_TEXTS = [
     'Жду продолжения',
 ];
 
+import { enhancePrompt, resolveStyle } from './prompt-llm.js';
+
 export class CreatorApp {
     constructor(context, storage, imageGen) {
         this.context = context;
@@ -481,6 +483,9 @@ export class CreatorApp {
                 <label class="astral-field-label" for="astral-post-text">Промпт для фото</label>
                 <textarea class="astral-textarea" id="astral-post-text"
                     placeholder="Что на фото — поза, одежда, место, свет. На подпись не влияет.">${this._esc(post?.prompt || '')}</textarea>
+                <button class="astral-btn astral-btn-wide astral-enhance-btn" id="astral-post-enhance">
+                    ✨ Улучшить промпт
+                </button>
 
                 <div class="astral-modal-actions">
                     <button class="astral-btn" id="astral-post-cancel">Отмена</button>
@@ -508,6 +513,40 @@ export class CreatorApp {
 
             if (post) this._updatePost(editIndex, { caption, prompt });
             else await this._createPost(caption, prompt);
+        });
+
+        // «Улучшить промпт»: черновик пользователя → аккуратные теги для NovelAI
+        const enhanceBtn = overlay.querySelector('#astral-post-enhance');
+        const promptField = overlay.querySelector('#astral-post-text');
+        enhanceBtn?.addEventListener('click', async () => {
+            const draft = promptField.value.trim();
+            if (!draft) {
+                this._toast('Сначала напиши черновик промпта', 'error');
+                promptField.focus();
+                return;
+            }
+
+            const original = enhanceBtn.textContent;
+            enhanceBtn.disabled = true;
+            enhanceBtn.textContent = 'Улучшаю…';
+
+            try {
+                const improved = await enhancePrompt(draft, {
+                    character: this.context?.characters?.[this.context?.characterId]?.name || this.context?.name2 || '',
+                });
+                if (improved) {
+                    promptField.value = improved;
+                    this._toast('Промпт улучшен', 'success');
+                } else {
+                    this._toast('Модель вернула пустой ответ', 'error');
+                }
+            } catch (err) {
+                console.error('[Creator] enhance failed:', err);
+                this._toast(`Не получилось: ${err.message}`, 'error');
+            } finally {
+                enhanceBtn.disabled = false;
+                enhanceBtn.textContent = original;
+            }
         });
 
         overlay.querySelector('#astral-post-caption').focus();
@@ -572,6 +611,7 @@ export class CreatorApp {
         overlay.className = 'astral-modal';
         overlay.innerHTML = `
             <div class="astral-modal-card astral-modal-card--sheet">
+                <button class="astral-sheet-btn" data-act="regen">Перегенерировать фото</button>
                 <button class="astral-sheet-btn" data-act="edit">Редактировать</button>
                 <button class="astral-sheet-btn astral-sheet-btn--danger" data-act="delete">Удалить</button>
                 <button class="astral-sheet-btn astral-sheet-btn--cancel" data-act="cancel">Отмена</button>
@@ -586,6 +626,14 @@ export class CreatorApp {
         });
 
         overlay.querySelector('[data-act="cancel"]').addEventListener('click', close);
+        overlay.querySelector('[data-act="regen"]')?.addEventListener('click', async (e) => {
+            const btn = e.currentTarget;
+            btn.disabled = true;
+            btn.textContent = 'Генерирую…';
+            close();
+            await this._generate(index);
+        });
+
         overlay.querySelector('[data-act="edit"]').addEventListener('click', () => {
             close();
             this._openComposer(index);
@@ -701,6 +749,15 @@ export class CreatorApp {
 
     /* ─────────────────────────── generation ─────────────────────────── */
 
+    /** Имя персонажа: карточка надёжнее, чем name2 (тот может быть 'SillyTavern System'). */
+    _charName() {
+        const ctx = this.context || {};
+        const fromCard = String(ctx.characters?.[ctx.characterId]?.name || '').trim();
+        if (fromCard) return fromCard;
+        const fallback = String(ctx.name2 || '').trim();
+        return /sillytavern/i.test(fallback) ? 'Персонаж' : (fallback || 'Персонаж');
+    }
+
     async _generate(index, silent = false) {
         if (!this.imageGen.isAvailable()) {
             this._toast('Haruspics не установлен', 'error');
@@ -718,17 +775,24 @@ export class CreatorApp {
 
             // Only the prompt reaches the generator — the caption stays plain text.
             const scene = String(post.prompt || '').trim();
-            const prompt = [this.context.name2 || 'Персонаж', scene].filter(Boolean).join(' — ');
+            const charName = this._charName();
+
+            // Внешность из справочника подставляется автоматически (внутри
+            // imageGen.generate), а стиль подтягиваем так же, как в галерее.
+            const prompt = [charName, scene].filter(Boolean).join(', ');
+            const style = resolveStyle(this.imageGen) || String(post.style || '');
 
             const url = await this.imageGen.generate(prompt, {
-                character: this.context.name2,
+                character: charName,
                 type: 'creator_post',
                 nsfw: true,
+                style,
             });
 
             post.imageUrl = url;
             post.imageW = 0;
             post.imageH = 0;
+            if (style) post.style = style;
             this.storage.save();
             this._toast('Готово', 'success');
         } catch (err) {

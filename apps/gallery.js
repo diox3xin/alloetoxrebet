@@ -5,6 +5,7 @@
 
 import { ICONS } from './phone-core.js';
 import { buildPhotoPrompt } from './prompt-builder.js';
+import { ask as askLLM } from './prompt-llm.js';
 
 export class GalleryApp {
     constructor(context, storage, imageGen) {
@@ -50,16 +51,15 @@ export class GalleryApp {
             tile.innerHTML = `
                 <img src="${photo.imageUrl}" alt="" loading="lazy">
                 <div class="astral-tile-overlay">
-                    <div class="astral-tile-text">${this._esc(photo.description)}</div>
                     <div class="astral-tile-meta">${this._time(photo.timestamp)}</div>
                 </div>`;
-            tile.addEventListener('click', () => this._openViewer(photo));
+            tile.addEventListener('click', () => this._openViewer(photo, idx));
         } else {
             const busy = this._busy.has(idx);
             tile.innerHTML = `
                 <div class="astral-tile-empty">
                     <div class="astral-tile-empty-icon">${ICONS.gallery}</div>
-                    <div class="astral-tile-text">${this._esc(photo.description)}</div>
+                    <div class="astral-tile-text">${this._esc(this._preview(photo))}</div>
                     <button class="astral-btn" ${busy ? 'disabled' : ''} data-gen="${idx}">
                         ${busy ? 'Генерация…' : 'Создать фото'}
                     </button>
@@ -281,31 +281,13 @@ export class GalleryApp {
      * generateRaw предпочтителен; generateQuietPrompt — фолбэк.
      */
     async _askModel(ctx, ask) {
-        const system = 'You are an image-prompt tagger. You answer with JSON only. '
-            + 'English tags only. You never narrate, roleplay or translate.';
-
-        if (typeof ctx.generateRaw === 'function') {
-            try {
-                const out = await ctx.generateRaw({
-                    prompt: ask,
-                    systemPrompt: system,
-                    responseLength: 500,
-                });
-                if (String(out || '').trim()) return out;
-            } catch (err) {
-                console.warn('[Astral Phone] generateRaw failed:', err?.message);
-            }
-        }
-
-        if (typeof ctx.generateQuietPrompt === 'function') {
-            return await ctx.generateQuietPrompt(
-                `[JSON TAGS ONLY — ENGLISH ONLY — NO PROSE]\n${ask}`,
-                false,
-                false,
-            );
-        }
-
-        throw new Error('Нет доступной функции генерации (generateRaw / generateQuietPrompt).');
+        // Общий путь: настроенный API (если задан) → generateRaw → generateQuietPrompt.
+        // Так выбор модели в «Настройках API» действует и в галерее тоже.
+        return await askLLM(ask, {
+            system: 'You are an image-prompt tagger. You answer with JSON only. '
+                + 'English tags only. You never narrate, roleplay or translate.',
+            responseLength: 500,
+        });
     }
 
     async _generate(index, silent = false) {
@@ -348,14 +330,23 @@ export class GalleryApp {
         return String(photo.description || photo.character || '').trim();
     }
 
-    _openViewer(photo) {
+    _openViewer(photo, index) {
         const viewer = document.createElement('div');
         viewer.className = 'astral-viewer';
         viewer.innerHTML = `
             <div class="astral-viewer-container">
                 <button class="astral-viewer-close" title="Закрыть">✕</button>
                 <img src="${photo.imageUrl}" alt="">
-                <div class="astral-viewer-caption">${this._esc(photo.description)}</div>
+
+                <details class="astral-viewer-prompt">
+                    <summary>Промпт</summary>
+                    <textarea class="astral-viewer-prompt-text" spellcheck="false">${this._esc(photo.description || '')}</textarea>
+                    <div class="astral-viewer-prompt-actions">
+                        <button class="astral-btn" id="astral-prompt-save">Сохранить</button>
+                        <button class="astral-btn astral-btn-primary" id="astral-prompt-regen">Перегенерировать</button>
+                    </div>
+                </details>
+
                 <button class="astral-viewer-delete" title="Удалить фото">
                     <svg viewBox="0 0 24 24" width="20" height="20" stroke="currentColor" fill="none" stroke-width="2">
                         <path d="M3 6h18M8 6V4a2 2 0 012-2h4a2 2 0 012 2v2m3 0v14a2 2 0 01-2 2H7a2 2 0 01-2-2V6h14zM10 11v6M14 11v6"/>
@@ -365,6 +356,7 @@ export class GalleryApp {
         `;
 
         const close = () => viewer.remove();
+        const area = viewer.querySelector('.astral-viewer-prompt-text');
 
         viewer.querySelector('.astral-viewer-close').addEventListener('click', (e) => {
             e.stopPropagation();
@@ -377,20 +369,49 @@ export class GalleryApp {
             close();
         });
 
-        // Закрытие — только клик по пустому фону. Клик по картинке или подписи
-        // не должен закрывать: пользователь листает и читает.
+        viewer.querySelector('#astral-prompt-save').addEventListener('click', (e) => {
+            e.stopPropagation();
+            this._savePrompt(index, area.value.trim());
+        });
+
+        viewer.querySelector('#astral-prompt-regen').addEventListener('click', async (e) => {
+            e.stopPropagation();
+            const btn = e.currentTarget;
+            btn.disabled = true;
+            btn.textContent = 'Генерирую…';
+            await this._savePrompt(index, area.value.trim(), { silent: true });
+            close();
+            await this._generate(index);
+        });
+
         viewer.addEventListener('click', (e) => {
             if (e.target === viewer) close();
         });
 
-        // Esc тоже закрывает
         const onKey = (e) => {
             if (e.key === 'Escape') { close(); document.removeEventListener('keydown', onKey); }
         };
         document.addEventListener('keydown', onKey);
-        viewer.addEventListener('astro:removed', () => document.removeEventListener('keydown', onKey));
 
         document.querySelector('.astral-phone').appendChild(viewer);
+    }
+
+    /** Короткая подпись для плитки: промпт целиком не показываем. */
+    _preview(photo) {
+        const src = String(photo.description || '').trim();
+        if (!src) return 'Фото';
+        const first = src.split(',')[0].trim();
+        return first.length > 40 ? `${first.slice(0, 40)}…` : first;
+    }
+
+    /** Сохранить отредактированный промпт. */
+    _savePrompt(index, value, opts = {}) {
+        const state = this.storage.getState();
+        const photo = state.gallery?.[index];
+        if (!photo) return;
+        photo.description = value;
+        this.storage.save();
+        if (!opts.silent) this._toast('Промпт сохранён');
     }
 
     _deletePhoto(photo) {

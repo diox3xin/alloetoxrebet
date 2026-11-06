@@ -2614,7 +2614,7 @@ RULES:
     const charName = resolveCharName(ctx);
     const userName = resolveUserName(ctx);
     const haruspics = collectHaruspics(imageGen2, ctx);
-    const ask = buildAsk({
+    const ask2 = buildAsk({
       mode,
       charName,
       userName,
@@ -2624,7 +2624,7 @@ RULES:
     });
     let structured = null;
     try {
-      const raw = await askModel(ask);
+      const raw = await askModel(ask2);
       structured = parseStructured(raw);
       if (!structured) {
         console.warn(`${MODULE2} model returned no parseable JSON:`, String(raw || "").slice(0, 200));
@@ -2649,6 +2649,181 @@ RULES:
     return { prompt, negative, structured, haruspics };
   }
   __name(buildPhotoPrompt, "buildPhotoPrompt");
+
+  // apps/prompt-llm.js
+  var MODULE3 = "[AstralLLM]";
+  var SETTINGS_KEY2 = "astral-phone";
+  function loadApiSettings() {
+    const empty = { endpoint: "", apiKey: "", model: "", temperature: 0.7, maxTokens: 600 };
+    try {
+      const ctx = globalThis.SillyTavern?.getContext?.();
+      const bag = ctx?.extensionSettings || globalThis.extension_settings;
+      const raw = bag?.[SETTINGS_KEY2]?.promptApi;
+      if (!raw || typeof raw !== "object") return empty;
+      return {
+        endpoint: String(raw.endpoint || "").trim(),
+        apiKey: String(raw.apiKey || "").trim(),
+        model: String(raw.model || "").trim(),
+        temperature: Number.isFinite(Number(raw.temperature)) ? Number(raw.temperature) : 0.7,
+        maxTokens: Number.isFinite(Number(raw.maxTokens)) ? Number(raw.maxTokens) : 600
+      };
+    } catch (_) {
+      return empty;
+    }
+  }
+  __name(loadApiSettings, "loadApiSettings");
+  function saveApiSettings(patch) {
+    try {
+      const ctx = globalThis.SillyTavern?.getContext?.();
+      const bag = ctx?.extensionSettings || globalThis.extension_settings;
+      if (!bag) return false;
+      if (!bag[SETTINGS_KEY2]) bag[SETTINGS_KEY2] = {};
+      bag[SETTINGS_KEY2].promptApi = { ...loadApiSettings(), ...patch };
+      const persist = ctx?.saveSettingsDebounced || globalThis.saveSettingsDebounced;
+      if (typeof persist === "function") persist();
+      return true;
+    } catch (err) {
+      console.warn(`${MODULE3} save failed:`, err?.message || err);
+      return false;
+    }
+  }
+  __name(saveApiSettings, "saveApiSettings");
+  function isApiConfigured() {
+    const s = loadApiSettings();
+    return Boolean(s.endpoint && s.model);
+  }
+  __name(isApiConfigured, "isApiConfigured");
+  function normalizeEndpoint(endpoint) {
+    const clean = String(endpoint || "").trim().replace(/\/+$/, "");
+    if (!clean) return "";
+    if (/\/(chat\/completions|completions)$/i.test(clean)) return clean;
+    if (/\/v1$/i.test(clean)) return `${clean}/chat/completions`;
+    return `${clean}/v1/chat/completions`;
+  }
+  __name(normalizeEndpoint, "normalizeEndpoint");
+  async function callOpenAICompatible(prompt, systemPrompt, settings) {
+    const url = normalizeEndpoint(settings.endpoint);
+    if (!url) throw new Error("endpoint \u043D\u0435 \u0437\u0430\u0434\u0430\u043D");
+    const headers = { "Content-Type": "application/json" };
+    if (settings.apiKey) headers.Authorization = `Bearer ${settings.apiKey}`;
+    const controller = new AbortController();
+    const timer = setTimeout(() => controller.abort(), 9e4);
+    try {
+      const res = await fetch(url, {
+        method: "POST",
+        headers,
+        signal: controller.signal,
+        body: JSON.stringify({
+          model: settings.model,
+          temperature: settings.temperature,
+          max_tokens: settings.maxTokens,
+          messages: [
+            { role: "system", content: systemPrompt },
+            { role: "user", content: prompt }
+          ]
+        })
+      });
+      if (!res.ok) {
+        const body = await res.text().catch(() => "");
+        throw new Error(`HTTP ${res.status}: ${body.slice(0, 300)}`);
+      }
+      const data = await res.json();
+      const msg = data?.choices?.[0]?.message?.content;
+      if (typeof msg === "string" && msg.trim()) return msg.trim();
+      if (Array.isArray(msg)) {
+        const joined = msg.map((p) => typeof p === "string" ? p : p?.text || "").join(" ").trim();
+        if (joined) return joined;
+      }
+      const text = data?.choices?.[0]?.text;
+      if (typeof text === "string" && text.trim()) return text.trim();
+      const parts = data?.candidates?.[0]?.content?.parts;
+      if (Array.isArray(parts)) {
+        const joined = parts.map((p) => p?.text || "").join(" ").trim();
+        if (joined) return joined;
+      }
+      throw new Error("\u043F\u0443\u0441\u0442\u043E\u0439 \u043E\u0442\u0432\u0435\u0442 \u043C\u043E\u0434\u0435\u043B\u0438");
+    } finally {
+      clearTimeout(timer);
+    }
+  }
+  __name(callOpenAICompatible, "callOpenAICompatible");
+  async function ask(prompt, opts = {}) {
+    const system = opts.system || "You output English only. You never narrate or roleplay.";
+    const settings = loadApiSettings();
+    if (settings.endpoint && settings.model) {
+      try {
+        const out = await callOpenAICompatible(prompt, system, settings);
+        if (out) return out;
+      } catch (err) {
+        console.warn(`${MODULE3} \u043D\u0430\u0441\u0442\u0440\u043E\u0435\u043D\u043D\u044B\u0439 API \u043D\u0435 \u043E\u0442\u0432\u0435\u0442\u0438\u043B, \u043E\u0442\u043A\u0430\u0442 \u043D\u0430 ST:`, err?.message || err);
+      }
+    }
+    const ctx = globalThis.SillyTavern?.getContext?.();
+    if (typeof ctx?.generateRaw === "function") {
+      try {
+        const out = await ctx.generateRaw({
+          prompt,
+          systemPrompt: system,
+          responseLength: opts.responseLength || 600
+        });
+        if (String(out || "").trim()) return String(out).trim();
+      } catch (err) {
+        console.warn(`${MODULE3} generateRaw failed:`, err?.message || err);
+      }
+    }
+    if (typeof ctx?.generateQuietPrompt === "function") {
+      const out = await ctx.generateQuietPrompt(`[ENGLISH ONLY \u2014 NO PROSE]
+${prompt}`, false, false);
+      if (String(out || "").trim()) return String(out).trim();
+    }
+    throw new Error("\u041D\u0435\u0442 \u0434\u043E\u0441\u0442\u0443\u043F\u043D\u043E\u0439 \u043C\u043E\u0434\u0435\u043B\u0438 \u0434\u043B\u044F \u0433\u0435\u043D\u0435\u0440\u0430\u0446\u0438\u0438 \u043F\u0440\u043E\u043C\u043F\u0442\u0430");
+  }
+  __name(ask, "ask");
+  async function enhancePrompt(input, opts = {}) {
+    const draft = String(input || "").trim();
+    if (!draft) throw new Error("\u041F\u0443\u0441\u0442\u043E\u0439 \u0442\u0435\u043A\u0441\u0442 \u0434\u043B\u044F \u0443\u043B\u0443\u0447\u0448\u0435\u043D\u0438\u044F");
+    const char = String(opts.character || "").trim();
+    const request = `Rewrite the draft below into a NovelAI v5 image prompt.
+
+DRAFT${char ? ` (post by ${char})` : ""}:
+${draft}
+
+RULES:
+- Output ENGLISH ONLY. Translate any Russian or other language into English.
+- Comma-separated visual tags, no sentences, no story, no dialogue, no feelings in prose.
+- Describe: framing/shot, subject${char ? ` (${char})` : ""}, appearance, clothing, pose/expression, action, setting, lighting, mood.
+- No quality tags (masterpiece, best quality) \u2014 they are added automatically.
+- No quotes, no labels, no markdown, no explanation. Output the prompt only.
+
+PROMPT:`;
+    const raw = await ask(request, {
+      system: "You are an image-prompt engineer. You output English tag lists only. You never narrate.",
+      responseLength: 400
+    });
+    return normalizePromptOutput(raw);
+  }
+  __name(enhancePrompt, "enhancePrompt");
+  function normalizePromptOutput(raw) {
+    let text = String(raw || "");
+    text = text.replace(/```[a-z]*\n?/gi, " ");
+    text = text.replace(/<[^>]*>/g, " ");
+    text = text.replace(/\[[A-Z_]{3,}[^\]]*\]/g, " ");
+    text = text.replace(/\s+/g, " ").trim();
+    text = text.replace(/^(prompt|tags?|description|answer|output)\s*:\s*/i, "");
+    text = text.replace(/^["'«]|["'»]$/g, "").trim();
+    const chunks = text.split(/[,;]\s*|\n+/).map((c) => c.replace(/^[\s\-•*]+/, "").replace(/^\d[\d\s:/.-]*\s+/, "").replace(/\s+/g, " ").trim()).filter(Boolean).filter((c) => !/[\u0400-\u04FF\u4E00-\u9FFF\u3040-\u30FF]/.test(c)).filter((c) => /[A-Za-z]{2,}/.test(c)).filter((c) => !/^[\d\s:/.,-]+$/.test(c));
+    return chunks.join(", ").trim();
+  }
+  __name(normalizePromptOutput, "normalizePromptOutput");
+  function resolveStyle(imageGen2) {
+    try {
+      const own = String(imageGen2?.getStyle?.() || "").trim();
+      if (own) return cleanTags(own);
+    } catch (_) {
+    }
+    return "";
+  }
+  __name(resolveStyle, "resolveStyle");
 
   // apps/gallery.js
   var GalleryApp = class {
@@ -2691,16 +2866,15 @@ RULES:
         tile.innerHTML = `
                 <img src="${photo.imageUrl}" alt="" loading="lazy">
                 <div class="astral-tile-overlay">
-                    <div class="astral-tile-text">${this._esc(photo.description)}</div>
                     <div class="astral-tile-meta">${this._time(photo.timestamp)}</div>
                 </div>`;
-        tile.addEventListener("click", () => this._openViewer(photo));
+        tile.addEventListener("click", () => this._openViewer(photo, idx));
       } else {
         const busy = this._busy.has(idx);
         tile.innerHTML = `
                 <div class="astral-tile-empty">
                     <div class="astral-tile-empty-icon">${ICONS.gallery}</div>
-                    <div class="astral-tile-text">${this._esc(photo.description)}</div>
+                    <div class="astral-tile-text">${this._esc(this._preview(photo))}</div>
                     <button class="astral-btn" ${busy ? "disabled" : ""} data-gen="${idx}">
                         ${busy ? "\u0413\u0435\u043D\u0435\u0440\u0430\u0446\u0438\u044F\u2026" : "\u0421\u043E\u0437\u0434\u0430\u0442\u044C \u0444\u043E\u0442\u043E"}
                     </button>
@@ -2853,7 +3027,7 @@ RULES:
           sceneText: this._sceneText(ctx),
           mode: resolvedMode,
           customInstruction,
-          askModel: /* @__PURE__ */ __name((ask) => this._askModel(ctx, ask), "askModel")
+          askModel: /* @__PURE__ */ __name((ask2) => this._askModel(ctx, ask2), "askModel")
         });
         console.log("[Astral Phone] prompt:", prompt);
         console.log("[Astral Phone] negative:", negative);
@@ -2886,29 +3060,11 @@ RULES:
      * Один вызов модели без контекста персонажа.
      * generateRaw предпочтителен; generateQuietPrompt — фолбэк.
      */
-    async _askModel(ctx, ask) {
-      const system = "You are an image-prompt tagger. You answer with JSON only. English tags only. You never narrate, roleplay or translate.";
-      if (typeof ctx.generateRaw === "function") {
-        try {
-          const out = await ctx.generateRaw({
-            prompt: ask,
-            systemPrompt: system,
-            responseLength: 500
-          });
-          if (String(out || "").trim()) return out;
-        } catch (err) {
-          console.warn("[Astral Phone] generateRaw failed:", err?.message);
-        }
-      }
-      if (typeof ctx.generateQuietPrompt === "function") {
-        return await ctx.generateQuietPrompt(
-          `[JSON TAGS ONLY \u2014 ENGLISH ONLY \u2014 NO PROSE]
-${ask}`,
-          false,
-          false
-        );
-      }
-      throw new Error("\u041D\u0435\u0442 \u0434\u043E\u0441\u0442\u0443\u043F\u043D\u043E\u0439 \u0444\u0443\u043D\u043A\u0446\u0438\u0438 \u0433\u0435\u043D\u0435\u0440\u0430\u0446\u0438\u0438 (generateRaw / generateQuietPrompt).");
+    async _askModel(ctx, ask2) {
+      return await ask(ask2, {
+        system: "You are an image-prompt tagger. You answer with JSON only. English tags only. You never narrate, roleplay or translate.",
+        responseLength: 500
+      });
     }
     async _generate(index, silent = false) {
       if (!this.imageGen.isAvailable()) {
@@ -2943,14 +3099,23 @@ ${ask}`,
     _buildPrompt(photo) {
       return String(photo.description || photo.character || "").trim();
     }
-    _openViewer(photo) {
+    _openViewer(photo, index) {
       const viewer = document.createElement("div");
       viewer.className = "astral-viewer";
       viewer.innerHTML = `
             <div class="astral-viewer-container">
                 <button class="astral-viewer-close" title="\u0417\u0430\u043A\u0440\u044B\u0442\u044C">\u2715</button>
                 <img src="${photo.imageUrl}" alt="">
-                <div class="astral-viewer-caption">${this._esc(photo.description)}</div>
+
+                <details class="astral-viewer-prompt">
+                    <summary>\u041F\u0440\u043E\u043C\u043F\u0442</summary>
+                    <textarea class="astral-viewer-prompt-text" spellcheck="false">${this._esc(photo.description || "")}</textarea>
+                    <div class="astral-viewer-prompt-actions">
+                        <button class="astral-btn" id="astral-prompt-save">\u0421\u043E\u0445\u0440\u0430\u043D\u0438\u0442\u044C</button>
+                        <button class="astral-btn astral-btn-primary" id="astral-prompt-regen">\u041F\u0435\u0440\u0435\u0433\u0435\u043D\u0435\u0440\u0438\u0440\u043E\u0432\u0430\u0442\u044C</button>
+                    </div>
+                </details>
+
                 <button class="astral-viewer-delete" title="\u0423\u0434\u0430\u043B\u0438\u0442\u044C \u0444\u043E\u0442\u043E">
                     <svg viewBox="0 0 24 24" width="20" height="20" stroke="currentColor" fill="none" stroke-width="2">
                         <path d="M3 6h18M8 6V4a2 2 0 012-2h4a2 2 0 012 2v2m3 0v14a2 2 0 01-2 2H7a2 2 0 01-2-2V6h14zM10 11v6M14 11v6"/>
@@ -2959,6 +3124,7 @@ ${ask}`,
             </div>
         `;
       const close = /* @__PURE__ */ __name(() => viewer.remove(), "close");
+      const area = viewer.querySelector(".astral-viewer-prompt-text");
       viewer.querySelector(".astral-viewer-close").addEventListener("click", (e) => {
         e.stopPropagation();
         close();
@@ -2967,6 +3133,19 @@ ${ask}`,
         e.stopPropagation();
         this._deletePhoto(photo);
         close();
+      });
+      viewer.querySelector("#astral-prompt-save").addEventListener("click", (e) => {
+        e.stopPropagation();
+        this._savePrompt(index, area.value.trim());
+      });
+      viewer.querySelector("#astral-prompt-regen").addEventListener("click", async (e) => {
+        e.stopPropagation();
+        const btn = e.currentTarget;
+        btn.disabled = true;
+        btn.textContent = "\u0413\u0435\u043D\u0435\u0440\u0438\u0440\u0443\u044E\u2026";
+        await this._savePrompt(index, area.value.trim(), { silent: true });
+        close();
+        await this._generate(index);
       });
       viewer.addEventListener("click", (e) => {
         if (e.target === viewer) close();
@@ -2978,8 +3157,23 @@ ${ask}`,
         }
       }, "onKey");
       document.addEventListener("keydown", onKey);
-      viewer.addEventListener("astro:removed", () => document.removeEventListener("keydown", onKey));
       document.querySelector(".astral-phone").appendChild(viewer);
+    }
+    /** Короткая подпись для плитки: промпт целиком не показываем. */
+    _preview(photo) {
+      const src = String(photo.description || "").trim();
+      if (!src) return "\u0424\u043E\u0442\u043E";
+      const first = src.split(",")[0].trim();
+      return first.length > 40 ? `${first.slice(0, 40)}\u2026` : first;
+    }
+    /** Сохранить отредактированный промпт. */
+    _savePrompt(index, value, opts = {}) {
+      const state = this.storage.getState();
+      const photo = state.gallery?.[index];
+      if (!photo) return;
+      photo.description = value;
+      this.storage.save();
+      if (!opts.silent) this._toast("\u041F\u0440\u043E\u043C\u043F\u0442 \u0441\u043E\u0445\u0440\u0430\u043D\u0451\u043D");
     }
     _deletePhoto(photo) {
       const state = this.storage.getState();
@@ -3124,12 +3318,15 @@ ${ask}`,
         const state = this.storage.getState();
         const item = state.spicy[index];
         if (!item) return;
-        const prompt = [item.character, item.description].filter(Boolean).join(" \u2014 ");
+        const prompt = [item.character, item.description].filter(Boolean).join(", ");
+        const style = resolveStyle(this.imageGen) || String(item.style || "");
         const url = await this.imageGen.generate(prompt, {
           character: item.character,
           type: "spicy_thumbnail",
-          nsfw: true
+          nsfw: true,
+          style
         });
+        if (style) state.spicy[index].style = style;
         state.spicy[index].thumbnailUrl = url;
         this.storage.save();
         this._toast("\u0413\u043E\u0442\u043E\u0432\u043E", "success");
@@ -3614,6 +3811,9 @@ ${ask}`,
                 <label class="astral-field-label" for="astral-post-text">\u041F\u0440\u043E\u043C\u043F\u0442 \u0434\u043B\u044F \u0444\u043E\u0442\u043E</label>
                 <textarea class="astral-textarea" id="astral-post-text"
                     placeholder="\u0427\u0442\u043E \u043D\u0430 \u0444\u043E\u0442\u043E \u2014 \u043F\u043E\u0437\u0430, \u043E\u0434\u0435\u0436\u0434\u0430, \u043C\u0435\u0441\u0442\u043E, \u0441\u0432\u0435\u0442. \u041D\u0430 \u043F\u043E\u0434\u043F\u0438\u0441\u044C \u043D\u0435 \u0432\u043B\u0438\u044F\u0435\u0442.">${this._esc(post?.prompt || "")}</textarea>
+                <button class="astral-btn astral-btn-wide astral-enhance-btn" id="astral-post-enhance">
+                    \u2728 \u0423\u043B\u0443\u0447\u0448\u0438\u0442\u044C \u043F\u0440\u043E\u043C\u043F\u0442
+                </button>
 
                 <div class="astral-modal-actions">
                     <button class="astral-btn" id="astral-post-cancel">\u041E\u0442\u043C\u0435\u043D\u0430</button>
@@ -3636,6 +3836,36 @@ ${ask}`,
         close();
         if (post) this._updatePost(editIndex, { caption, prompt });
         else await this._createPost(caption, prompt);
+      });
+      const enhanceBtn = overlay.querySelector("#astral-post-enhance");
+      const promptField = overlay.querySelector("#astral-post-text");
+      enhanceBtn?.addEventListener("click", async () => {
+        const draft = promptField.value.trim();
+        if (!draft) {
+          this._toast("\u0421\u043D\u0430\u0447\u0430\u043B\u0430 \u043D\u0430\u043F\u0438\u0448\u0438 \u0447\u0435\u0440\u043D\u043E\u0432\u0438\u043A \u043F\u0440\u043E\u043C\u043F\u0442\u0430", "error");
+          promptField.focus();
+          return;
+        }
+        const original = enhanceBtn.textContent;
+        enhanceBtn.disabled = true;
+        enhanceBtn.textContent = "\u0423\u043B\u0443\u0447\u0448\u0430\u044E\u2026";
+        try {
+          const improved = await enhancePrompt(draft, {
+            character: this.context?.characters?.[this.context?.characterId]?.name || this.context?.name2 || ""
+          });
+          if (improved) {
+            promptField.value = improved;
+            this._toast("\u041F\u0440\u043E\u043C\u043F\u0442 \u0443\u043B\u0443\u0447\u0448\u0435\u043D", "success");
+          } else {
+            this._toast("\u041C\u043E\u0434\u0435\u043B\u044C \u0432\u0435\u0440\u043D\u0443\u043B\u0430 \u043F\u0443\u0441\u0442\u043E\u0439 \u043E\u0442\u0432\u0435\u0442", "error");
+          }
+        } catch (err) {
+          console.error("[Creator] enhance failed:", err);
+          this._toast(`\u041D\u0435 \u043F\u043E\u043B\u0443\u0447\u0438\u043B\u043E\u0441\u044C: ${err.message}`, "error");
+        } finally {
+          enhanceBtn.disabled = false;
+          enhanceBtn.textContent = original;
+        }
       });
       overlay.querySelector("#astral-post-caption").focus();
     }
@@ -3685,6 +3915,7 @@ ${ask}`,
       overlay.className = "astral-modal";
       overlay.innerHTML = `
             <div class="astral-modal-card astral-modal-card--sheet">
+                <button class="astral-sheet-btn" data-act="regen">\u041F\u0435\u0440\u0435\u0433\u0435\u043D\u0435\u0440\u0438\u0440\u043E\u0432\u0430\u0442\u044C \u0444\u043E\u0442\u043E</button>
                 <button class="astral-sheet-btn" data-act="edit">\u0420\u0435\u0434\u0430\u043A\u0442\u0438\u0440\u043E\u0432\u0430\u0442\u044C</button>
                 <button class="astral-sheet-btn astral-sheet-btn--danger" data-act="delete">\u0423\u0434\u0430\u043B\u0438\u0442\u044C</button>
                 <button class="astral-sheet-btn astral-sheet-btn--cancel" data-act="cancel">\u041E\u0442\u043C\u0435\u043D\u0430</button>
@@ -3696,6 +3927,13 @@ ${ask}`,
         if (e.target === overlay) close();
       });
       overlay.querySelector('[data-act="cancel"]').addEventListener("click", close);
+      overlay.querySelector('[data-act="regen"]')?.addEventListener("click", async (e) => {
+        const btn = e.currentTarget;
+        btn.disabled = true;
+        btn.textContent = "\u0413\u0435\u043D\u0435\u0440\u0438\u0440\u0443\u044E\u2026";
+        close();
+        await this._generate(index);
+      });
       overlay.querySelector('[data-act="edit"]').addEventListener("click", () => {
         close();
         this._openComposer(index);
@@ -3793,6 +4031,14 @@ ${ask}`,
       return out.sort((a, b) => b.timestamp - a.timestamp);
     }
     /* ─────────────────────────── generation ─────────────────────────── */
+    /** Имя персонажа: карточка надёжнее, чем name2 (тот может быть 'SillyTavern System'). */
+    _charName() {
+      const ctx = this.context || {};
+      const fromCard = String(ctx.characters?.[ctx.characterId]?.name || "").trim();
+      if (fromCard) return fromCard;
+      const fallback = String(ctx.name2 || "").trim();
+      return /sillytavern/i.test(fallback) ? "\u041F\u0435\u0440\u0441\u043E\u043D\u0430\u0436" : fallback || "\u041F\u0435\u0440\u0441\u043E\u043D\u0430\u0436";
+    }
     async _generate(index, silent = false) {
       if (!this.imageGen.isAvailable()) {
         this._toast("Haruspics \u043D\u0435 \u0443\u0441\u0442\u0430\u043D\u043E\u0432\u043B\u0435\u043D", "error");
@@ -3806,15 +4052,19 @@ ${ask}`,
         const post = state.creator?.posts?.[index];
         if (!post) return;
         const scene = String(post.prompt || "").trim();
-        const prompt = [this.context.name2 || "\u041F\u0435\u0440\u0441\u043E\u043D\u0430\u0436", scene].filter(Boolean).join(" \u2014 ");
+        const charName = this._charName();
+        const prompt = [charName, scene].filter(Boolean).join(", ");
+        const style = resolveStyle(this.imageGen) || String(post.style || "");
         const url = await this.imageGen.generate(prompt, {
-          character: this.context.name2,
+          character: charName,
           type: "creator_post",
-          nsfw: true
+          nsfw: true,
+          style
         });
         post.imageUrl = url;
         post.imageW = 0;
         post.imageH = 0;
+        if (style) post.style = style;
         this.storage.save();
         this._toast("\u0413\u043E\u0442\u043E\u0432\u043E", "success");
       } catch (err) {
@@ -3956,6 +4206,27 @@ ${ask}`,
                 </div>
 
                 <div class="astral-settings-section">
+                    <h3 class="astral-section-title">\u041D\u0430\u0441\u0442\u0440\u043E\u0439\u043A\u0438 API</h3>
+                    <div class="astral-form-group">
+                        <label>Endpoint</label>
+                        <input type="text" id="astral-api-endpoint" placeholder="https://api.openai.com/v1" />
+                    </div>
+                    <div class="astral-form-group">
+                        <label>API \u043A\u043B\u044E\u0447</label>
+                        <input type="password" id="astral-api-key" placeholder="sk-..." />
+                    </div>
+                    <div class="astral-form-group">
+                        <label>\u041C\u043E\u0434\u0435\u043B\u044C</label>
+                        <input type="text" id="astral-api-model" placeholder="gpt-4o-mini" />
+                    </div>
+                    <div class="astral-form-group">
+                        <label>\u0422\u0435\u043C\u043F\u0435\u0440\u0430\u0442\u0443\u0440\u0430</label>
+                        <input type="number" id="astral-api-temp" min="0" max="2" step="0.1" value="0.7" />
+                    </div>
+                    <div class="astral-api-note" id="astral-api-status"></div>
+                </div>
+
+                <div class="astral-settings-section">
                     <h3 class="astral-section-title">\u0412\u043D\u0435\u0448\u043D\u043E\u0441\u0442\u044C \u043F\u0435\u0440\u0441\u043E\u043D\u0430\u0436\u0435\u0439</h3>
                     <div id="astral-app-charbook"></div>
                 </div>
@@ -4000,6 +4271,33 @@ ${ask}`,
       this.attachEvents(container);
     }
     attachEvents(container) {
+      const api = {
+        endpoint: container.querySelector("#astral-api-endpoint"),
+        apiKey: container.querySelector("#astral-api-key"),
+        model: container.querySelector("#astral-api-model"),
+        temperature: container.querySelector("#astral-api-temp")
+      };
+      const status = container.querySelector("#astral-api-status");
+      const cur = loadApiSettings();
+      if (api.endpoint) api.endpoint.value = cur.endpoint;
+      if (api.apiKey) api.apiKey.value = cur.apiKey;
+      if (api.model) api.model.value = cur.model;
+      if (api.temperature) api.temperature.value = cur.temperature;
+      const refresh = /* @__PURE__ */ __name(() => {
+        if (status) {
+          status.textContent = isApiConfigured() ? "\u2713 \u041F\u0440\u043E\u043C\u043F\u0442\u044B \u043F\u0438\u0448\u0435\u0442 \u0443\u043A\u0430\u0437\u0430\u043D\u043D\u0430\u044F \u043C\u043E\u0434\u0435\u043B\u044C" : "\u041F\u0440\u043E\u043C\u043F\u0442\u044B \u043F\u0438\u0448\u0435\u0442 \u043E\u0441\u043D\u043E\u0432\u043D\u0430\u044F \u043C\u043E\u0434\u0435\u043B\u044C \u0447\u0430\u0442\u0430";
+        }
+      }, "refresh");
+      refresh();
+      Object.values(api).forEach((el) => el?.addEventListener("change", () => {
+        saveApiSettings({
+          endpoint: api.endpoint?.value || "",
+          apiKey: api.apiKey?.value || "",
+          model: api.model?.value || "",
+          temperature: Number(api.temperature?.value) || 0.7
+        });
+        refresh();
+      }));
       const bookHost = container.querySelector("#astral-app-charbook");
       if (bookHost) {
         bookHost.innerHTML = renderCharacterBookHTML();
@@ -4703,6 +5001,20 @@ description \u043F\u0438\u0448\u0438 \u043A\u0430\u043A \u043F\u0440\u043E\u043C
         </select>
         
         <hr />
+        <b>\u041D\u0430\u0441\u0442\u0440\u043E\u0439\u043A\u0438 API</b>
+        <small class="notes">\u041C\u043E\u0434\u0435\u043B\u044C, \u043A\u043E\u0442\u043E\u0440\u0430\u044F \u043F\u0438\u0448\u0435\u0442 \u043F\u0440\u043E\u043C\u043F\u0442\u044B \u0434\u043B\u044F \u0438\u0437\u043E\u0431\u0440\u0430\u0436\u0435\u043D\u0438\u0439. \u0415\u0441\u043B\u0438 \u043F\u0443\u0441\u0442\u043E \u2014 \u0438\u0441\u043F\u043E\u043B\u044C\u0437\u0443\u0435\u0442\u0441\u044F \u043E\u0441\u043D\u043E\u0432\u043D\u0430\u044F \u043C\u043E\u0434\u0435\u043B\u044C \u0447\u0430\u0442\u0430.</small>
+        <label for="astral-api-endpoint">Endpoint</label>
+        <input type="text" id="astral-api-endpoint" class="text_pole"
+               placeholder="https://api.openai.com/v1" />
+        <label for="astral-api-key">API \u043A\u043B\u044E\u0447</label>
+        <input type="password" id="astral-api-key" class="text_pole" placeholder="sk-..." />
+        <label for="astral-api-model">\u041C\u043E\u0434\u0435\u043B\u044C</label>
+        <input type="text" id="astral-api-model" class="text_pole" placeholder="gpt-4o-mini" />
+        <label for="astral-api-temp">\u0422\u0435\u043C\u043F\u0435\u0440\u0430\u0442\u0443\u0440\u0430</label>
+        <input type="number" id="astral-api-temp" class="text_pole" min="0" max="2" step="0.1" value="0.7" />
+        <div id="astral-api-status" class="notes"></div>
+
+        <hr />
         <b>\u0421\u043F\u0440\u0430\u0432\u043E\u0447\u043D\u0438\u043A \u0432\u043D\u0435\u0448\u043D\u043E\u0441\u0442\u0438</b>
         <div id="astral-charbook-host"></div>
 
@@ -4717,6 +5029,33 @@ description \u043F\u0438\u0448\u0438 \u043A\u0430\u043A \u043F\u0440\u043E\u043C
         const drawer = document.getElementById("astral-phone-settings");
         drawer?.classList.toggle("openDrawer");
       });
+      const apiFields = {
+        endpoint: document.getElementById("astral-api-endpoint"),
+        apiKey: document.getElementById("astral-api-key"),
+        model: document.getElementById("astral-api-model"),
+        temperature: document.getElementById("astral-api-temp")
+      };
+      const apiStatus = document.getElementById("astral-api-status");
+      const current = loadApiSettings();
+      if (apiFields.endpoint) apiFields.endpoint.value = current.endpoint;
+      if (apiFields.apiKey) apiFields.apiKey.value = current.apiKey;
+      if (apiFields.model) apiFields.model.value = current.model;
+      if (apiFields.temperature) apiFields.temperature.value = current.temperature;
+      const refreshStatus = /* @__PURE__ */ __name(() => {
+        if (!apiStatus) return;
+        apiStatus.textContent = isApiConfigured() ? "\u2713 \u041F\u0440\u043E\u043C\u043F\u0442\u044B \u043F\u0438\u0448\u0435\u0442 \u0443\u043A\u0430\u0437\u0430\u043D\u043D\u0430\u044F \u043C\u043E\u0434\u0435\u043B\u044C" : "\u041F\u0440\u043E\u043C\u043F\u0442\u044B \u043F\u0438\u0448\u0435\u0442 \u043E\u0441\u043D\u043E\u0432\u043D\u0430\u044F \u043C\u043E\u0434\u0435\u043B\u044C \u0447\u0430\u0442\u0430";
+      }, "refreshStatus");
+      refreshStatus();
+      const saveApi = /* @__PURE__ */ __name(() => {
+        saveApiSettings({
+          endpoint: apiFields.endpoint?.value || "",
+          apiKey: apiFields.apiKey?.value || "",
+          model: apiFields.model?.value || "",
+          temperature: Number(apiFields.temperature?.value) || 0.7
+        });
+        refreshStatus();
+      }, "saveApi");
+      Object.values(apiFields).forEach((el) => el?.addEventListener("change", saveApi));
       const bookHost = document.getElementById("astral-charbook-host");
       if (bookHost) {
         bookHost.innerHTML = renderCharacterBookHTML();

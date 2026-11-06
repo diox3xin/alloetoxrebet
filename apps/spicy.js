@@ -7,6 +7,8 @@ import { ICONS } from './phone-core.js';
 
 const CATEGORIES = ['Все', 'Новое', 'Тренды', 'Смотреть позже'];
 
+import { resolveStyle } from './prompt-llm.js';
+
 export class SpicyApp {
     constructor(context, storage, imageGen) {
         this.context = context;
@@ -123,12 +125,15 @@ export class SpicyApp {
             const item = state.spicy[index];
             if (!item) return;
 
-            const prompt = [item.character, item.description].filter(Boolean).join(' — ');
+            const prompt = [item.character, item.description].filter(Boolean).join(', ');
+            const style = resolveStyle(this.imageGen) || String(item.style || '');
             const url = await this.imageGen.generate(prompt, {
                 character: item.character,
                 type: 'spicy_thumbnail',
                 nsfw: true,
+                style,
             });
+            if (style) state.spicy[index].style = style;
 
             state.spicy[index].thumbnailUrl = url;
             this.storage.save();

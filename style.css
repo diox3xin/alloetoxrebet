@@ -2011,3 +2011,82 @@
 #astral-charbook-host .astral-charbook-row {
   grid-template-columns: minmax(110px, 1fr) minmax(110px, 1fr) auto;
 }
+
+/* ═══════════════════════ viewer prompt panel ═══════════════════════ */
+
+.astral-viewer-prompt {
+  width: 100%;
+  max-width: 100%;
+  border-radius: 10px;
+  border: 1px solid rgba(217,154,181,.18);
+  background: rgba(23,17,22,.7);
+  padding: 0;
+  flex: 0 0 auto;
+}
+
+.astral-viewer-prompt > summary {
+  list-style: none;
+  cursor: pointer;
+  padding: 9px 12px;
+  font-size: 10px;
+  letter-spacing: .12em;
+  text-transform: uppercase;
+  color: var(--phone-accent);
+  user-select: none;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+.astral-viewer-prompt > summary::-webkit-details-marker { display: none; }
+.astral-viewer-prompt > summary::after {
+  content: '▾';
+  font-size: 11px;
+  opacity: .7;
+  transition: transform .16s;
+}
+.astral-viewer-prompt[open] > summary::after { transform: rotate(180deg); }
+.astral-viewer-prompt > summary:hover { color: var(--phone-accent-light); }
+
+.astral-viewer-prompt-text {
+  display: block;
+  width: 100%;
+  box-sizing: border-box;
+  min-height: 90px;
+  max-height: 220px;
+  padding: 10px 12px;
+  border: 0;
+  border-top: 1px solid rgba(217,154,181,.12);
+  background: transparent;
+  color: var(--phone-text);
+  font-family: ui-monospace, monospace;
+  font-size: 10.5px;
+  line-height: 1.55;
+  resize: vertical;
+  outline: none;
+}
+
+.astral-viewer-prompt-actions {
+  display: flex;
+  gap: 8px;
+  padding: 8px 12px 12px;
+}
+.astral-viewer-prompt-actions .astral-btn {
+  flex: 1;
+  padding: 8px 10px;
+  font-size: 9.5px;
+}
+
+/* кнопка «Улучшить промпт» в creator studio */
+.astral-enhance-btn {
+  margin-top: 6px;
+  margin-bottom: 4px;
+}
+
+/* заметка о статусе API */
+.astral-api-note {
+  font-size: 10px;
+  letter-spacing: .04em;
+  color: var(--phone-muted, #A18D9B);
+  opacity: .75;
+  margin-top: 6px;
+}

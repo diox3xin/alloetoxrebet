@@ -14,6 +14,7 @@ import { SpicyApp } from './apps/spicy.js';
 import { CreatorApp } from './apps/creator.js';
 import { SettingsApp } from './apps/settings.js';
 import { renderCharacterBookHTML, bindCharacterBook } from './apps/character-book.js';
+import { loadApiSettings, saveApiSettings, isApiConfigured } from './apps/prompt-llm.js';
 import { ContactSeeder } from './apps/contact-seeder.js';
 import { refreshPhonePrompt } from './apps/phone-prompt.js';
 
@@ -565,6 +566,20 @@ function injectSettingsPanel() {
         </select>
         
         <hr />
+        <b>Настройки API</b>
+        <small class="notes">Модель, которая пишет промпты для изображений. Если пусто — используется основная модель чата.</small>
+        <label for="astral-api-endpoint">Endpoint</label>
+        <input type="text" id="astral-api-endpoint" class="text_pole"
+               placeholder="https://api.openai.com/v1" />
+        <label for="astral-api-key">API ключ</label>
+        <input type="password" id="astral-api-key" class="text_pole" placeholder="sk-..." />
+        <label for="astral-api-model">Модель</label>
+        <input type="text" id="astral-api-model" class="text_pole" placeholder="gpt-4o-mini" />
+        <label for="astral-api-temp">Температура</label>
+        <input type="number" id="astral-api-temp" class="text_pole" min="0" max="2" step="0.1" value="0.7" />
+        <div id="astral-api-status" class="notes"></div>
+
+        <hr />
         <b>Справочник внешности</b>
         <div id="astral-charbook-host"></div>
 
@@ -583,6 +598,41 @@ function injectSettingsPanel() {
             drawer?.classList.toggle('openDrawer');
         });
         
+        // API settings for prompt model
+        const apiFields = {
+            endpoint: document.getElementById('astral-api-endpoint'),
+            apiKey: document.getElementById('astral-api-key'),
+            model: document.getElementById('astral-api-model'),
+            temperature: document.getElementById('astral-api-temp'),
+        };
+        const apiStatus = document.getElementById('astral-api-status');
+
+        const current = loadApiSettings();
+        if (apiFields.endpoint) apiFields.endpoint.value = current.endpoint;
+        if (apiFields.apiKey) apiFields.apiKey.value = current.apiKey;
+        if (apiFields.model) apiFields.model.value = current.model;
+        if (apiFields.temperature) apiFields.temperature.value = current.temperature;
+
+        const refreshStatus = () => {
+            if (!apiStatus) return;
+            apiStatus.textContent = isApiConfigured()
+                ? '✓ Промпты пишет указанная модель'
+                : 'Промпты пишет основная модель чата';
+        };
+        refreshStatus();
+
+        const saveApi = () => {
+            saveApiSettings({
+                endpoint: apiFields.endpoint?.value || '',
+                apiKey: apiFields.apiKey?.value || '',
+                model: apiFields.model?.value || '',
+                temperature: Number(apiFields.temperature?.value) || 0.7,
+            });
+            refreshStatus();
+        };
+
+        Object.values(apiFields).forEach(el => el?.addEventListener('change', saveApi));
+
         // Character book editor
         const bookHost = document.getElementById('astral-charbook-host');
         if (bookHost) {
