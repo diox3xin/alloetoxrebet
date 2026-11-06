@@ -80,6 +80,7 @@ function init() {
         ['function tool', registerFunctionTool],
         ['slash commands', registerSlashCommands],
         ['event fallback', registerEventTagFallback],
+        ['chat switch', registerChatSwitchHandler],
         ['prompt block', injectPromptBlock],
     ]) {
         try {
@@ -190,7 +191,8 @@ function registerEventTagFallback(context) {
 
     eventSource.on(event_types.MESSAGE_RECEIVED, (messageId) => {
         try {
-            const message = context.chat?.[messageId];
+            const live = SillyTavern.getContext();
+            const message = live.chat?.[messageId];
             if (!message || message.is_user) return;
 
             const text = message.mes || '';
@@ -203,7 +205,7 @@ function registerEventTagFallback(context) {
                 if (!attrs.type) continue;
                 core.handleEvent({
                     type: attrs.type,
-                    character: attrs.character || context.name2 || '',
+                    character: attrs.character || live.name2 || '',
                     description: attrs.description || '',
                 });
             }
@@ -211,7 +213,7 @@ function registerEventTagFallback(context) {
             message.mes = text.replace(EVENT_TAG_RE, '').trim();
             const el = document.querySelector(`#chat .mes[mesid="${messageId}"] .mes_text`);
             if (el) {
-                el.innerHTML = context.messageFormatting(
+                el.innerHTML = live.messageFormatting(
                     message.mes,
                     message.name,
                     message.is_system,
@@ -225,7 +227,35 @@ function registerEventTagFallback(context) {
     });
 }
 
-/* ────────────────────────────── prompt injection ────────────────────────────── */
+/* ────────────────────────────── chat switch ────────────────────────────── */
+
+/**
+ * ST swaps `chat_metadata` out from under us when the user changes chats.
+ * Drop the account cache and repaint anything currently on screen so the phone
+ * shows the account and data of the chat that is now open.
+ */
+function registerChatSwitchHandler(context) {
+    const { eventSource, event_types } = context;
+    if (!eventSource || !event_types) return;
+
+    const onSwitch = () => {
+        try {
+            core?.accountManager?.invalidate();
+            core?.accountManager?.getCurrentAccount();
+            if (core?.isOpen) {
+                if (core.currentAppId) core.openApp(core.currentAppId);
+                else core.showHome();
+            }
+        } catch (err) {
+            console.warn('[Astral Phone] chat switch refresh failed:', err);
+        }
+    };
+
+    for (const name of ['CHAT_CHANGED', 'CHAT_LOADED', 'CHAT_STARTED']) {
+        const type = event_types[name];
+        if (type) eventSource.on(type, onSwitch);
+    }
+}
 
 function injectPromptBlock(context) {
     try {

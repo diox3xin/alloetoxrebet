@@ -114,34 +114,57 @@
       __name(this, "AccountManager");
     }
     constructor(context, storage2) {
-      this.context = context;
+      this._seed = context || null;
       this.storage = storage2;
-      this.currentAccount = null;
+      this._cachedChatId = null;
+      this._cached = null;
     }
-    getOrCreateAccount() {
-      if (this.currentAccount) return this.currentAccount;
+    _ctx() {
+      try {
+        const live = globalThis.SillyTavern?.getContext?.();
+        if (live) return live;
+      } catch {
+      }
+      return this._seed || {};
+    }
+    /** Current chat id, via storage (single source of truth). */
+    _chatId() {
+      return this.storage.chatId();
+    }
+    /** Account for the chat that is loaded right now. */
+    getCurrentAccount() {
+      const chatId = this._chatId();
+      if (this._cached && this._cachedChatId === chatId) return this._cached;
       const state = this.storage.getState();
       if (state.account) {
-        this.currentAccount = state.account;
-        return this.currentAccount;
+        this._cached = state.account;
+        this._cachedChatId = chatId;
+        return this._cached;
       }
       const account = this._fromPersona();
       this.storage.updateState(null, { account });
-      this.currentAccount = account;
+      this._cached = account;
+      this._cachedChatId = chatId;
       return account;
+    }
+    /** Drop the in-memory cache — call on chat switch. */
+    invalidate() {
+      this._cached = null;
+      this._cachedChatId = null;
     }
     _fromPersona() {
       let name = "You";
       let avatar = this._initialAvatar("Y");
       let bio = "";
       try {
-        const ctx = this.context || {};
+        const ctx = this._ctx();
         const persona = ctx.personas?.[ctx.user_persona] || ctx.persona || null;
         if (persona) {
           name = persona.name || name;
           if (persona.avatar && persona.avatar !== "none") avatar = persona.avatar;
           if (persona.description) bio = String(persona.description).slice(0, 200);
-        } else if (ctx.name1) {
+        }
+        if (name === "You" && ctx.name1) {
           name = ctx.name1;
           avatar = this._initialAvatar(String(name).charAt(0).toUpperCase());
         }
@@ -161,13 +184,11 @@
         }
       };
     }
-    getCurrentAccount() {
-      return this.currentAccount || this.getOrCreateAccount();
-    }
     updateAccount(partial) {
       const account = { ...this.getCurrentAccount(), ...partial };
-      this.currentAccount = account;
       this.storage.updateState(null, { account });
+      this._cached = account;
+      this._cachedChatId = this._chatId();
       return account;
     }
     bumpStat(key, by = 1) {
@@ -403,17 +424,43 @@
       __name(this, "PhoneStorage");
     }
     constructor(context) {
-      this.context = context;
+      this._seed = context || null;
       this.key = "astral_phone";
+      this.onChatChanged = null;
+    }
+    /** Fresh ST context. */
+    _ctx() {
+      try {
+        const live = globalThis.SillyTavern?.getContext?.();
+        if (live) return live;
+      } catch (err) {
+        console.warn("[Astral Phone] getContext failed, using seed context:", err);
+      }
+      return this._seed || {};
+    }
+    /** Identity of the chat currently loaded — used to detect switches. */
+    chatId() {
+      const ctx = this._ctx();
+      try {
+        if (typeof ctx.getCurrentChatId === "function") {
+          const id = ctx.getCurrentChatId();
+          if (id) return String(id);
+        }
+      } catch {
+      }
+      if (ctx.chatId) return String(ctx.chatId);
+      if (Array.isArray(ctx.chat) && ctx.chat.length) {
+        const first = ctx.chat[0];
+        const stamp = first?.send_date || first?.create_date || "";
+        return `${ctx.characterId ?? ctx.this_chid ?? 0}:${ctx.chat.length}:${stamp}`;
+      }
+      return `${ctx.characterId ?? ctx.this_chid ?? 0}:empty`;
     }
     _root() {
-      if (!this.context.chat_metadata) {
-        this.context.chat_metadata = {};
-      }
-      if (!this.context.chat_metadata[this.key]) {
-        this.context.chat_metadata[this.key] = {};
-      }
-      return this.context.chat_metadata[this.key];
+      const ctx = this._ctx();
+      if (!ctx.chat_metadata) ctx.chat_metadata = {};
+      if (!ctx.chat_metadata[this.key]) ctx.chat_metadata[this.key] = {};
+      return ctx.chat_metadata[this.key];
     }
     _defaults() {
       return {
@@ -450,6 +497,7 @@
       this.save();
     }
     updateState(_chatId, partial) {
+      if (!partial || typeof partial !== "object") return this.getState();
       const state = this.getState();
       for (const key of Object.keys(partial)) {
         const val = partial[key];
@@ -464,7 +512,7 @@
     }
     save() {
       try {
-        this.context.updateChatMetadata?.(null, true);
+        this._ctx().updateChatMetadata?.(null, true);
       } catch (err) {
         console.warn("[Astral Phone] Could not persist chat metadata:", err);
       }
@@ -2449,6 +2497,7 @@ description \u043F\u0438\u0448\u0438 \u043A\u0430\u043A \u043F\u0440\u043E\u043C
       ["function tool", registerFunctionTool],
       ["slash commands", registerSlashCommands],
       ["event fallback", registerEventTagFallback],
+      ["chat switch", registerChatSwitchHandler],
       ["prompt block", injectPromptBlock]
     ]) {
       try {
@@ -2546,7 +2595,8 @@ description \u043F\u0438\u0448\u0438 \u043A\u0430\u043A \u043F\u0440\u043E\u043C
     const { eventSource, event_types } = context;
     eventSource.on(event_types.MESSAGE_RECEIVED, (messageId) => {
       try {
-        const message = context.chat?.[messageId];
+        const live = SillyTavern.getContext();
+        const message = live.chat?.[messageId];
         if (!message || message.is_user) return;
         const text = message.mes || "";
         if (!text.includes("<phone-event")) return;
@@ -2557,14 +2607,14 @@ description \u043F\u0438\u0448\u0438 \u043A\u0430\u043A \u043F\u0440\u043E\u043C
           if (!attrs.type) continue;
           core.handleEvent({
             type: attrs.type,
-            character: attrs.character || context.name2 || "",
+            character: attrs.character || live.name2 || "",
             description: attrs.description || ""
           });
         }
         message.mes = text.replace(EVENT_TAG_RE, "").trim();
         const el = document.querySelector(`#chat .mes[mesid="${messageId}"] .mes_text`);
         if (el) {
-          el.innerHTML = context.messageFormatting(
+          el.innerHTML = live.messageFormatting(
             message.mes,
             message.name,
             message.is_system,
@@ -2578,6 +2628,27 @@ description \u043F\u0438\u0448\u0438 \u043A\u0430\u043A \u043F\u0440\u043E\u043C
     });
   }
   __name(registerEventTagFallback, "registerEventTagFallback");
+  function registerChatSwitchHandler(context) {
+    const { eventSource, event_types } = context;
+    if (!eventSource || !event_types) return;
+    const onSwitch = /* @__PURE__ */ __name(() => {
+      try {
+        core?.accountManager?.invalidate();
+        core?.accountManager?.getCurrentAccount();
+        if (core?.isOpen) {
+          if (core.currentAppId) core.openApp(core.currentAppId);
+          else core.showHome();
+        }
+      } catch (err) {
+        console.warn("[Astral Phone] chat switch refresh failed:", err);
+      }
+    }, "onSwitch");
+    for (const name of ["CHAT_CHANGED", "CHAT_LOADED", "CHAT_STARTED"]) {
+      const type = event_types[name];
+      if (type) eventSource.on(type, onSwitch);
+    }
+  }
+  __name(registerChatSwitchHandler, "registerChatSwitchHandler");
   function injectPromptBlock(context) {
     try {
       context.setExtensionPrompt(

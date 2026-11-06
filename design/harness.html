@@ -16,16 +16,25 @@
 <body>
 <script type="module">
 /* Минимальный стаб SillyTavern, чтобы прогнать реальные модули расширения */
-const chat_metadata = {};
+const __chatStore = { demo: {} };
+let currentChatId = 'demo';
+Object.defineProperty(window, '__chat_metadata', { value: null, writable: true });
+let chat_metadata = __chatStore.demo;
+window.__switchChat = (id) => {
+  __chatStore[currentChatId] = chat_metadata;
+  if (!__chatStore[id]) __chatStore[id] = {};
+  currentChatId = id;
+  chat_metadata = __chatStore[id];
+};
 window.SillyTavern = {
   getContext: () => ({
     chat_metadata,
+    getCurrentChatId: () => currentChatId,
     name2: 'Лиза Воронова',
     characters: [{ name: 'Лиза Воронова' }],
     characterId: 0,
     chat: [],
     updateChatMetadata: () => {},
-    getCurrentChatId: () => 'demo',
     getRequestHeaders: () => ({ 'Content-Type': 'application/json' }),
     eventSource: { on: () => {}, emit: () => {}, makeLast: () => {} },
     event_types: {},

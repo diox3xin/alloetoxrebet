@@ -1,28 +1,55 @@
 /**
- * AccountManager — per-chat user account derived from the ST persona.
- * Storage contract: updateState(chatId, partial) takes TWO args; state key is `account`.
+ * AccountManager — one user account per chat, seeded from the ST persona.
+ *
+ * No cross-chat caching: the account is always resolved from the CURRENT chat's
+ * state, keyed by the live chat id. Switching chats therefore switches accounts.
  */
 
 export class AccountManager {
     constructor(context, storage) {
-        this.context = context;
+        this._seed = context || null;
         this.storage = storage;
-        this.currentAccount = null;
+        this._cachedChatId = null;
+        this._cached = null;
     }
 
-    getOrCreateAccount() {
-        if (this.currentAccount) return this.currentAccount;
+    _ctx() {
+        try {
+            const live = globalThis.SillyTavern?.getContext?.();
+            if (live) return live;
+        } catch { /* ignore */ }
+        return this._seed || {};
+    }
+
+    /** Current chat id, via storage (single source of truth). */
+    _chatId() {
+        return this.storage.chatId();
+    }
+
+    /** Account for the chat that is loaded right now. */
+    getCurrentAccount() {
+        const chatId = this._chatId();
+
+        if (this._cached && this._cachedChatId === chatId) return this._cached;
 
         const state = this.storage.getState();
         if (state.account) {
-            this.currentAccount = state.account;
-            return this.currentAccount;
+            this._cached = state.account;
+            this._cachedChatId = chatId;
+            return this._cached;
         }
 
         const account = this._fromPersona();
         this.storage.updateState(null, { account });
-        this.currentAccount = account;
+        this._cached = account;
+        this._cachedChatId = chatId;
         return account;
+    }
+
+    /** Drop the in-memory cache — call on chat switch. */
+    invalidate() {
+        this._cached = null;
+        this._cachedChatId = null;
     }
 
     _fromPersona() {
@@ -31,13 +58,14 @@ export class AccountManager {
         let bio = '';
 
         try {
-            const ctx = this.context || {};
+            const ctx = this._ctx();
             const persona = ctx.personas?.[ctx.user_persona] || ctx.persona || null;
             if (persona) {
                 name = persona.name || name;
                 if (persona.avatar && persona.avatar !== 'none') avatar = persona.avatar;
                 if (persona.description) bio = String(persona.description).slice(0, 200);
-            } else if (ctx.name1) {
+            }
+            if (name === 'You' && ctx.name1) {
                 name = ctx.name1;
                 avatar = this._initialAvatar(String(name).charAt(0).toUpperCase());
             }
@@ -59,14 +87,11 @@ export class AccountManager {
         };
     }
 
-    getCurrentAccount() {
-        return this.currentAccount || this.getOrCreateAccount();
-    }
-
     updateAccount(partial) {
         const account = { ...this.getCurrentAccount(), ...partial };
-        this.currentAccount = account;
         this.storage.updateState(null, { account });
+        this._cached = account;
+        this._cachedChatId = this._chatId();
         return account;
     }
 
