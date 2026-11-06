@@ -108,13 +108,87 @@
     }
   };
 
+  // apps/account-manager.js
+  var AccountManager = class {
+    static {
+      __name(this, "AccountManager");
+    }
+    constructor(context, storage2) {
+      this.context = context;
+      this.storage = storage2;
+      this.currentAccount = null;
+    }
+    getOrCreateAccount() {
+      if (this.currentAccount) return this.currentAccount;
+      const state = this.storage.getState();
+      if (state.account) {
+        this.currentAccount = state.account;
+        return this.currentAccount;
+      }
+      const account = this._fromPersona();
+      this.storage.updateState(null, { account });
+      this.currentAccount = account;
+      return account;
+    }
+    _fromPersona() {
+      let name = "You";
+      let avatar = this._initialAvatar("Y");
+      let bio = "";
+      try {
+        const ctx = this.context || {};
+        const persona = ctx.personas?.[ctx.user_persona] || ctx.persona || null;
+        if (persona) {
+          name = persona.name || name;
+          if (persona.avatar && persona.avatar !== "none") avatar = persona.avatar;
+          if (persona.description) bio = String(persona.description).slice(0, 200);
+        } else if (ctx.name1) {
+          name = ctx.name1;
+          avatar = this._initialAvatar(String(name).charAt(0).toUpperCase());
+        }
+      } catch (err) {
+        console.warn("[Astral Phone] persona read failed:", err);
+      }
+      return {
+        name,
+        avatar,
+        bio,
+        createdAt: (/* @__PURE__ */ new Date()).toISOString(),
+        stats: {
+          followers: 1240,
+          following: 87,
+          posts: 0,
+          likes: 0
+        }
+      };
+    }
+    getCurrentAccount() {
+      return this.currentAccount || this.getOrCreateAccount();
+    }
+    updateAccount(partial) {
+      const account = { ...this.getCurrentAccount(), ...partial };
+      this.currentAccount = account;
+      this.storage.updateState(null, { account });
+      return account;
+    }
+    bumpStat(key, by = 1) {
+      const account = this.getCurrentAccount();
+      const stats = { ...account.stats || {}, [key]: (account.stats?.[key] || 0) + by };
+      return this.updateAccount({ stats });
+    }
+    _initialAvatar(letter) {
+      const svg = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 100"><circle cx="50" cy="50" r="50" fill="#D99AB5"/><text x="50" y="66" font-size="44" font-family="sans-serif" font-weight="600" text-anchor="middle" fill="#0D0B10">${letter}</text></svg>`;
+      return `data:image/svg+xml;charset=utf-8,${encodeURIComponent(svg)}`;
+    }
+  };
+
   // apps/phone-core.js
   var ICONS = {
     home: `<svg viewBox="0 0 24 24"><path d="M12 3.2l1.9 4.6 4.9.4-3.7 3.2 1.1 4.8L12 13.7 7.8 16.2l1.1-4.8L5.2 8.2l4.9-.4z"/></svg>`,
     messages: `<svg viewBox="0 0 24 24"><path d="M20.5 12.2c0 4-3.8 7.2-8.5 7.2-1 0-2-.1-2.9-.4L4 20.5l1.3-3.5C4.2 15.6 3.5 14 3.5 12.2c0-4 3.8-7.2 8.5-7.2s8.5 3.2 8.5 7.2z"/><path d="M8.5 11.5h.01M12 11.5h.01M15.5 11.5h.01" stroke-width="2"/></svg>`,
     gallery: `<svg viewBox="0 0 24 24"><rect x="3.2" y="5.4" width="17.6" height="13.2" rx="3"/><circle cx="12" cy="12" r="3.6"/><path d="M17.4 8.4h.01" stroke-width="2.4"/></svg>`,
     spicy: `<svg viewBox="0 0 24 24"><path d="M12 21c3.6 0 6.4-2.6 6.4-6.2 0-4.4-4.3-6.6-4.3-10.8-2.2 1-3.3 3-3.3 5.2 0 1.4.4 2.2.4 2.2-1.4-.6-2.4-2-2.4-3.6-1.6 1.6-2.6 3.9-2.6 6.4C6.2 18.2 8.6 21 12 21z"/></svg>`,
-    creator: `<svg viewBox="0 0 24 24"><path d="M12 2.8l3.1 5.9 6.3 1-4.6 4.4 1.1 6.4-5.9-3.2-5.9 3.2 1.1-6.4L2.6 9.7l6.3-1z"/></svg>`
+    creator: `<svg viewBox="0 0 24 24"><path d="M12 2.8l3.1 5.9 6.3 1-4.6 4.4 1.1 6.4-5.9-3.2-5.9 3.2 1.1-6.4L2.6 9.7l6.3-1z"/></svg>`,
+    settings: `<svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="3"/><path d="M12 1v6m0 6v6M5.64 5.64l4.24 4.24m4.24 4.24l4.24 4.24M1 12h6m6 0h6M5.64 18.36l4.24-4.24m4.24-4.24l4.24-4.24"/></svg>`
   };
   var PhoneCore = class {
     static {
@@ -124,6 +198,13 @@
       this.context = context;
       this.storage = storage2;
       this.imageGen = imageGen2;
+      this.accountManager = null;
+      try {
+        this.accountManager = new AccountManager(context, storage2);
+        this.accountManager.getOrCreateAccount();
+      } catch (err) {
+        console.error("[Astral Phone] AccountManager init failed (phone still usable):", err);
+      }
       this.apps = /* @__PURE__ */ new Map();
       this.currentAppId = null;
       this.overlay = null;
@@ -802,9 +883,9 @@
      *   `character` is used as the uploaded image's ch_name.
      * @returns {Promise<string>} ST-hosted path (e.g. /user/images/...) ready for <img src>.
      */
-    async generate(prompt, metadata = {}) {
+    async generate(prompt2, metadata = {}) {
       const settings = this._settings();
-      const text = String(prompt ?? "").trim();
+      const text = String(prompt2 ?? "").trim();
       if (!text) throw new Error("\u041F\u0443\u0441\u0442\u043E\u0439 \u043F\u0440\u043E\u043C\u043F\u0442 \u0434\u043B\u044F \u0433\u0435\u043D\u0435\u0440\u0430\u0446\u0438\u0438 \u0438\u0437\u043E\u0431\u0440\u0430\u0436\u0435\u043D\u0438\u044F.");
       const dataUrl = await this._generateWithTimeout(text, settings);
       return this.saveImageToFile(dataUrl, metadata?.character);
@@ -857,7 +938,7 @@
     }
     /* ─────────────────────────── dispatch + timeout ─────────────────────────── */
     /** Port of generateImageWithRetry (3136-3213) with retries and toasts removed. */
-    async _generateWithTimeout(prompt, settings) {
+    async _generateWithTimeout(prompt2, settings) {
       const timeoutMs = Math.max(5, Number(settings.requestTimeout) || 120) * 1e3;
       const controller = new AbortController();
       const timeoutId = setTimeout(() => controller.abort(), timeoutMs);
@@ -866,19 +947,19 @@
         const isRouterApi = isRouterEndpoint(settings.endpoint);
         const useGeminiApi = settings.apiType === "gemini" && !isRouterApi;
         if (settings.apiType === "naistera") {
-          return await this.generateImageNaistera(prompt, "", settings, options);
+          return await this.generateImageNaistera(prompt2, "", settings, options);
         }
         if (["novelai", "novelai-direct"].includes(settings.apiType)) {
-          return await this.generateImageNovelAI(prompt, "", settings, options);
+          return await this.generateImageNovelAI(prompt2, "", settings, options);
         }
         const useChatApi = settings.apiType === "openai-chat" || isRouterApi && (settings.apiType === "openai" || settings.apiType === "gemini");
         if (useGeminiApi) {
-          return await this.generateImageGemini(prompt, "", settings, options);
+          return await this.generateImageGemini(prompt2, "", settings, options);
         }
         if (useChatApi) {
-          return await this.generateImageOpenAIChat(prompt, "", settings, options);
+          return await this.generateImageOpenAIChat(prompt2, "", settings, options);
         }
-        return await this.generateImageOpenAI(prompt, "", settings, options);
+        return await this.generateImageOpenAI(prompt2, "", settings, options);
       } catch (error) {
         if (error?.name === "AbortError") {
           throw new Error(`\u0422\u0430\u0439\u043C\u0430\u0443\u0442: \u043F\u0440\u043E\u0432\u0430\u0439\u0434\u0435\u0440 \u043D\u0435 \u043E\u0442\u0432\u0435\u0442\u0438\u043B \u0437\u0430 ${Math.round(timeoutMs / 1e3)}\u0441`);
@@ -959,7 +1040,7 @@
       throw new Error(`Naistera polling timed out after ${Math.round(timeoutMs / 1e3)}s`);
     }
     /** Port of generateImageNaistera (2394-2494). refData is always empty here. */
-    async generateImageNaistera(prompt, style, settings, options = {}) {
+    async generateImageNaistera(prompt2, style, settings, options = {}) {
       const endpoint = normalizeNaisteraEndpoint(settings.endpoint);
       const model = normalizeNaisteraModel(settings.naisteraModel);
       if (!model) throw new Error("Naistera: \u043C\u043E\u0434\u0435\u043B\u044C \u043D\u0435 \u0432\u044B\u0431\u0440\u0430\u043D\u0430 (\u043D\u0430\u0441\u0442\u0440\u043E\u0439\u043A\u0438 haruspics).");
@@ -982,7 +1063,7 @@
         if (descriptions.length > 0) promptParts.push(`[CHARACTER DESCRIPTIONS]
 ${descriptions.join("\n")}`);
       }
-      promptParts.push(prompt);
+      promptParts.push(prompt2);
       let aspectRatio = options.aspectRatio || settings.naisteraAspectRatio || "1:1";
       const isNaisteraNanaBanana = isGeminiModel(model);
       if (isNaisteraNanaBanana && settings.geminiRandomFormat && !options.aspectRatio) {
@@ -1030,7 +1111,7 @@ ${descriptions.join("\n")}`);
     }
     /* ─────────────────────────── NovelAI ─────────────────────────── */
     /** Port of generateImageNovelAI (2545-2633). refData is always empty here. */
-    async generateImageNovelAI(prompt, style, settings, options = {}) {
+    async generateImageNovelAI(prompt2, style, settings, options = {}) {
       const parts = [];
       if (style) parts.push(style);
       parts.push(...EMPTY_REFS.textDirectives);
@@ -1040,7 +1121,7 @@ ${descriptions.join("\n")}`);
       for (const ref of EMPTY_REFS.imageRefs) {
         if (ref.type === "clothing" && ref.description) parts.push(`${ref.name || "Character"} is wearing: ${ref.description}`);
       }
-      parts.push(prompt);
+      parts.push(prompt2);
       const ratio = String(options.aspectRatio || "");
       let width = Number(settings.novelaiWidth);
       let height = Number(settings.novelaiHeight);
@@ -1135,7 +1216,7 @@ ${descriptions.join("\n")}`);
     }
     /* ─────────────────────────── OpenAI images API ─────────────────────────── */
     /** Port of generateImageOpenAI (2635-2736). refData is always empty here. */
-    async generateImageOpenAI(prompt, style, settings, options = {}) {
+    async generateImageOpenAI(prompt2, style, settings, options = {}) {
       const url = buildOpenAIUrl(settings.endpoint, "images/generations");
       const { imageRefs, textOnlyClothing, textDirectives } = EMPTY_REFS;
       const promptParts = [];
@@ -1147,7 +1228,7 @@ ${descriptions.join("\n")}`);
           promptParts.push(`[CLOTHING for ${ref.name}: ${ref.description}]`);
         }
       }
-      promptParts.push(prompt);
+      promptParts.push(prompt2);
       const fullPrompt = promptParts.join("\n\n");
       let size = settings.size;
       if (options.aspectRatio) {
@@ -1206,7 +1287,7 @@ ${descriptions.join("\n")}`);
     }
     /* ─────────────────────────── OpenAI chat / routers ─────────────────────────── */
     /** Port of generateImageOpenAIChat (2809-2911). refData is always empty here. */
-    async generateImageOpenAIChat(prompt, style, settings, options = {}) {
+    async generateImageOpenAIChat(prompt2, style, settings, options = {}) {
       const url = buildOpenAIUrl(settings.endpoint, "chat/completions");
       const { imageRefs, textOnlyClothing, textDirectives } = EMPTY_REFS;
       let aspectRatio = options.aspectRatio || settings.aspectRatio || "1:1";
@@ -1230,7 +1311,7 @@ ${descriptions.join("\n")}`);
         if (ref.type === "hairstyle") promptParts.push(`[HAIRSTYLE REFERENCE for ${ref.name}: copy only the hair, not the face]`);
       }
       promptParts.push(`[SCENE TO GENERATE]
-${prompt}`);
+${prompt2}`);
       const galleryNegative = options.negativePrompt == null ? this.getEffectiveNegativePrompt("") : String(options.negativePrompt || "").trim();
       if (galleryNegative) promptParts.push(`[NEGATIVE PROMPT: ${galleryNegative}]`);
       const fullPrompt = promptParts.join("\n\n");
@@ -1273,7 +1354,7 @@ ${prompt}`);
     }
     /* ─────────────────────────── Gemini ─────────────────────────── */
     /** Port of generateImageGemini (2913-3114). refData is always empty here. */
-    async generateImageGemini(prompt, style, settings, options = {}) {
+    async generateImageGemini(prompt2, style, settings, options = {}) {
       const model = settings.model;
       if (!model) throw new Error("Gemini: \u043C\u043E\u0434\u0435\u043B\u044C \u043D\u0435 \u0432\u044B\u0431\u0440\u0430\u043D\u0430 (\u043D\u0430\u0441\u0442\u0440\u043E\u0439\u043A\u0438 haruspics).");
       const baseUrl = String(settings.endpoint || "").replace(/\/$/, "");
@@ -1380,7 +1461,7 @@ CRITICAL: Face features must be IDENTICAL to face references. Clothing reference
 
 `;
       fullPrompt += `[SCENE TO GENERATE]
-${prompt}
+${prompt2}
 [END SCENE]`;
       if (faceRefs.length > 0) {
         fullPrompt += `
@@ -1646,8 +1727,8 @@ ${prompt}
         const state = this.storage.getState();
         const photo = state.gallery[index];
         if (!photo) return;
-        const prompt = this._buildPrompt(photo);
-        const url = await this.imageGen.generate(prompt, {
+        const prompt2 = this._buildPrompt(photo);
+        const url = await this.imageGen.generate(prompt2, {
           character: photo.character,
           type: "gallery_photo"
         });
@@ -1812,8 +1893,8 @@ ${prompt}
         const state = this.storage.getState();
         const item = state.spicy[index];
         if (!item) return;
-        const prompt = [item.character, item.description].filter(Boolean).join(" \u2014 ");
-        const url = await this.imageGen.generate(prompt, {
+        const prompt2 = [item.character, item.description].filter(Boolean).join(" \u2014 ");
+        const url = await this.imageGen.generate(prompt2, {
           character: item.character,
           type: "spicy_thumbnail",
           nsfw: true
@@ -2123,8 +2204,8 @@ ${prompt}
         const state = this.storage.getState();
         const post = state.creator?.posts?.[index];
         if (!post) return;
-        const prompt = [this.context.name2 || "\u041F\u0435\u0440\u0441\u043E\u043D\u0430\u0436", post.description].filter(Boolean).join(" \u2014 ");
-        const url = await this.imageGen.generate(prompt, {
+        const prompt2 = [this.context.name2 || "\u041F\u0435\u0440\u0441\u043E\u043D\u0430\u0436", post.description].filter(Boolean).join(" \u2014 ");
+        const url = await this.imageGen.generate(prompt2, {
           character: this.context.name2,
           type: "creator_post",
           nsfw: true
@@ -2206,6 +2287,114 @@ ${prompt}
     }
   };
 
+  // apps/settings.js
+  var SettingsApp = class {
+    static {
+      __name(this, "SettingsApp");
+    }
+    constructor(context, storage2, accountManager) {
+      this.context = context;
+      this.storage = storage2;
+      this.accountManager = accountManager;
+      this.title = "Settings";
+      this.icon = `<svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="3"/><path d="M12 1v6m0 6v6M5.64 5.64l4.24 4.24m4.24 4.24l4.24 4.24M1 12h6m6 0h6M5.64 18.36l4.24-4.24m4.24-4.24l4.24-4.24"/></svg>`;
+    }
+    render(container) {
+      if (!this.accountManager) {
+        container.innerHTML = '<div class="astral-empty-state"><div class="astral-empty-state-icon">\u26A0</div><div>\u0410\u043A\u043A\u0430\u0443\u043D\u0442 \u043D\u0435\u0434\u043E\u0441\u0442\u0443\u043F\u0435\u043D</div></div>';
+        return;
+      }
+      const account = this.accountManager.getCurrentAccount();
+      container.innerHTML = `
+            <div class="astral-app astral-settings">
+                <div class="astral-settings-section">
+                    <h3 class="astral-section-title">\u041F\u0440\u043E\u0444\u0438\u043B\u044C</h3>
+
+                    <div class="astral-profile-edit">
+                        <div class="astral-avatar-edit">
+                            <img src="${this._esc(account.avatar)}" alt="Avatar" class="astral-avatar-preview" />
+                            <button class="astral-btn-icon" data-action="change-avatar">\u270E</button>
+                        </div>
+
+                        <div class="astral-form-group">
+                            <label>\u0418\u043C\u044F</label>
+                            <input type="text" id="astral-account-name" value="${this._esc(account.name)}" placeholder="\u0412\u0430\u0448\u0435 \u0438\u043C\u044F" />
+                        </div>
+
+                        <div class="astral-form-group">
+                            <label>\u0411\u0438\u043E\u0433\u0440\u0430\u0444\u0438\u044F</label>
+                            <textarea id="astral-account-bio" placeholder="\u0420\u0430\u0441\u0441\u043A\u0430\u0436\u0438\u0442\u0435 \u043E \u0441\u0435\u0431\u0435..." rows="3">${this._esc(account.bio)}</textarea>
+                        </div>
+
+                        <button class="astral-btn-primary" data-action="save-profile">\u0421\u043E\u0445\u0440\u0430\u043D\u0438\u0442\u044C</button>
+                    </div>
+                </div>
+
+                <div class="astral-settings-section">
+                    <h3 class="astral-section-title">\u0421\u0442\u0430\u0442\u0438\u0441\u0442\u0438\u043A\u0430</h3>
+                    <div class="astral-stats-grid">
+                        <div class="astral-stat-item">
+                            <div class="astral-stat-value">${account.stats.followers}</div>
+                            <div class="astral-stat-label">\u041F\u043E\u0434\u043F\u0438\u0441\u0447\u0438\u043A\u0438</div>
+                        </div>
+                        <div class="astral-stat-item">
+                            <div class="astral-stat-value">${account.stats.following}</div>
+                            <div class="astral-stat-label">\u041F\u043E\u0434\u043F\u0438\u0441\u043A\u0438</div>
+                        </div>
+                        <div class="astral-stat-item">
+                            <div class="astral-stat-value">${account.stats.posts}</div>
+                            <div class="astral-stat-label">\u041F\u0443\u0431\u043B\u0438\u043A\u0430\u0446\u0438\u0438</div>
+                        </div>
+                        <div class="astral-stat-item">
+                            <div class="astral-stat-value">${account.stats.likes}</div>
+                            <div class="astral-stat-label">\u041B\u0430\u0439\u043A\u0438</div>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="astral-settings-section">
+                    <h3 class="astral-section-title">\u041E \u0442\u0435\u043B\u0435\u0444\u043E\u043D\u0435</h3>
+                    <div class="astral-about">
+                        <div class="astral-about-line">
+                            <span>\u0412\u0435\u0440\u0441\u0438\u044F</span>
+                            <span>1.0.0</span>
+                        </div>
+                        <div class="astral-about-line">
+                            <span>\u0421\u043E\u0437\u0434\u0430\u043D</span>
+                            <span>${new Date(account.createdAt).toLocaleDateString("ru-RU")}</span>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        `;
+      this.attachEvents(container);
+    }
+    attachEvents(container) {
+      if (!this.accountManager) return;
+      container.querySelector('[data-action="save-profile"]')?.addEventListener("click", () => {
+        const name = container.querySelector("#astral-account-name")?.value || "";
+        const bio = container.querySelector("#astral-account-bio")?.value || "";
+        this.accountManager.updateAccount({ name, bio });
+        const btn = container.querySelector('[data-action="save-profile"]');
+        const orig = btn.textContent;
+        btn.textContent = "\u2713 \u0421\u043E\u0445\u0440\u0430\u043D\u0435\u043D\u043E";
+        setTimeout(() => {
+          btn.textContent = orig;
+        }, 1500);
+      });
+      container.querySelector('[data-action="change-avatar"]')?.addEventListener("click", () => {
+        const url = prompt("\u0412\u0432\u0435\u0434\u0438\u0442\u0435 URL \u0430\u0432\u0430\u0442\u0430\u0440\u0430:");
+        if (!url) return;
+        this.accountManager.updateAccount({ avatar: url });
+        const img = container.querySelector(".astral-avatar-preview");
+        if (img) img.src = url;
+      });
+    }
+    _esc(str) {
+      return String(str ?? "").replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" })[c]);
+    }
+  };
+
   // index.js
   var MODULE_NAME = "astral-phone";
   var EVENT_TAG_RE = /<phone-event\b([^>]*?)\/?>/gi;
@@ -2238,18 +2427,36 @@ description \u043F\u0438\u0448\u0438 \u043A\u0430\u043A \u043F\u0440\u043E\u043C
     storage = new PhoneStorage(context);
     imageGen = new ImageGenerator(context);
     core = new PhoneCore(context, storage, imageGen);
-    core.registerApp("messages", new MessagesApp(context, storage, imageGen));
-    core.registerApp("gallery", new GalleryApp(context, storage, imageGen));
-    core.registerApp("spicy", new SpicyApp(context, storage, imageGen));
-    core.registerApp("creator", new CreatorApp(context, storage, imageGen));
     window.__astralPhoneCore = core;
     injectLauncher();
-    injectSettingsPanel();
-    loadSettings();
-    registerFunctionTool(context);
-    registerSlashCommands(context);
-    registerEventTagFallback(context);
-    injectPromptBlock(context);
+    const apps = [
+      ["messages", () => new MessagesApp(context, storage, imageGen)],
+      ["gallery", () => new GalleryApp(context, storage, imageGen)],
+      ["spicy", () => new SpicyApp(context, storage, imageGen)],
+      ["creator", () => new CreatorApp(context, storage, imageGen)],
+      ["settings", () => new SettingsApp(context, storage, core.accountManager)]
+    ];
+    for (const [id, factory] of apps) {
+      try {
+        core.registerApp(id, factory());
+      } catch (err) {
+        console.error(`[Astral Phone] App "${id}" failed to load:`, err);
+      }
+    }
+    for (const [label, fn] of [
+      ["settings panel", injectSettingsPanel],
+      ["load settings", loadSettings],
+      ["function tool", registerFunctionTool],
+      ["slash commands", registerSlashCommands],
+      ["event fallback", registerEventTagFallback],
+      ["prompt block", injectPromptBlock]
+    ]) {
+      try {
+        fn(context);
+      } catch (err) {
+        console.error(`[Astral Phone] ${label} failed:`, err);
+      }
+    }
     initialized = true;
     console.log("[Astral Phone] ready");
   }

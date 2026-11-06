@@ -12,6 +12,7 @@ import { MessagesApp } from './apps/messages.js';
 import { GalleryApp } from './apps/gallery.js';
 import { SpicyApp } from './apps/spicy.js';
 import { CreatorApp } from './apps/creator.js';
+import { SettingsApp } from './apps/settings.js';
 
 const MODULE_NAME = 'astral-phone';
 const EVENT_TAG_RE = /<phone-event\b([^>]*?)\/?>/gi;
@@ -53,19 +54,40 @@ function init() {
     imageGen = new ImageGenerator(context);
 
     core = new PhoneCore(context, storage, imageGen);
-    core.registerApp('messages', new MessagesApp(context, storage, imageGen));
-    core.registerApp('gallery', new GalleryApp(context, storage, imageGen));
-    core.registerApp('spicy', new SpicyApp(context, storage, imageGen));
-    core.registerApp('creator', new CreatorApp(context, storage, imageGen));
 
+    // Launcher first — the icon must appear even if an app fails to construct.
     window.__astralPhoneCore = core;
     injectLauncher();
-    injectSettingsPanel();
-    loadSettings();
-    registerFunctionTool(context);
-    registerSlashCommands(context);
-    registerEventTagFallback(context);
-    injectPromptBlock(context);
+
+    const apps = [
+        ['messages', () => new MessagesApp(context, storage, imageGen)],
+        ['gallery', () => new GalleryApp(context, storage, imageGen)],
+        ['spicy', () => new SpicyApp(context, storage, imageGen)],
+        ['creator', () => new CreatorApp(context, storage, imageGen)],
+        ['settings', () => new SettingsApp(context, storage, core.accountManager)],
+    ];
+    for (const [id, factory] of apps) {
+        try {
+            core.registerApp(id, factory());
+        } catch (err) {
+            console.error(`[Astral Phone] App "${id}" failed to load:`, err);
+        }
+    }
+
+    for (const [label, fn] of [
+        ['settings panel', injectSettingsPanel],
+        ['load settings', loadSettings],
+        ['function tool', registerFunctionTool],
+        ['slash commands', registerSlashCommands],
+        ['event fallback', registerEventTagFallback],
+        ['prompt block', injectPromptBlock],
+    ]) {
+        try {
+            fn(context);
+        } catch (err) {
+            console.error(`[Astral Phone] ${label} failed:`, err);
+        }
+    }
 
     initialized = true;
     console.log('[Astral Phone] ready');

@@ -4,6 +4,7 @@
  */
 
 import { LockScreen } from './lockscreen.js';
+import { AccountManager } from './account-manager.js';
 
 /** Line icons drawn in the accent colour — one visual system instead of emoji. */
 export const ICONS = {
@@ -12,6 +13,7 @@ export const ICONS = {
     gallery: `<svg viewBox="0 0 24 24"><rect x="3.2" y="5.4" width="17.6" height="13.2" rx="3"/><circle cx="12" cy="12" r="3.6"/><path d="M17.4 8.4h.01" stroke-width="2.4"/></svg>`,
     spicy: `<svg viewBox="0 0 24 24"><path d="M12 21c3.6 0 6.4-2.6 6.4-6.2 0-4.4-4.3-6.6-4.3-10.8-2.2 1-3.3 3-3.3 5.2 0 1.4.4 2.2.4 2.2-1.4-.6-2.4-2-2.4-3.6-1.6 1.6-2.6 3.9-2.6 6.4C6.2 18.2 8.6 21 12 21z"/></svg>`,
     creator: `<svg viewBox="0 0 24 24"><path d="M12 2.8l3.1 5.9 6.3 1-4.6 4.4 1.1 6.4-5.9-3.2-5.9 3.2 1.1-6.4L2.6 9.7l6.3-1z"/></svg>`,
+    settings: `<svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="3"/><path d="M12 1v6m0 6v6M5.64 5.64l4.24 4.24m4.24 4.24l4.24 4.24M1 12h6m6 0h6M5.64 18.36l4.24-4.24m4.24-4.24l4.24-4.24"/></svg>`,
 };
 
 export class PhoneCore {
@@ -19,6 +21,14 @@ export class PhoneCore {
         this.context = context;
         this.storage = storage;
         this.imageGen = imageGen;
+        
+        this.accountManager = null;
+                try {
+                    this.accountManager = new AccountManager(context, storage);
+                    this.accountManager.getOrCreateAccount();
+                } catch (err) {
+                    console.error('[Astral Phone] AccountManager init failed (phone still usable):', err);
+                }
 
         this.apps = new Map();
         this.currentAppId = null;

@@ -44,6 +44,7 @@ const { MessagesApp } = await import('../apps/messages.js');
 const { GalleryApp } = await import('../apps/gallery.js');
 const { SpicyApp } = await import('../apps/spicy.js');
 const { CreatorApp } = await import('../apps/creator.js');
+const { SettingsApp } = await import('../apps/settings.js');
 
 /* Заглушка генератора: возвращает градиентную картинку-плейсхолдер */
 class StubImageGen {
@@ -97,6 +98,7 @@ core.registerApp('messages', new MessagesApp(ctx, storage, img));
 core.registerApp('gallery', new GalleryApp(ctx, storage, img));
 core.registerApp('spicy', new SpicyApp(ctx, storage, img));
 core.registerApp('creator', new CreatorApp(ctx, storage, img));
+core.registerApp('settings', new SettingsApp(ctx, storage, core.accountManager));
 core.open();
 
 window.__core = core;
