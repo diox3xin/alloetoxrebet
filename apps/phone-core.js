@@ -4,7 +4,6 @@
  */
 
 import { LockScreen } from './lockscreen.js';
-import { AccountManager } from './account-manager.js';
 
 /** Line icons drawn in the accent colour — one visual system instead of emoji. */
 export const ICONS = {
@@ -20,9 +19,6 @@ export class PhoneCore {
         this.context = context;
         this.storage = storage;
         this.imageGen = imageGen;
-        
-        this.accountManager = new AccountManager(context, storage);
-        this.accountManager.getOrCreateAccount(); // Создать при первом открытии
 
         this.apps = new Map();
         this.currentAppId = null;

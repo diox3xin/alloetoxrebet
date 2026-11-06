@@ -53,11 +53,10 @@ function init() {
     imageGen = new ImageGenerator(context);
 
     core = new PhoneCore(context, storage, imageGen);
-    core.registerApp('messages', 'Messages', new MessagesApp(context, storage, imageGen));
-    core.registerApp('gallery', 'Gallery', new GalleryApp(context, storage, imageGen));
-    core.registerApp('spicy', 'Spicy Hub', new SpicyApp(context, storage, imageGen));
-    core.registerApp('creator', 'Creator Studio', new CreatorApp(context, storage, imageGen));
-    core.registerApp('settings', 'Settings', new SettingsApp(context, storage, core.accountManager));
+    core.registerApp('messages', new MessagesApp(context, storage, imageGen));
+    core.registerApp('gallery', new GalleryApp(context, storage, imageGen));
+    core.registerApp('spicy', new SpicyApp(context, storage, imageGen));
+    core.registerApp('creator', new CreatorApp(context, storage, imageGen));
 
     window.__astralPhoneCore = core;
     injectLauncher();
