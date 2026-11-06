@@ -2249,56 +2249,63 @@ REPLY (text only):`;
       } catch {
       }
     }
-    /** Generate a photo prompt and add to gallery. mode = 'photo' | 'selfie' | 'random' */
+    /**
+     * Build a NovelAI v5 prompt.
+     *
+     * The prompt is assembled HERE, in code — style and character appearance are
+     * pulled straight from Haruspics, so they are guaranteed to be present and
+     * in English. The RP model is asked for one thing only: a short English
+     * sentence describing the action and setting. Letting it write the whole
+     * prompt produced Russian narration instead of an image prompt.
+     */
     async _takePhoto(mode = "random") {
       try {
         const ctx = this.context || globalThis.SillyTavern?.getContext?.() || {};
-        const genFn = ctx.generateQuietPrompt;
-        if (typeof genFn !== "function") {
-          this._toast("generateQuietPrompt unavailable", "error");
-          return;
-        }
         const charName = ctx.name2 || "Character";
         const userName = ctx.name1 || "You";
         const prefs = this._loadCameraPrefs();
-        const chat = Array.isArray(ctx.chat) ? ctx.chat : [];
-        const sceneLines = chat.filter((m) => m && !m.is_system && typeof m.mes === "string").slice(-4).map((m) => String(m.mes).replace(/<[^>]+>/g, " ").replace(/\s+/g, " ").trim().slice(0, 400)).filter(Boolean);
-        const sceneText = sceneLines.join("\n---\n") || "(no scene yet)";
         const resolvedMode = mode === "random" ? Math.random() < 0.5 ? "photo" : "selfie" : mode;
-        const customInstr = resolvedMode === "selfie" ? prefs.selfieInstruction.trim() : prefs.photoInstruction.trim();
-        const modeBlock = resolvedMode === "selfie" ? `MODE: SELFIE. ${userName} is holding the phone and taking a selfie together with ${charName}. Both are in frame.` : `MODE: PHOTO. ${userName} is holding the phone and photographing ${charName}. ${userName} is NOT in the frame.`;
-        const instructionBlock = customInstr ? `INSTRUCTION TO FOLLOW:
-${customInstr}` : `Write a detailed NovelAI v5 prompt for a candid phone photo. Include subject appearance, outfit, pose, background, lighting and "shot on smartphone" technical note.`;
-        const prompt = `[IMAGE PROMPT TASK]
-
-${modeBlock}
-
-SCENE (the roleplay happening right now, may be in any language):
-${sceneText}
-
-${instructionBlock}
-
-HARD RULES:
-- Output MUST be in ENGLISH. Never Russian, never any other language.
-- Output ONLY the image prompt itself. No preamble, no explanation, no quotes, no "Prompt:" prefix, no markdown.
-- Describe the visual scene concretely: who, what they wear, what they do, where they are, light, mood.
-- Keep it under 200 words.`;
-        const description = await genFn(prompt, false, false);
-        let text = String(description || "").trim();
-        text = text.replace(/^```[a-z]*\n?/i, "").replace(/\n?```$/, "").replace(/^(prompt|image prompt|description)\s*:\s*/i, "").replace(/^["'«]|["'»]$/g, "").trim().slice(0, 600);
-        if (!text) {
-          this._toast("Failed to capture photo", "error");
-          return;
+        const style = String(this.imageGen?.getStyle?.() || "").trim();
+        let appearance = "";
+        try {
+          const refs = this.imageGen?._collectRefs?.() || {};
+          appearance = (refs.textOnlyClothing || []).filter((c) => c.charName === charName).map((c) => c.description).join(", ");
+        } catch (_) {
         }
+        const sceneText = this._sceneText(ctx);
+        const ask = this._buildSceneAsk({
+          charName,
+          userName,
+          mode: resolvedMode,
+          sceneText,
+          needAppearance: !appearance,
+          customInstruction: resolvedMode === "selfie" ? prefs.selfieInstruction.trim() : prefs.photoInstruction.trim()
+        });
+        const action = await this._askModel(ctx, ask);
+        const cleanAction = String(action || "").replace(/^```[a-z]*\n?/i, "").replace(/\n?```$/, "").replace(/^(prompt|description|answer)\s*:\s*/i, "").replace(/^["'«]|["'»]$/g, "").replace(/\s+/g, " ").trim().slice(0, 300);
+        const parts = [];
+        if (style) parts.push(style);
+        if (resolvedMode === "selfie") {
+          parts.push(`selfie, front camera, ${userName} and ${charName} in frame`);
+          parts.push(userName);
+        } else {
+          parts.push(`candid photo, shot on smartphone, ${charName} in frame`);
+        }
+        parts.push(appearance ? `${charName}, ${appearance}` : charName);
+        if (cleanAction) parts.push(cleanAction);
+        parts.push("natural lighting, shallow depth of field, realistic photograph, detailed");
+        const finalPrompt = parts.filter(Boolean).join(", ");
+        console.log("[Astral Phone] photo prompt:", finalPrompt);
         const state = this.storage.getState();
         if (!Array.isArray(state.gallery)) state.gallery = [];
         state.gallery.push({
           id: `photo_${Date.now()}_${Math.random().toString(36).slice(2, 7)}`,
-          description: text,
+          description: finalPrompt,
           imageUrl: null,
           timestamp: Date.now(),
           source: resolvedMode,
-          character: charName
+          character: charName,
+          style
         });
         this.storage.save();
         this._toast(resolvedMode === "selfie" ? "\u0421\u0435\u043B\u0444\u0438 \u0434\u043E\u0431\u0430\u0432\u043B\u0435\u043D\u043E \u0432 \u0433\u0430\u043B\u0435\u0440\u0435\u044E" : "\u0424\u043E\u0442\u043E \u0434\u043E\u0431\u0430\u0432\u043B\u0435\u043D\u043E \u0432 \u0433\u0430\u043B\u0435\u0440\u0435\u044E");
@@ -2307,6 +2314,61 @@ HARD RULES:
         console.error("[Astral Phone] takePhoto failed:", err);
         this._toast(`Error: ${err.message}`, "error");
       }
+    }
+    /** Last few roleplay messages, tag-stripped — the visual source material. */
+    _sceneText(ctx) {
+      const chat = Array.isArray(ctx.chat) ? ctx.chat : [];
+      const lines = chat.filter((m) => m && !m.is_system && typeof m.mes === "string").slice(-4).map((m) => String(m.mes).replace(/<[^>]+>/g, " ").replace(/\s+/g, " ").trim().slice(0, 500)).filter(Boolean);
+      return lines.join("\n---\n") || "(quiet moment)";
+    }
+    _buildSceneAsk({ charName, userName, mode, sceneText, needAppearance, customInstruction }) {
+      const who = mode === "selfie" ? `${charName} and ${userName}` : charName;
+      const appearanceRule = needAppearance ? `Include a brief physical description of ${who} (hair, eyes, build, clothing) \u2014 it is not available elsewhere.` : `Do NOT describe ${who}'s appearance \u2014 it is added automatically.`;
+      const custom = customInstruction ? `
+EXTRA GUIDANCE FROM THE USER:
+${customInstruction}
+` : "";
+      return `You write IMAGE PROMPTS. Never narrate, never roleplay, never translate.
+
+ROLEPLAY SCENE (source material, may be in any language):
+${sceneText}
+
+TASK:
+Write ONE English sentence, maximum 30 words, describing only the VISUAL content of a photo being taken right now: what ${who} is doing, their pose and expression, and where they are.
+${appearanceRule}${custom}
+Rules:
+- English only. No Russian words, no transliteration.
+- Visual facts only. No plot, no dialogue, no feelings, no metaphors.
+- No names of camera apps, no quotes, no labels, no markdown.
+
+SENTENCE:`;
+    }
+    /** Ask the model, preferring generateRaw (no character context contamination). */
+    async _askModel(ctx, ask) {
+      const system = "You are an image prompt engineer. You output English only. You never narrate or roleplay.";
+      if (typeof ctx.generateRaw === "function") {
+        try {
+          const out = await ctx.generateRaw({
+            prompt: ask,
+            systemPrompt: system,
+            responseLength: 150
+          });
+          const text = String(out || "").trim();
+          if (text) return text;
+        } catch (err) {
+          console.warn("[Astral Phone] generateRaw failed, falling back:", err?.message);
+        }
+      }
+      if (typeof ctx.generateQuietPrompt === "function") {
+        const out = await ctx.generateQuietPrompt(
+          `[VISUAL DESCRIPTION ONLY \u2014 ENGLISH ONLY \u2014 NO NARRATION]
+${ask}`,
+          false,
+          false
+        );
+        return String(out || "").trim();
+      }
+      throw new Error("No generation function available (generateRaw / generateQuietPrompt).");
     }
     _inferBackground(messages) {
       if (messages.includes("home") || messages.includes("house") || messages.includes("room")) return "cozy indoor setting";
@@ -2330,8 +2392,9 @@ HARD RULES:
         if (!photo) return;
         const prompt = this._buildPrompt(photo);
         const url = await this.imageGen.generate(prompt, {
-          character: photo.character,
-          type: "gallery_photo"
+          character: photo.character || this.context?.name2,
+          type: "gallery_photo",
+          style: photo.style !== void 0 ? photo.style : void 0
         });
         state.gallery[index].imageUrl = url;
         this.storage.save();
@@ -2346,10 +2409,7 @@ HARD RULES:
       }
     }
     _buildPrompt(photo) {
-      const parts = [];
-      if (photo.character) parts.push(photo.character);
-      if (photo.description) parts.push(photo.description);
-      return parts.join(" \u2014 ");
+      return String(photo.description || photo.character || "").trim();
     }
     _openViewer(photo) {
       const viewer = document.createElement("div");
