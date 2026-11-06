@@ -2095,43 +2095,77 @@ REPLY (text only):`;
         const ctx = this.context || globalThis.SillyTavern?.getContext?.() || {};
         const genFn = ctx.generateQuietPrompt;
         if (typeof genFn !== "function") {
-          this._toast("generateQuietPrompt \u043D\u0435\u0434\u043E\u0441\u0442\u0443\u043F\u0435\u043D", "error");
+          this._toast("generateQuietPrompt unavailable", "error");
           return;
         }
-        const charName = ctx.name2 || "\u043F\u0435\u0440\u0441\u043E\u043D\u0430\u0436";
-        const messages = (this.storage.getState()?.messages || []).slice(-4).map((m) => `${m.from === "me" ? "\u0422\u044B" : m.character || "\u041A\u043E\u043D\u0442\u0430\u043A\u0442"}: ${m.text}`).join("\n");
-        const prompt = `[TAKE_SELFIE] You are ${charName}.
+        const charName = ctx.name2 || "Character";
+        const userName = ctx.name1 || "You";
+        const state = this.storage.getState();
+        const messages = (state.messages || []).slice(-6).map((m) => `${m.from === "me" ? userName : m.character || "Contact"}: ${m.text}`).join("\n");
+        const lastCharMsg = (state.messages || []).filter((m) => m.character === charName).slice(-1)[0];
+        const charOutfit = lastCharMsg?.outfit || "wearing casual clothes";
+        const charAction = lastCharMsg?.action || "standing nearby";
+        const allCharacters = [...new Set((state.messages || []).map((m) => m.character).filter(Boolean))];
+        const otherChars = allCharacters.filter((c) => c !== charName);
+        let otherNpcsDesc = "";
+        if (otherChars.length > 0) {
+          otherNpcsDesc = otherChars.map((char) => `- ${char}, nearby`).join("\n");
+        }
+        const backgroundDesc = this._inferBackground(messages);
+        const prompt = `You are deciding whether to take a selfie or a regular photo, based on what's happening in the scene.
 
-You just took a photo/selfie. Describe what you see in the photo as if you're looking at it \u2014 what's the mood, the setting, your expression, the light, what's happening around you. Be casual and natural, like a real photo caption or internal thought.
+Scene context:
+${messages || "(quiet moment)"}
 
-Context of what's happening:
-${messages || "(no messages)"}
+Based on the scene, choose what makes sense: a selfie (you + ${charName} together) or a photo (just ${charName}).
 
-Write a SHORT photo description (1-2 sentences), like Instagram caption or photo note. In character.
+If SELFIE:
+${userName}, ${charAction}, dressed casually
+${charName}, ${charOutfit}, ${charAction}
+${otherNpcsDesc ? otherNpcsDesc : ""}
+Background: ${backgroundDesc}
+
+Selfie should look like it was taken on a mobile phone front camera - casual, intimate vibe.
+
+If PHOTO:
+${charName}, ${charOutfit}, ${charAction}
+${otherNpcsDesc ? otherNpcsDesc : ""}
+Background: ${backgroundDesc}
+
+Photo should look like it was taken on a mobile phone camera - candid, natural moment.
+
+Generate a short, natural photo/selfie description (1-2 sentences) as if you're looking at it in your phone gallery. Include mood and vibes. Casual tone, like a real caption.
 
 DESCRIPTION:`;
         const description = await genFn(prompt, false, false);
-        const text = String(description || "").trim().slice(0, 200);
+        const text = String(description || "").trim().slice(0, 300);
         if (!text) {
-          this._toast("\u041D\u0435 \u0443\u0434\u0430\u043B\u043E\u0441\u044C \u0441\u043D\u044F\u0442\u044C \u0444\u043E\u0442\u043E", "error");
+          this._toast("Failed to capture photo", "error");
           return;
         }
-        const state = this.storage.getState();
         if (!Array.isArray(state.gallery)) state.gallery = [];
         state.gallery.push({
           id: `photo_${Date.now()}_${Math.random().toString(36).slice(2, 7)}`,
           description: text,
           imageUrl: null,
           timestamp: Date.now(),
-          source: "selfie"
+          source: "phone_camera"
         });
         this.storage.save();
-        this._toast("\u0421\u043D\u0438\u043C\u043E\u043A \u0434\u043E\u0431\u0430\u0432\u043B\u0435\u043D \u0432 \u0433\u0430\u043B\u0435\u0440\u0435\u044E");
+        this._toast("Photo added to gallery");
         this.render(document.querySelector(".astral-phone-body"));
       } catch (err) {
         console.error("[Astral Phone] takePhoto failed:", err);
-        this._toast(`\u041E\u0448\u0438\u0431\u043A\u0430: ${err.message}`, "error");
+        this._toast(`Error: ${err.message}`, "error");
       }
+    }
+    _inferBackground(messages) {
+      if (messages.includes("home") || messages.includes("house") || messages.includes("room")) return "cozy indoor setting";
+      if (messages.includes("outside") || messages.includes("park") || messages.includes("street")) return "outdoor environment";
+      if (messages.includes("cafe") || messages.includes("bar") || messages.includes("restaurant")) return "social venue";
+      if (messages.includes("night") || messages.includes("dark")) return "dimly lit ambiance";
+      if (messages.includes("sun") || messages.includes("light")) return "bright, sunny setting";
+      return "intimate moment";
     }
     async _generate(index, silent = false) {
       if (!this.imageGen.isAvailable()) {
