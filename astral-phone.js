@@ -2206,11 +2206,34 @@ DESCRIPTION:`;
       const viewer = document.createElement("div");
       viewer.className = "astral-viewer";
       viewer.innerHTML = `
-            <img src="${photo.imageUrl}" alt="">
-            <div class="astral-viewer-caption">${this._esc(photo.description)}</div>
+            <div class="astral-viewer-container">
+                <img src="${photo.imageUrl}" alt="">
+                <div class="astral-viewer-caption">${this._esc(photo.description)}</div>
+                <button class="astral-viewer-delete" title="Delete photo">
+                    <svg viewBox="0 0 24 24" width="20" height="20" stroke="currentColor" fill="none" stroke-width="2">
+                        <path d="M3 6h18M8 6V4a2 2 0 012-2h4a2 2 0 012 2v2m3 0v14a2 2 0 01-2 2H7a2 2 0 01-2-2V6h14zM10 11v6M14 11v6"/>
+                    </svg>
+                </button>
+            </div>
         `;
+      const deleteBtn = viewer.querySelector(".astral-viewer-delete");
+      deleteBtn.addEventListener("click", (e) => {
+        e.stopPropagation();
+        this._deletePhoto(photo);
+        viewer.remove();
+      });
       viewer.addEventListener("click", () => viewer.remove());
       document.querySelector(".astral-phone").appendChild(viewer);
+    }
+    _deletePhoto(photo) {
+      const state = this.storage.getState();
+      const idx = state.gallery.findIndex((p) => p.id === photo.id);
+      if (idx >= 0) {
+        state.gallery.splice(idx, 1);
+        this.storage.save();
+        this._toast("Photo deleted");
+        this.render(document.querySelector(".astral-phone-body"));
+      }
     }
     async handleEvent(eventData) {
       const state = this.storage.getState();
