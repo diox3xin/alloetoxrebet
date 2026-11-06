@@ -97,6 +97,7 @@ function init() {
         ['chat switch', registerChatSwitchHandler],
         ['contact seeder', registerContactSeeder],
         ['activity counter', registerActivityCounter],
+        ['slash command', registerSlashCommand],
         ['prompt block', injectPromptBlock],
     ]) {
         try {
@@ -304,6 +305,29 @@ function registerEventTagFallback(context) {
  * Drop the account cache and repaint anything currently on screen so the phone
  * shows the account and data of the chat that is now open.
  */
+/* ────────────────────────────── slash command ────────────────────────────── */
+
+function registerSlashCommand(context) {
+    const { SlashCommandParser } = context;
+    if (!SlashCommandParser) return;
+
+    SlashCommandParser.addCommand(
+        'astral',
+        () => {
+            try {
+                core?.toggle?.();
+                return 'Телефон открыт';
+            } catch (err) {
+                return `Ошибка: ${err.message}`;
+            }
+        },
+        [],
+        'Открыть Astral Phone',
+        true,
+        true
+    );
+}
+
 function registerChatSwitchHandler(context) {
     const { eventSource, event_types } = context;
     if (!eventSource || !event_types) return;
