@@ -14,6 +14,7 @@ import { SpicyApp } from './apps/spicy.js';
 import { CreatorApp } from './apps/creator.js';
 import { SettingsApp } from './apps/settings.js';
 import { ContactSeeder } from './apps/contact-seeder.js';
+import { refreshPhonePrompt } from './apps/phone-prompt.js';
 
 const MODULE_NAME = 'astral-phone';
 const EVENT_TAG_RE = /<phone-event\b([^>]*?)\/?>/gi;
@@ -44,7 +45,11 @@ const PROMPT_BLOCK = `[Astral Phone — интерфейс телефона пе
 Если инструменты недоступны, вместо вызова напиши тег, он будет вырезан из сообщения:
 <phone-event type="photo_taken" character="Имя" description="описание" />
 
-description пиши как промпт для художника: без мета-комментариев, без слов «фото» и «картинка».`;
+description пиши как промпт для художника: без мета-комментариев, без слов «фото» и «картинка».
+
+Частота: не спамь событиями. В среднем одно событие на 3–6 твоих сообщений — только когда это уместно по сцене (персонаж реально достал телефон, ему написали, он снял фото). Если ты уже отправлял событие в этом сообщении, следующее — не раньше чем через несколько реплик.
+
+Пользователь может сам писать с телефона: в блоке [Astral Phone — переписка] сообщения от него помечены как «Ты». Если там есть его новые сообщения, на которые персонаж ещё не ответил — отреагируй на них через message_received: персонаж прочитал и ответил. Не игнорируй их.`;
 
 /* ────────────────────────────── init ────────────────────────────── */
 
@@ -57,6 +62,10 @@ function init() {
 
     core = new PhoneCore(context, storage, imageGen);
     seeder = new ContactSeeder(context, storage);
+
+    // Exposed so apps (Messages composer, event handlers) can refresh the
+    // dynamic prompt without importing back into index.js and creating a cycle.
+    globalThis.__astralRefreshPrompt = () => refreshPhonePrompt(storage);
 
     // Launcher first — the icon must appear even if an app fails to construct.
     window.__astralPhoneCore = core;
@@ -85,6 +94,7 @@ function init() {
         ['event fallback', registerEventTagFallback],
         ['chat switch', registerChatSwitchHandler],
         ['contact seeder', registerContactSeeder],
+        ['activity counter', registerActivityCounter],
         ['prompt block', injectPromptBlock],
     ]) {
         try {
@@ -262,6 +272,34 @@ function registerChatSwitchHandler(context) {
     }
 }
 
+/* ────────────────────────────── phone activity counter ────────────────────────────── */
+
+/**
+ * Count chat messages since the last phone event, and refresh the dynamic
+ * prompt after every message so the model sees replies the user typed on the
+ * phone (they never appear in the chat transcript).
+ */
+function registerActivityCounter(context) {
+    const { eventSource, event_types } = context;
+    if (!eventSource || !event_types) return;
+
+    const onMessage = () => {
+        try {
+            const state = storage.getState();
+            state.sinceEvent = (Number(state.sinceEvent) || 0) + 1;
+            storage.save();
+        } catch (err) {
+            console.warn('[Astral Phone] counter update failed:', err);
+        }
+        refreshPhonePrompt(storage);
+    };
+
+    for (const name of ['MESSAGE_SENT', 'MESSAGE_RECEIVED']) {
+        const type = event_types[name];
+        if (type) eventSource.on(type, onMessage);
+    }
+}
+
 function injectPromptBlock(context) {
     try {
         context.setExtensionPrompt(
@@ -271,6 +309,7 @@ function injectPromptBlock(context) {
             1,
             false,
         );
+        refreshPhonePrompt(storage);
     } catch (err) {
         console.warn('[Astral Phone] prompt injection failed:', err);
     }

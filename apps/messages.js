@@ -139,6 +139,58 @@ export class MessagesApp {
             this._thread = null;
             this.render(document.querySelector('.astral-phone-body'));
         });
+
+        // ── composer ──
+        const composer = document.createElement('div');
+        composer.className = 'astral-msg-composer';
+        composer.innerHTML = `
+            <input class="astral-msg-input" id="astral-msg-input" type="text"
+                   placeholder="Сообщение…" autocomplete="off">
+            <button class="astral-msg-send" id="astral-msg-send" title="Отправить">
+                <svg viewBox="0 0 24 24" width="17" height="17" stroke="currentColor"
+                     fill="none" stroke-width="2.2" stroke-linecap="round">
+                    <path d="M22 2L11 13M22 2l-7 20-4-9-9-4z"/>
+                </svg>
+            </button>
+        `;
+        container.appendChild(composer);
+
+        const input = composer.querySelector('#astral-msg-input');
+        const send = () => {
+            const text = input.value.trim();
+            if (!text) return;
+            input.value = '';
+            this._sendMessage(character, text);
+        };
+        composer.querySelector('#astral-msg-send').addEventListener('click', send);
+        input.addEventListener('keydown', (e) => {
+            if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); send(); }
+        });
+    }
+
+    /** Append an outgoing message to the thread and persist it. */
+    _sendMessage(character, text) {
+        const state = this.storage.getState();
+        if (!Array.isArray(state.messages)) state.messages = [];
+
+        const role = state.messages.find(m => m.character === character && m.role)?.role || '';
+
+        state.messages.push({
+            id: `me_${Date.now()}_${Math.random().toString(36).slice(2, 7)}`,
+            character,
+            role,
+            text,
+            from: 'me',
+            isIncoming: false,
+            fromUser: true,
+            timestamp: Date.now(),
+        });
+        this.storage.save();
+
+        // Let the model see the new outgoing message on its next turn
+        try { globalThis.__astralRefreshPrompt?.(); } catch { /* ignore */ }
+
+        this.render(document.querySelector('.astral-phone-body'), { character });
     }
 
     /* ─────────────────────────── event handler ─────────────────────────── */
@@ -156,6 +208,7 @@ export class MessagesApp {
             isIncoming: true,
         });
         this.storage.save();
+        try { globalThis.__astralRefreshPrompt?.(); } catch { /* ignore */ }
         return { success: true, message: 'Сообщение добавлено' };
     }
 

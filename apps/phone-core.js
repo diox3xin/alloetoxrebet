@@ -111,6 +111,7 @@ export class PhoneCore {
         }
 
         this.currentAppId = appId;
+        this._clearUnread(appId);
         this.backEl.style.visibility = 'visible';
         this.iconEl.innerHTML = app.icon || ICONS.home;
         this.titleEl.textContent = app.title || appId;
@@ -185,11 +186,17 @@ export class PhoneCore {
         const grid = document.createElement('div');
         grid.className = 'astral-home-grid';
 
+        const unread = this.storage.getState().unread || {};
+
         for (const [id, app] of this.apps.entries()) {
             const card = document.createElement('div');
             card.className = 'astral-app-card';
+            const badgeCount = Number(unread[id]) || 0;
+            const badge = badgeCount > 0
+                ? `<span class="astral-app-badge">${badgeCount > 99 ? '99+' : badgeCount}</span>`
+                : '';
             card.innerHTML = `
-                <div class="astral-app-card-icon">${app.icon || ICONS.home}</div>
+                <div class="astral-app-card-icon">${app.icon || ICONS.home}${badge}</div>
                 <div class="astral-app-card-label">${this._esc(app.title || id)}</div>
             `;
             card.addEventListener('click', () => this.openApp(id));
@@ -243,11 +250,77 @@ export class PhoneCore {
 
         try {
             const result = await app.handleEvent({ type, ...data });
+            this.bumpUnread(appId);
+            this.pushNotification({
+                app: appId,
+                title: app.title || appId,
+                text: data.description || data.text || '',
+            });
+            try {
+                const st = this.storage.getState();
+                st.sinceEvent = 0;
+                this.storage.save();
+            } catch { /* ignore */ }
             this.refresh();
             return result || { success: true };
         } catch (err) {
             console.error('[Astral Phone] Event handling failed:', err);
             return { success: false, error: err.message };
+        }
+    }
+
+    /* ─────────────────────────── unread / notifications ─────────────────────────── */
+
+    /** Clear the unread badge for an app (called when it is opened). */
+    _clearUnread(appId) {
+        try {
+            const state = this.storage.getState();
+            if (state.unread && state.unread[appId]) {
+                state.unread[appId] = 0;
+                this.storage.save();
+            }
+            // Notifications belong to the app that was opened
+            if (Array.isArray(state.notifications) && state.notifications.length) {
+                const kept = state.notifications.filter(n => n.app !== appId);
+                if (kept.length !== state.notifications.length) {
+                    state.notifications = kept;
+                    this.storage.save();
+                }
+            }
+        } catch (err) {
+            console.warn('[Astral Phone] clear unread failed:', err);
+        }
+    }
+
+    /** Bump the unread counter for an app. */
+    bumpUnread(appId, by = 1) {
+        try {
+            const state = this.storage.getState();
+            if (!state.unread) state.unread = {};
+            state.unread[appId] = (Number(state.unread[appId]) || 0) + by;
+            this.storage.save();
+        } catch (err) {
+            console.warn('[Astral Phone] bump unread failed:', err);
+        }
+    }
+
+    /** Push a notification onto the lock-screen queue (capped at 5). */
+    pushNotification({ app, title, text }) {
+        try {
+            const state = this.storage.getState();
+            if (!Array.isArray(state.notifications)) state.notifications = [];
+            state.notifications.push({
+                app,
+                title: String(title || ''),
+                text: String(text || '').slice(0, 140),
+                timestamp: Date.now(),
+            });
+            if (state.notifications.length > 5) {
+                state.notifications = state.notifications.slice(-5);
+            }
+            this.storage.save();
+        } catch (err) {
+            console.warn('[Astral Phone] push notification failed:', err);
         }
     }
 

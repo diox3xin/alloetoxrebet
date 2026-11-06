@@ -141,6 +141,22 @@ core.registerApp('settings', new SettingsApp(ctx, storage, core.accountManager))
 core.open();
 
 window.__core = core;
+
+// Stub setExtensionPrompt so phone-prompt.js can push into it
+window.__prompts = {};
+const origCtx = window.SillyTavern.getContext.bind(window.SillyTavern);
+window.SillyTavern.getContext = () => {
+  const c = origCtx();
+  c.setExtensionPrompt = (key, val) => { window.__prompts[key] = val; };
+  c.extension_prompt_types = { IN_CHAT: 1 };
+  return c;
+};
+
+// Bootstrap the refresh hook from phone-prompt
+import('../apps/phone-prompt.js').then(m => {
+  window.__astralRefreshPrompt = () => m.refreshPhonePrompt(window.__storage);
+  window.__buildPhoneContext = m.buildPhoneContext;
+});
 window.__astralPhoneCore = core;
 window.__storage = storage;
 </script>

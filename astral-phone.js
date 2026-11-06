@@ -29,7 +29,7 @@
                 <div class="astral-lockscreen-time" id="astral-lockscreen-time">--:--</div>
                 <div class="astral-lockscreen-date" id="astral-lockscreen-date">--</div>
                 
-                <div class="astral-lockscreen-notifications">
+                <div class="astral-lockscreen-notifications" id="astral-lockscreen-notifs">
                     ${this._renderNotifications(state)}
                 </div>
             </div>
@@ -65,19 +65,38 @@
       return overlay;
     }
     _renderNotifications(state) {
-      const messages = state.messages || [];
-      const unreadCount = messages.length;
-      if (unreadCount === 0) {
-        return '<div class="astral-notification" style="opacity: .5;">\u041D\u0435\u0442 \u0443\u0432\u0435\u0434\u043E\u043C\u043B\u0435\u043D\u0438\u0439</div>';
+      const list = Array.isArray(state.notifications) ? state.notifications : [];
+      if (list.length === 0) {
+        return '<div class="astral-notification astral-notification--empty">\u041D\u0435\u0442 \u0443\u0432\u0435\u0434\u043E\u043C\u043B\u0435\u043D\u0438\u0439</div>';
       }
-      const last = messages[messages.length - 1];
-      return `
-            <div class="astral-notification">
-                <strong>${this._esc(last.character || "\u0421\u043E\u043E\u0431\u0449\u0435\u043D\u0438\u0435")}</strong>
-                <div class="astral-notification-text">${this._esc((last.text || "").slice(0, 60))}</div>
-            </div>
-            ${unreadCount > 1 ? `<div class="astral-notification-badge">${unreadCount}</div>` : ""}
-        `;
+      return list.slice(-4).reverse().map((n) => `
+                <div class="astral-notification">
+                    <div class="astral-notification-head">
+                        <span class="astral-notification-app">${this._esc(this._appLabel(n.app))}</span>
+                        <span class="astral-notification-time">${this._ago(n.timestamp)}</span>
+                    </div>
+                    <div class="astral-notification-title">${this._esc(n.title || "")}</div>
+                    <div class="astral-notification-text">${this._esc(n.text || "")}</div>
+                </div>
+            `).join("");
+    }
+    _appLabel(app) {
+      return {
+        messages: "Messages",
+        gallery: "Gallery",
+        spicy: "Spicy Hub",
+        creator: "Creator Studio"
+      }[app] || app || "";
+    }
+    _ago(ts) {
+      if (!ts) return "";
+      const diff = Math.max(0, Date.now() - ts);
+      const m = Math.floor(diff / 6e4);
+      if (m < 1) return "\u0441\u0435\u0439\u0447\u0430\u0441";
+      if (m < 60) return `${m} \u043C\u0438\u043D`;
+      const h = Math.floor(m / 60);
+      if (h < 24) return `${h} \u0447`;
+      return `${Math.floor(h / 24)} \u0434`;
     }
     _updateTime() {
       if (!this.clockEl) return;
@@ -297,6 +316,7 @@
         return;
       }
       this.currentAppId = appId;
+      this._clearUnread(appId);
       this.backEl.style.visibility = "visible";
       this.iconEl.innerHTML = app.icon || ICONS.home;
       this.titleEl.textContent = app.title || appId;
@@ -362,11 +382,14 @@
     _renderHome() {
       const grid = document.createElement("div");
       grid.className = "astral-home-grid";
+      const unread = this.storage.getState().unread || {};
       for (const [id, app] of this.apps.entries()) {
         const card = document.createElement("div");
         card.className = "astral-app-card";
+        const badgeCount = Number(unread[id]) || 0;
+        const badge = badgeCount > 0 ? `<span class="astral-app-badge">${badgeCount > 99 ? "99+" : badgeCount}</span>` : "";
         card.innerHTML = `
-                <div class="astral-app-card-icon">${app.icon || ICONS.home}</div>
+                <div class="astral-app-card-icon">${app.icon || ICONS.home}${badge}</div>
                 <div class="astral-app-card-label">${this._esc(app.title || id)}</div>
             `;
         card.addEventListener("click", () => this.openApp(id));
@@ -410,11 +433,73 @@
       }
       try {
         const result = await app.handleEvent({ type, ...data });
+        this.bumpUnread(appId);
+        this.pushNotification({
+          app: appId,
+          title: app.title || appId,
+          text: data.description || data.text || ""
+        });
+        try {
+          const st = this.storage.getState();
+          st.sinceEvent = 0;
+          this.storage.save();
+        } catch {
+        }
         this.refresh();
         return result || { success: true };
       } catch (err) {
         console.error("[Astral Phone] Event handling failed:", err);
         return { success: false, error: err.message };
+      }
+    }
+    /* ─────────────────────────── unread / notifications ─────────────────────────── */
+    /** Clear the unread badge for an app (called when it is opened). */
+    _clearUnread(appId) {
+      try {
+        const state = this.storage.getState();
+        if (state.unread && state.unread[appId]) {
+          state.unread[appId] = 0;
+          this.storage.save();
+        }
+        if (Array.isArray(state.notifications) && state.notifications.length) {
+          const kept = state.notifications.filter((n) => n.app !== appId);
+          if (kept.length !== state.notifications.length) {
+            state.notifications = kept;
+            this.storage.save();
+          }
+        }
+      } catch (err) {
+        console.warn("[Astral Phone] clear unread failed:", err);
+      }
+    }
+    /** Bump the unread counter for an app. */
+    bumpUnread(appId, by = 1) {
+      try {
+        const state = this.storage.getState();
+        if (!state.unread) state.unread = {};
+        state.unread[appId] = (Number(state.unread[appId]) || 0) + by;
+        this.storage.save();
+      } catch (err) {
+        console.warn("[Astral Phone] bump unread failed:", err);
+      }
+    }
+    /** Push a notification onto the lock-screen queue (capped at 5). */
+    pushNotification({ app, title, text }) {
+      try {
+        const state = this.storage.getState();
+        if (!Array.isArray(state.notifications)) state.notifications = [];
+        state.notifications.push({
+          app,
+          title: String(title || ""),
+          text: String(text || "").slice(0, 140),
+          timestamp: Date.now()
+        });
+        if (state.notifications.length > 5) {
+          state.notifications = state.notifications.slice(-5);
+        }
+        this.storage.save();
+      } catch (err) {
+        console.warn("[Astral Phone] push notification failed:", err);
       }
     }
     /* ─────────────────────────── utils ─────────────────────────── */
@@ -480,7 +565,13 @@
           subscribers: 0,
           revenue: 0,
           fans: []
-        }
+        },
+        /** Unread counters per app — drive the home-screen badges. */
+        unread: { messages: 0, gallery: 0, spicy: 0, creator: 0 },
+        /** Latest RP events for the lock screen (newest last, capped). */
+        notifications: [],
+        /** How many chat messages have passed since the last phone_event. */
+        sinceEvent: 0
       };
     }
     /**
@@ -503,6 +594,11 @@
       }
       if (!Array.isArray(root.state.creator.posts)) root.state.creator.posts = [];
       if (!Array.isArray(root.state.creator.fans)) root.state.creator.fans = [];
+      if (!Array.isArray(root.state.notifications)) root.state.notifications = [];
+      if (!root.state.unread || typeof root.state.unread !== "object") {
+        root.state.unread = { messages: 0, gallery: 0, spicy: 0, creator: 0 };
+      }
+      if (typeof root.state.sinceEvent !== "number") root.state.sinceEvent = 0;
       return root.state;
     }
     setState(_chatId, state) {
@@ -1741,6 +1837,55 @@ ${prompt}
         this._thread = null;
         this.render(document.querySelector(".astral-phone-body"));
       });
+      const composer = document.createElement("div");
+      composer.className = "astral-msg-composer";
+      composer.innerHTML = `
+            <input class="astral-msg-input" id="astral-msg-input" type="text"
+                   placeholder="\u0421\u043E\u043E\u0431\u0449\u0435\u043D\u0438\u0435\u2026" autocomplete="off">
+            <button class="astral-msg-send" id="astral-msg-send" title="\u041E\u0442\u043F\u0440\u0430\u0432\u0438\u0442\u044C">
+                <svg viewBox="0 0 24 24" width="17" height="17" stroke="currentColor"
+                     fill="none" stroke-width="2.2" stroke-linecap="round">
+                    <path d="M22 2L11 13M22 2l-7 20-4-9-9-4z"/>
+                </svg>
+            </button>
+        `;
+      container.appendChild(composer);
+      const input = composer.querySelector("#astral-msg-input");
+      const send = /* @__PURE__ */ __name(() => {
+        const text = input.value.trim();
+        if (!text) return;
+        input.value = "";
+        this._sendMessage(character, text);
+      }, "send");
+      composer.querySelector("#astral-msg-send").addEventListener("click", send);
+      input.addEventListener("keydown", (e) => {
+        if (e.key === "Enter" && !e.shiftKey) {
+          e.preventDefault();
+          send();
+        }
+      });
+    }
+    /** Append an outgoing message to the thread and persist it. */
+    _sendMessage(character, text) {
+      const state = this.storage.getState();
+      if (!Array.isArray(state.messages)) state.messages = [];
+      const role = state.messages.find((m) => m.character === character && m.role)?.role || "";
+      state.messages.push({
+        id: `me_${Date.now()}_${Math.random().toString(36).slice(2, 7)}`,
+        character,
+        role,
+        text,
+        from: "me",
+        isIncoming: false,
+        fromUser: true,
+        timestamp: Date.now()
+      });
+      this.storage.save();
+      try {
+        globalThis.__astralRefreshPrompt?.();
+      } catch {
+      }
+      this.render(document.querySelector(".astral-phone-body"), { character });
     }
     /* ─────────────────────────── event handler ─────────────────────────── */
     async handleEvent(eventData) {
@@ -1755,6 +1900,10 @@ ${prompt}
         isIncoming: true
       });
       this.storage.save();
+      try {
+        globalThis.__astralRefreshPrompt?.();
+      } catch {
+      }
       return { success: true, message: "\u0421\u043E\u043E\u0431\u0449\u0435\u043D\u0438\u0435 \u0434\u043E\u0431\u0430\u0432\u043B\u0435\u043D\u043E" };
     }
     /* ─────────────────────────── utils ─────────────────────────── */
@@ -3106,6 +3255,47 @@ Rules:
     }
   };
 
+  // apps/phone-prompt.js
+  function isOutgoing(m) {
+    if (m.from === "me") return true;
+    if (m.from === "them") return false;
+    return Boolean(m.fromUser);
+  }
+  __name(isOutgoing, "isOutgoing");
+  function buildPhoneContext(state) {
+    const msgs = Array.isArray(state?.messages) ? state.messages : [];
+    const recent = msgs.slice(-24);
+    const lines = recent.map((m) => {
+      const who = isOutgoing(m) ? "\u0422\u044B" : m.character || "\u041A\u043E\u043D\u0442\u0430\u043A\u0442";
+      return `${who}: ${String(m.text || "").slice(0, 160)}`;
+    });
+    const sinceEvent = Number(state?.sinceEvent) || 0;
+    const nudge = sinceEvent >= 4 ? `
+\u0422\u0435\u043B\u0435\u0444\u043E\u043D \u043C\u043E\u043B\u0447\u0438\u0442 \u0443\u0436\u0435 ${sinceEvent} \u0441\u043E\u043E\u0431\u0449\u0435\u043D\u0438\u0439 \u2014 \u0443\u043C\u0435\u0441\u0442\u043D\u043E \u0434\u043E\u0431\u0430\u0432\u0438\u0442\u044C \u0441\u043E\u0431\u044B\u0442\u0438\u0435.` : "";
+    const body = lines.length ? `\u041F\u043E\u0441\u043B\u0435\u0434\u043D\u0438\u0435 \u0441\u043E\u043E\u0431\u0449\u0435\u043D\u0438\u044F \u0432 \u0442\u0435\u043B\u0435\u0444\u043E\u043D\u0435 (\u0441\u0442\u0430\u0440\u044B\u0435 \u0432\u044B\u0448\u0435):
+${lines.join("\n")}${nudge}` : `\u041F\u0435\u0440\u0435\u043F\u0438\u0441\u043A\u0438 \u043F\u043E\u043A\u0430 \u043D\u0435\u0442.${nudge}`;
+    return `[Astral Phone \u2014 \u043F\u0435\u0440\u0435\u043F\u0438\u0441\u043A\u0430]
+${body}`;
+  }
+  __name(buildPhoneContext, "buildPhoneContext");
+  function refreshPhonePrompt(storage2) {
+    const context = globalThis.SillyTavern?.getContext?.();
+    if (!context || typeof context.setExtensionPrompt !== "function" || !storage2) return;
+    try {
+      const state = storage2.getState();
+      context.setExtensionPrompt(
+        "astral-phone-context",
+        buildPhoneContext(state),
+        context.extension_prompt_types?.IN_CHAT ?? 1,
+        2,
+        false
+      );
+    } catch (err) {
+      console.warn("[Astral Phone] dynamic prompt refresh failed:", err);
+    }
+  }
+  __name(refreshPhonePrompt, "refreshPhonePrompt");
+
   // index.js
   var MODULE_NAME = "astral-phone";
   var EVENT_TAG_RE = /<phone-event\b([^>]*?)\/?>/gi;
@@ -3132,7 +3322,11 @@ Rules:
 \u0415\u0441\u043B\u0438 \u0438\u043D\u0441\u0442\u0440\u0443\u043C\u0435\u043D\u0442\u044B \u043D\u0435\u0434\u043E\u0441\u0442\u0443\u043F\u043D\u044B, \u0432\u043C\u0435\u0441\u0442\u043E \u0432\u044B\u0437\u043E\u0432\u0430 \u043D\u0430\u043F\u0438\u0448\u0438 \u0442\u0435\u0433, \u043E\u043D \u0431\u0443\u0434\u0435\u0442 \u0432\u044B\u0440\u0435\u0437\u0430\u043D \u0438\u0437 \u0441\u043E\u043E\u0431\u0449\u0435\u043D\u0438\u044F:
 <phone-event type="photo_taken" character="\u0418\u043C\u044F" description="\u043E\u043F\u0438\u0441\u0430\u043D\u0438\u0435" />
 
-description \u043F\u0438\u0448\u0438 \u043A\u0430\u043A \u043F\u0440\u043E\u043C\u043F\u0442 \u0434\u043B\u044F \u0445\u0443\u0434\u043E\u0436\u043D\u0438\u043A\u0430: \u0431\u0435\u0437 \u043C\u0435\u0442\u0430-\u043A\u043E\u043C\u043C\u0435\u043D\u0442\u0430\u0440\u0438\u0435\u0432, \u0431\u0435\u0437 \u0441\u043B\u043E\u0432 \xAB\u0444\u043E\u0442\u043E\xBB \u0438 \xAB\u043A\u0430\u0440\u0442\u0438\u043D\u043A\u0430\xBB.`;
+description \u043F\u0438\u0448\u0438 \u043A\u0430\u043A \u043F\u0440\u043E\u043C\u043F\u0442 \u0434\u043B\u044F \u0445\u0443\u0434\u043E\u0436\u043D\u0438\u043A\u0430: \u0431\u0435\u0437 \u043C\u0435\u0442\u0430-\u043A\u043E\u043C\u043C\u0435\u043D\u0442\u0430\u0440\u0438\u0435\u0432, \u0431\u0435\u0437 \u0441\u043B\u043E\u0432 \xAB\u0444\u043E\u0442\u043E\xBB \u0438 \xAB\u043A\u0430\u0440\u0442\u0438\u043D\u043A\u0430\xBB.
+
+\u0427\u0430\u0441\u0442\u043E\u0442\u0430: \u043D\u0435 \u0441\u043F\u0430\u043C\u044C \u0441\u043E\u0431\u044B\u0442\u0438\u044F\u043C\u0438. \u0412 \u0441\u0440\u0435\u0434\u043D\u0435\u043C \u043E\u0434\u043D\u043E \u0441\u043E\u0431\u044B\u0442\u0438\u0435 \u043D\u0430 3\u20136 \u0442\u0432\u043E\u0438\u0445 \u0441\u043E\u043E\u0431\u0449\u0435\u043D\u0438\u0439 \u2014 \u0442\u043E\u043B\u044C\u043A\u043E \u043A\u043E\u0433\u0434\u0430 \u044D\u0442\u043E \u0443\u043C\u0435\u0441\u0442\u043D\u043E \u043F\u043E \u0441\u0446\u0435\u043D\u0435 (\u043F\u0435\u0440\u0441\u043E\u043D\u0430\u0436 \u0440\u0435\u0430\u043B\u044C\u043D\u043E \u0434\u043E\u0441\u0442\u0430\u043B \u0442\u0435\u043B\u0435\u0444\u043E\u043D, \u0435\u043C\u0443 \u043D\u0430\u043F\u0438\u0441\u0430\u043B\u0438, \u043E\u043D \u0441\u043D\u044F\u043B \u0444\u043E\u0442\u043E). \u0415\u0441\u043B\u0438 \u0442\u044B \u0443\u0436\u0435 \u043E\u0442\u043F\u0440\u0430\u0432\u043B\u044F\u043B \u0441\u043E\u0431\u044B\u0442\u0438\u0435 \u0432 \u044D\u0442\u043E\u043C \u0441\u043E\u043E\u0431\u0449\u0435\u043D\u0438\u0438, \u0441\u043B\u0435\u0434\u0443\u044E\u0449\u0435\u0435 \u2014 \u043D\u0435 \u0440\u0430\u043D\u044C\u0448\u0435 \u0447\u0435\u043C \u0447\u0435\u0440\u0435\u0437 \u043D\u0435\u0441\u043A\u043E\u043B\u044C\u043A\u043E \u0440\u0435\u043F\u043B\u0438\u043A.
+
+\u041F\u043E\u043B\u044C\u0437\u043E\u0432\u0430\u0442\u0435\u043B\u044C \u043C\u043E\u0436\u0435\u0442 \u0441\u0430\u043C \u043F\u0438\u0441\u0430\u0442\u044C \u0441 \u0442\u0435\u043B\u0435\u0444\u043E\u043D\u0430: \u0432 \u0431\u043B\u043E\u043A\u0435 [Astral Phone \u2014 \u043F\u0435\u0440\u0435\u043F\u0438\u0441\u043A\u0430] \u0441\u043E\u043E\u0431\u0449\u0435\u043D\u0438\u044F \u043E\u0442 \u043D\u0435\u0433\u043E \u043F\u043E\u043C\u0435\u0447\u0435\u043D\u044B \u043A\u0430\u043A \xAB\u0422\u044B\xBB. \u0415\u0441\u043B\u0438 \u0442\u0430\u043C \u0435\u0441\u0442\u044C \u0435\u0433\u043E \u043D\u043E\u0432\u044B\u0435 \u0441\u043E\u043E\u0431\u0449\u0435\u043D\u0438\u044F, \u043D\u0430 \u043A\u043E\u0442\u043E\u0440\u044B\u0435 \u043F\u0435\u0440\u0441\u043E\u043D\u0430\u0436 \u0435\u0449\u0451 \u043D\u0435 \u043E\u0442\u0432\u0435\u0442\u0438\u043B \u2014 \u043E\u0442\u0440\u0435\u0430\u0433\u0438\u0440\u0443\u0439 \u043D\u0430 \u043D\u0438\u0445 \u0447\u0435\u0440\u0435\u0437 message_received: \u043F\u0435\u0440\u0441\u043E\u043D\u0430\u0436 \u043F\u0440\u043E\u0447\u0438\u0442\u0430\u043B \u0438 \u043E\u0442\u0432\u0435\u0442\u0438\u043B. \u041D\u0435 \u0438\u0433\u043D\u043E\u0440\u0438\u0440\u0443\u0439 \u0438\u0445.`;
   function init() {
     if (initialized) return;
     const context = SillyTavern.getContext();
@@ -3140,6 +3334,7 @@ description \u043F\u0438\u0448\u0438 \u043A\u0430\u043A \u043F\u0440\u043E\u043C
     imageGen = new ImageGenerator(context);
     core = new PhoneCore(context, storage, imageGen);
     seeder = new ContactSeeder(context, storage);
+    globalThis.__astralRefreshPrompt = () => refreshPhonePrompt(storage);
     window.__astralPhoneCore = core;
     injectLauncher();
     const apps = [
@@ -3164,6 +3359,7 @@ description \u043F\u0438\u0448\u0438 \u043A\u0430\u043A \u043F\u0440\u043E\u043C
       ["event fallback", registerEventTagFallback],
       ["chat switch", registerChatSwitchHandler],
       ["contact seeder", registerContactSeeder],
+      ["activity counter", registerActivityCounter],
       ["prompt block", injectPromptBlock]
     ]) {
       try {
@@ -3316,6 +3512,25 @@ description \u043F\u0438\u0448\u0438 \u043A\u0430\u043A \u043F\u0440\u043E\u043C
     }
   }
   __name(registerChatSwitchHandler, "registerChatSwitchHandler");
+  function registerActivityCounter(context) {
+    const { eventSource, event_types } = context;
+    if (!eventSource || !event_types) return;
+    const onMessage = /* @__PURE__ */ __name(() => {
+      try {
+        const state = storage.getState();
+        state.sinceEvent = (Number(state.sinceEvent) || 0) + 1;
+        storage.save();
+      } catch (err) {
+        console.warn("[Astral Phone] counter update failed:", err);
+      }
+      refreshPhonePrompt(storage);
+    }, "onMessage");
+    for (const name of ["MESSAGE_SENT", "MESSAGE_RECEIVED"]) {
+      const type = event_types[name];
+      if (type) eventSource.on(type, onMessage);
+    }
+  }
+  __name(registerActivityCounter, "registerActivityCounter");
   function injectPromptBlock(context) {
     try {
       context.setExtensionPrompt(
@@ -3325,6 +3540,7 @@ description \u043F\u0438\u0448\u0438 \u043A\u0430\u043A \u043F\u0440\u043E\u043C
         1,
         false
       );
+      refreshPhonePrompt(storage);
     } catch (err) {
       console.warn("[Astral Phone] prompt injection failed:", err);
     }

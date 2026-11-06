@@ -28,7 +28,7 @@ export class LockScreen {
                 <div class="astral-lockscreen-time" id="astral-lockscreen-time">--:--</div>
                 <div class="astral-lockscreen-date" id="astral-lockscreen-date">--</div>
                 
-                <div class="astral-lockscreen-notifications">
+                <div class="astral-lockscreen-notifications" id="astral-lockscreen-notifs">
                     ${this._renderNotifications(state)}
                 </div>
             </div>
@@ -74,21 +74,47 @@ export class LockScreen {
     }
 
     _renderNotifications(state) {
-        const messages = state.messages || [];
-        const unreadCount = messages.length; // TODO: track unread
-        
-        if (unreadCount === 0) {
-            return '<div class="astral-notification" style="opacity: .5;">Нет уведомлений</div>';
+        const list = Array.isArray(state.notifications) ? state.notifications : [];
+
+        if (list.length === 0) {
+            return '<div class="astral-notification astral-notification--empty">Нет уведомлений</div>';
         }
-        
-        const last = messages[messages.length - 1];
-        return `
-            <div class="astral-notification">
-                <strong>${this._esc(last.character || 'Сообщение')}</strong>
-                <div class="astral-notification-text">${this._esc((last.text || '').slice(0, 60))}</div>
-            </div>
-            ${unreadCount > 1 ? `<div class="astral-notification-badge">${unreadCount}</div>` : ''}
-        `;
+
+        // Newest first, max 4 bubbles
+        return list
+            .slice(-4)
+            .reverse()
+            .map((n) => `
+                <div class="astral-notification">
+                    <div class="astral-notification-head">
+                        <span class="astral-notification-app">${this._esc(this._appLabel(n.app))}</span>
+                        <span class="astral-notification-time">${this._ago(n.timestamp)}</span>
+                    </div>
+                    <div class="astral-notification-title">${this._esc(n.title || '')}</div>
+                    <div class="astral-notification-text">${this._esc(n.text || '')}</div>
+                </div>
+            `)
+            .join('');
+    }
+
+    _appLabel(app) {
+        return ({
+            messages: 'Messages',
+            gallery: 'Gallery',
+            spicy: 'Spicy Hub',
+            creator: 'Creator Studio',
+        })[app] || app || '';
+    }
+
+    _ago(ts) {
+        if (!ts) return '';
+        const diff = Math.max(0, Date.now() - ts);
+        const m = Math.floor(diff / 60000);
+        if (m < 1) return 'сейчас';
+        if (m < 60) return `${m} мин`;
+        const h = Math.floor(m / 60);
+        if (h < 24) return `${h} ч`;
+        return `${Math.floor(h / 24)} д`;
     }
 
     _updateTime() {

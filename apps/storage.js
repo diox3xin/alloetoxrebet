@@ -73,6 +73,12 @@ export class PhoneStorage {
                 revenue: 0,
                 fans: [],
             },
+            /** Unread counters per app — drive the home-screen badges. */
+            unread: { messages: 0, gallery: 0, spicy: 0, creator: 0 },
+            /** Latest RP events for the lock screen (newest last, capped). */
+            notifications: [],
+            /** How many chat messages have passed since the last phone_event. */
+            sinceEvent: 0,
         };
     }
 
@@ -97,6 +103,11 @@ export class PhoneStorage {
         }
         if (!Array.isArray(root.state.creator.posts)) root.state.creator.posts = [];
         if (!Array.isArray(root.state.creator.fans)) root.state.creator.fans = [];
+        if (!Array.isArray(root.state.notifications)) root.state.notifications = [];
+        if (!root.state.unread || typeof root.state.unread !== 'object') {
+            root.state.unread = { messages: 0, gallery: 0, spicy: 0, creator: 0 };
+        }
+        if (typeof root.state.sinceEvent !== 'number') root.state.sinceEvent = 0;
 
         return root.state;
     }
