@@ -1730,3 +1730,170 @@
   background: linear-gradient(150deg, rgba(185,165,178,.95), rgba(161,141,155,.75));
 }
 .astral-msg-reply-btn:active { transform: scale(.94); }
+
+/* ═══════════════════════ Camera UI ═══════════════════════ */
+
+.astral-camera-overlay {
+  position: absolute;
+  inset: 0;
+  z-index: 80;
+  background: #060509;
+  display: flex;
+  align-items: stretch;
+  animation: astral-fade .18s ease;
+}
+
+.astral-camera {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+
+/* header */
+.astral-camera-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 14px 16px 10px;
+}
+.astral-camera-title {
+  font-size: 13px;
+  letter-spacing: .14em;
+  text-transform: uppercase;
+  color: var(--phone-text);
+  opacity: .7;
+}
+.astral-camera-close,
+.astral-camera-settings-btn {
+  width: 34px;
+  height: 34px;
+  border-radius: 50%;
+  border: 0;
+  background: rgba(255,255,255,.07);
+  color: var(--phone-text);
+  font-size: 15px;
+  display: grid;
+  place-items: center;
+  cursor: pointer;
+  transition: .14s;
+}
+.astral-camera-close:hover,
+.astral-camera-settings-btn:hover { background: rgba(217,154,181,.18); }
+
+/* viewfinder */
+.astral-camera-viewfinder {
+  flex: 1;
+  display: grid;
+  place-items: center;
+  padding: 20px;
+  min-height: 0;
+}
+.astral-camera-vf-inner {
+  position: relative;
+  width: 100%;
+  aspect-ratio: 3 / 4;
+  border-radius: 12px;
+  background: linear-gradient(160deg, rgba(40,32,39,.6), rgba(13,11,16,.9));
+  border: 1px solid rgba(217,154,181,.12);
+}
+.astral-camera-vf-corner {
+  position: absolute;
+  width: 22px;
+  height: 22px;
+  border-color: var(--phone-accent);
+  border-style: solid;
+  border-width: 0;
+}
+.astral-camera-vf-corner.tl { top: 10px; left: 10px; border-top-width: 2px; border-left-width: 2px; border-radius: 4px 0 0 0; }
+.astral-camera-vf-corner.tr { top: 10px; right: 10px; border-top-width: 2px; border-right-width: 2px; border-radius: 0 4px 0 0; }
+.astral-camera-vf-corner.bl { bottom: 10px; left: 10px; border-bottom-width: 2px; border-left-width: 2px; border-radius: 0 0 0 4px; }
+.astral-camera-vf-corner.br { bottom: 10px; right: 10px; border-bottom-width: 2px; border-right-width: 2px; border-radius: 0 0 4px 0; }
+
+/* mode bar */
+.astral-camera-mode-bar {
+  display: flex;
+  justify-content: center;
+  gap: 6px;
+  padding: 10px 16px 0;
+}
+.astral-camera-mode {
+  padding: 7px 16px;
+  border-radius: 20px;
+  border: 1px solid rgba(217,154,181,.25);
+  background: transparent;
+  color: var(--phone-muted);
+  font-size: 11px;
+  letter-spacing: .08em;
+  cursor: pointer;
+  transition: .18s;
+  font-family: inherit;
+}
+.astral-camera-mode:hover { color: var(--phone-text); border-color: rgba(217,154,181,.5); }
+.astral-camera-mode.active {
+  background: linear-gradient(150deg, rgba(229,175,197,.25), rgba(217,154,181,.1));
+  border-color: var(--phone-accent);
+  color: var(--phone-accent-light);
+}
+
+/* shutter */
+.astral-camera-shutter-row {
+  display: flex;
+  justify-content: center;
+  padding: 18px 16px 22px;
+}
+.astral-camera-shutter {
+  width: 68px;
+  height: 68px;
+  border-radius: 50%;
+  border: 3px solid rgba(229,175,197,.55);
+  background: rgba(239,230,236,.92);
+  box-shadow: 0 0 0 6px rgba(217,154,181,.15), 0 8px 28px -10px rgba(217,154,181,.8);
+  cursor: pointer;
+  transition: .16s;
+}
+.astral-camera-shutter:hover {
+  transform: scale(1.06);
+  box-shadow: 0 0 0 8px rgba(217,154,181,.22), 0 10px 32px -10px rgba(217,154,181,1);
+}
+.astral-camera-shutter:active { transform: scale(.94); }
+.astral-camera-shutter--busy {
+  background: rgba(217,154,181,.4);
+  animation: astral-shutter-pulse 1s infinite;
+}
+@keyframes astral-shutter-pulse {
+  0%, 100% { opacity: .5; }
+  50% { opacity: 1; }
+}
+
+/* settings panel */
+.astral-camera-settings {
+  padding: 0 16px 16px;
+  border-top: 1px solid rgba(217,154,181,.1);
+  margin-top: 2px;
+}
+.astral-camera-settings-section { margin-bottom: 12px; }
+.astral-camera-settings-label {
+  font-size: 10px;
+  letter-spacing: .1em;
+  text-transform: uppercase;
+  color: var(--phone-accent);
+  margin-bottom: 6px;
+  padding-top: 12px;
+}
+.astral-camera-settings-textarea {
+  width: 100%;
+  padding: 8px 10px;
+  background: rgba(40,32,39,.9);
+  border: 1px solid rgba(217,154,181,.18);
+  border-radius: 8px;
+  color: var(--phone-text);
+  font-size: 11px;
+  font-family: inherit;
+  resize: vertical;
+  line-height: 1.5;
+  box-sizing: border-box;
+  outline: none;
+  transition: .16s;
+}
+.astral-camera-settings-textarea:focus { border-color: rgba(217,154,181,.45); }

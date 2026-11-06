@@ -2117,33 +2117,123 @@ REPLY (text only):`;
       const takeBtn = document.createElement("button");
       takeBtn.className = "astral-btn astral-btn-wide";
       takeBtn.textContent = "\u{1F4F8} \u0421\u0434\u0435\u043B\u0430\u0442\u044C \u0441\u043D\u0438\u043C\u043E\u043A";
-      takeBtn.addEventListener("click", async () => {
-        takeBtn.disabled = true;
-        takeBtn.textContent = "\u0421\u043D\u0438\u043C\u0430\u044E\u2026";
-        await this._takePhoto();
-        takeBtn.disabled = false;
-        takeBtn.textContent = "\u{1F4F8} \u0421\u0434\u0435\u043B\u0430\u0442\u044C \u0441\u043D\u0438\u043C\u043E\u043A";
-      });
+      takeBtn.addEventListener("click", () => this._openCamera());
       bar.appendChild(takeBtn);
       const pending = photos.filter((p) => !p.imageUrl).length;
-      const label = pending > 1 ? `\u0421\u043E\u0437\u0434\u0430\u0442\u044C \u0432\u0441\u0435 \u0444\u043E\u0442\u043E (${pending})` : "\u0421\u043E\u0437\u0434\u0430\u0442\u044C \u0444\u043E\u0442\u043E";
-      const btn = document.createElement("button");
-      btn.className = "astral-btn astral-btn-primary astral-btn-wide";
-      btn.textContent = label;
-      btn.disabled = pending === 0;
-      if (pending === 0) btn.style.opacity = ".45";
-      btn.addEventListener("click", async () => {
-        btn.disabled = true;
-        btn.textContent = "\u0413\u0435\u043D\u0435\u0440\u0430\u0446\u0438\u044F\u2026";
+      const genBtn = document.createElement("button");
+      genBtn.className = "astral-btn astral-btn-primary astral-btn-wide";
+      genBtn.textContent = pending > 1 ? `\u0421\u043E\u0437\u0434\u0430\u0442\u044C \u0432\u0441\u0435 \u0444\u043E\u0442\u043E (${pending})` : "\u0421\u043E\u0437\u0434\u0430\u0442\u044C \u0444\u043E\u0442\u043E";
+      genBtn.disabled = pending === 0;
+      if (pending === 0) genBtn.style.opacity = ".45";
+      genBtn.addEventListener("click", async () => {
+        genBtn.disabled = true;
+        genBtn.textContent = "\u0413\u0435\u043D\u0435\u0440\u0430\u0446\u0438\u044F\u2026";
         const indexes = photos.map((p, i) => !p.imageUrl ? i : -1).filter((i) => i >= 0);
         for (const i of indexes) await this._generate(i, true);
         this.render(document.querySelector(".astral-phone-body"));
       });
-      bar.appendChild(btn);
+      bar.appendChild(genBtn);
       return bar;
     }
-    /** Generate a photo description as if the character took a selfie/photo right now. */
-    async _takePhoto() {
+    /** Open camera overlay with mode selector and custom instruction settings. */
+    _openCamera() {
+      const phone = document.querySelector(".astral-phone");
+      if (!phone) return;
+      const prefs = this._loadCameraPrefs();
+      const overlay = document.createElement("div");
+      overlay.className = "astral-camera-overlay";
+      overlay.innerHTML = `
+            <div class="astral-camera">
+                <div class="astral-camera-header">
+                    <button class="astral-camera-close" title="\u0417\u0430\u043A\u0440\u044B\u0442\u044C">\u2715</button>
+                    <span class="astral-camera-title">Camera</span>
+                    <button class="astral-camera-settings-btn" title="\u041D\u0430\u0441\u0442\u0440\u043E\u0439\u043A\u0438">\u2699</button>
+                </div>
+
+                <div class="astral-camera-viewfinder">
+                    <div class="astral-camera-vf-inner">
+                        <div class="astral-camera-vf-corner tl"></div>
+                        <div class="astral-camera-vf-corner tr"></div>
+                        <div class="astral-camera-vf-corner bl"></div>
+                        <div class="astral-camera-vf-corner br"></div>
+                    </div>
+                </div>
+
+                <div class="astral-camera-mode-bar">
+                    <button class="astral-camera-mode ${prefs.mode === "photo" ? "active" : ""}" data-mode="photo">\u0424\u043E\u0442\u043E</button>
+                    <button class="astral-camera-mode ${prefs.mode === "random" ? "active" : ""}" data-mode="random">\u0420\u0430\u043D\u0434\u043E\u043C</button>
+                    <button class="astral-camera-mode ${prefs.mode === "selfie" ? "active" : ""}" data-mode="selfie">\u0421\u0435\u043B\u0444\u0438</button>
+                </div>
+
+                <div class="astral-camera-shutter-row">
+                    <button class="astral-camera-shutter" id="astral-camera-shutter"></button>
+                </div>
+
+                <div class="astral-camera-settings" style="display:none">
+                    <div class="astral-camera-settings-section">
+                        <div class="astral-camera-settings-label">\u0418\u043D\u0441\u0442\u0440\u0443\u043A\u0446\u0438\u044F \u0434\u043B\u044F \u0424\u043E\u0442\u043E</div>
+                        <textarea class="astral-camera-settings-textarea" id="astral-camera-photo-instr" rows="3" placeholder="\u041E\u0441\u0442\u0430\u0432\u044C \u043F\u0443\u0441\u0442\u044B\u043C \u0434\u043B\u044F \u0438\u043D\u0441\u0442\u0440\u0443\u043A\u0446\u0438\u0438 \u043F\u043E \u0443\u043C\u043E\u043B\u0447\u0430\u043D\u0438\u044E">${this._esc(prefs.photoInstruction)}</textarea>
+                    </div>
+                    <div class="astral-camera-settings-section">
+                        <div class="astral-camera-settings-label">\u0418\u043D\u0441\u0442\u0440\u0443\u043A\u0446\u0438\u044F \u0434\u043B\u044F \u0421\u0435\u043B\u0444\u0438</div>
+                        <textarea class="astral-camera-settings-textarea" id="astral-camera-selfie-instr" rows="3" placeholder="\u041E\u0441\u0442\u0430\u0432\u044C \u043F\u0443\u0441\u0442\u044B\u043C \u0434\u043B\u044F \u0438\u043D\u0441\u0442\u0440\u0443\u043A\u0446\u0438\u0438 \u043F\u043E \u0443\u043C\u043E\u043B\u0447\u0430\u043D\u0438\u044E">${this._esc(prefs.selfieInstruction)}</textarea>
+                    </div>
+                    <button class="astral-btn astral-btn-wide" id="astral-camera-save-settings">\u0421\u043E\u0445\u0440\u0430\u043D\u0438\u0442\u044C</button>
+                </div>
+            </div>
+        `;
+      let currentMode = prefs.mode;
+      overlay.querySelectorAll(".astral-camera-mode").forEach((btn) => {
+        btn.addEventListener("click", () => {
+          overlay.querySelectorAll(".astral-camera-mode").forEach((b) => b.classList.remove("active"));
+          btn.classList.add("active");
+          currentMode = btn.dataset.mode;
+          this._saveCameraPrefs({ ...this._loadCameraPrefs(), mode: currentMode });
+        });
+      });
+      const settingsPanel = overlay.querySelector(".astral-camera-settings");
+      overlay.querySelector(".astral-camera-settings-btn").addEventListener("click", () => {
+        settingsPanel.style.display = settingsPanel.style.display === "none" ? "block" : "none";
+      });
+      overlay.querySelector("#astral-camera-save-settings").addEventListener("click", () => {
+        const p = this._loadCameraPrefs();
+        p.photoInstruction = overlay.querySelector("#astral-camera-photo-instr").value;
+        p.selfieInstruction = overlay.querySelector("#astral-camera-selfie-instr").value;
+        this._saveCameraPrefs(p);
+        settingsPanel.style.display = "none";
+        this._toast("\u041D\u0430\u0441\u0442\u0440\u043E\u0439\u043A\u0438 \u0441\u043E\u0445\u0440\u0430\u043D\u0435\u043D\u044B");
+      });
+      const shutter = overlay.querySelector("#astral-camera-shutter");
+      shutter.addEventListener("click", async () => {
+        shutter.disabled = true;
+        shutter.classList.add("astral-camera-shutter--busy");
+        await this._takePhoto(currentMode);
+        overlay.remove();
+      });
+      overlay.querySelector(".astral-camera-close").addEventListener("click", () => overlay.remove());
+      phone.appendChild(overlay);
+    }
+    _loadCameraPrefs() {
+      try {
+        const raw = localStorage.getItem("astral_camera_prefs");
+        const p = raw ? JSON.parse(raw) : {};
+        return {
+          mode: p.mode || "random",
+          photoInstruction: p.photoInstruction || "",
+          selfieInstruction: p.selfieInstruction || ""
+        };
+      } catch {
+        return { mode: "random", photoInstruction: "", selfieInstruction: "" };
+      }
+    }
+    _saveCameraPrefs(prefs) {
+      try {
+        localStorage.setItem("astral_camera_prefs", JSON.stringify(prefs));
+      } catch {
+      }
+    }
+    /** Generate a photo prompt and add to gallery. mode = 'photo' | 'selfie' | 'random' */
+    async _takePhoto(mode = "random") {
       try {
         const ctx = this.context || globalThis.SillyTavern?.getContext?.() || {};
         const genFn = ctx.generateQuietPrompt;
@@ -2154,40 +2244,36 @@ REPLY (text only):`;
         const charName = ctx.name2 || "Character";
         const userName = ctx.name1 || "You";
         const state = this.storage.getState();
+        const prefs = this._loadCameraPrefs();
         const messages = (state.messages || []).slice(-6).map((m) => `${m.from === "me" ? userName : m.character || "Contact"}: ${m.text}`).join("\n");
         const lastCharMsg = (state.messages || []).filter((m) => m.character === charName).slice(-1)[0];
         const charOutfit = lastCharMsg?.outfit || "wearing casual clothes";
         const charAction = lastCharMsg?.action || "standing nearby";
         const allCharacters = [...new Set((state.messages || []).map((m) => m.character).filter(Boolean))];
         const otherChars = allCharacters.filter((c) => c !== charName);
-        let otherNpcsDesc = "";
-        if (otherChars.length > 0) {
-          otherNpcsDesc = otherChars.map((char) => `- ${char}, nearby`).join("\n");
-        }
+        const otherNpcsDesc = otherChars.length ? otherChars.map((c) => `- ${c}, nearby`).join("\n") : "";
         const backgroundDesc = this._inferBackground(messages);
-        const prompt = `You are deciding whether to take a selfie or a regular photo, based on what's happening in the scene.
+        const resolvedMode = mode === "random" ? Math.random() < 0.5 ? "photo" : "selfie" : mode;
+        const defaultPhotoInstr = `${charName}, ${charOutfit}, ${charAction}
+${otherNpcsDesc}
+Background: ${backgroundDesc}
 
-Scene context:
+Photo should look like it was taken on a mobile phone camera \u2014 candid, natural moment.
+
+Generate a short, natural photo description (1-2 sentences) as if you're looking at it in your phone gallery. Casual tone, like a real caption.`;
+        const defaultSelfieInstr = `${userName}, dressed casually, taking a selfie
+${charName}, ${charOutfit}, ${charAction}
+${otherNpcsDesc}
+Background: ${backgroundDesc}
+
+Selfie should look like it was taken on a mobile phone front camera \u2014 casual, intimate vibe.
+
+Generate a short, natural selfie description (1-2 sentences) as if you're looking at it in your phone gallery. Casual tone, like a real caption.`;
+        let baseInstr = resolvedMode === "selfie" ? prefs.selfieInstruction.trim() || defaultSelfieInstr : prefs.photoInstruction.trim() || defaultPhotoInstr;
+        const prompt = `Scene context:
 ${messages || "(quiet moment)"}
 
-Based on the scene, choose what makes sense: a selfie (you + ${charName} together) or a photo (just ${charName}).
-
-If SELFIE:
-${userName}, ${charAction}, dressed casually
-${charName}, ${charOutfit}, ${charAction}
-${otherNpcsDesc ? otherNpcsDesc : ""}
-Background: ${backgroundDesc}
-
-Selfie should look like it was taken on a mobile phone front camera - casual, intimate vibe.
-
-If PHOTO:
-${charName}, ${charOutfit}, ${charAction}
-${otherNpcsDesc ? otherNpcsDesc : ""}
-Background: ${backgroundDesc}
-
-Photo should look like it was taken on a mobile phone camera - candid, natural moment.
-
-Generate a short, natural photo/selfie description (1-2 sentences) as if you're looking at it in your phone gallery. Include mood and vibes. Casual tone, like a real caption.
+${baseInstr}
 
 DESCRIPTION:`;
         const description = await genFn(prompt, false, false);
@@ -2202,10 +2288,10 @@ DESCRIPTION:`;
           description: text,
           imageUrl: null,
           timestamp: Date.now(),
-          source: "phone_camera"
+          source: resolvedMode
         });
         this.storage.save();
-        this._toast("Photo added to gallery");
+        this._toast(resolvedMode === "selfie" ? "\u0421\u0435\u043B\u0444\u0438 \u0434\u043E\u0431\u0430\u0432\u043B\u0435\u043D\u043E \u0432 \u0433\u0430\u043B\u0435\u0440\u0435\u044E" : "\u0424\u043E\u0442\u043E \u0434\u043E\u0431\u0430\u0432\u043B\u0435\u043D\u043E \u0432 \u0433\u0430\u043B\u0435\u0440\u0435\u044E");
         this.render(document.querySelector(".astral-phone-body"));
       } catch (err) {
         console.error("[Astral Phone] takePhoto failed:", err);
