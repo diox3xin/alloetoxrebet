@@ -983,9 +983,9 @@
      *   `character` is used as the uploaded image's ch_name.
      * @returns {Promise<string>} ST-hosted path (e.g. /user/images/...) ready for <img src>.
      */
-    async generate(prompt2, metadata = {}) {
+    async generate(prompt, metadata = {}) {
       const settings = this._settings();
-      const text = String(prompt2 ?? "").trim();
+      const text = String(prompt ?? "").trim();
       if (!text) throw new Error("\u041F\u0443\u0441\u0442\u043E\u0439 \u043F\u0440\u043E\u043C\u043F\u0442 \u0434\u043B\u044F \u0433\u0435\u043D\u0435\u0440\u0430\u0446\u0438\u0438 \u0438\u0437\u043E\u0431\u0440\u0430\u0436\u0435\u043D\u0438\u044F.");
       const dataUrl = await this._generateWithTimeout(text, settings);
       return this.saveImageToFile(dataUrl, metadata?.character);
@@ -1038,7 +1038,7 @@
     }
     /* ─────────────────────────── dispatch + timeout ─────────────────────────── */
     /** Port of generateImageWithRetry (3136-3213) with retries and toasts removed. */
-    async _generateWithTimeout(prompt2, settings) {
+    async _generateWithTimeout(prompt, settings) {
       const timeoutMs = Math.max(5, Number(settings.requestTimeout) || 120) * 1e3;
       const controller = new AbortController();
       const timeoutId = setTimeout(() => controller.abort(), timeoutMs);
@@ -1047,19 +1047,19 @@
         const isRouterApi = isRouterEndpoint(settings.endpoint);
         const useGeminiApi = settings.apiType === "gemini" && !isRouterApi;
         if (settings.apiType === "naistera") {
-          return await this.generateImageNaistera(prompt2, "", settings, options);
+          return await this.generateImageNaistera(prompt, "", settings, options);
         }
         if (["novelai", "novelai-direct"].includes(settings.apiType)) {
-          return await this.generateImageNovelAI(prompt2, "", settings, options);
+          return await this.generateImageNovelAI(prompt, "", settings, options);
         }
         const useChatApi = settings.apiType === "openai-chat" || isRouterApi && (settings.apiType === "openai" || settings.apiType === "gemini");
         if (useGeminiApi) {
-          return await this.generateImageGemini(prompt2, "", settings, options);
+          return await this.generateImageGemini(prompt, "", settings, options);
         }
         if (useChatApi) {
-          return await this.generateImageOpenAIChat(prompt2, "", settings, options);
+          return await this.generateImageOpenAIChat(prompt, "", settings, options);
         }
-        return await this.generateImageOpenAI(prompt2, "", settings, options);
+        return await this.generateImageOpenAI(prompt, "", settings, options);
       } catch (error) {
         if (error?.name === "AbortError") {
           throw new Error(`\u0422\u0430\u0439\u043C\u0430\u0443\u0442: \u043F\u0440\u043E\u0432\u0430\u0439\u0434\u0435\u0440 \u043D\u0435 \u043E\u0442\u0432\u0435\u0442\u0438\u043B \u0437\u0430 ${Math.round(timeoutMs / 1e3)}\u0441`);
@@ -1140,7 +1140,7 @@
       throw new Error(`Naistera polling timed out after ${Math.round(timeoutMs / 1e3)}s`);
     }
     /** Port of generateImageNaistera (2394-2494). refData is always empty here. */
-    async generateImageNaistera(prompt2, style, settings, options = {}) {
+    async generateImageNaistera(prompt, style, settings, options = {}) {
       const endpoint = normalizeNaisteraEndpoint(settings.endpoint);
       const model = normalizeNaisteraModel(settings.naisteraModel);
       if (!model) throw new Error("Naistera: \u043C\u043E\u0434\u0435\u043B\u044C \u043D\u0435 \u0432\u044B\u0431\u0440\u0430\u043D\u0430 (\u043D\u0430\u0441\u0442\u0440\u043E\u0439\u043A\u0438 haruspics).");
@@ -1163,7 +1163,7 @@
         if (descriptions.length > 0) promptParts.push(`[CHARACTER DESCRIPTIONS]
 ${descriptions.join("\n")}`);
       }
-      promptParts.push(prompt2);
+      promptParts.push(prompt);
       let aspectRatio = options.aspectRatio || settings.naisteraAspectRatio || "1:1";
       const isNaisteraNanaBanana = isGeminiModel(model);
       if (isNaisteraNanaBanana && settings.geminiRandomFormat && !options.aspectRatio) {
@@ -1211,7 +1211,7 @@ ${descriptions.join("\n")}`);
     }
     /* ─────────────────────────── NovelAI ─────────────────────────── */
     /** Port of generateImageNovelAI (2545-2633). refData is always empty here. */
-    async generateImageNovelAI(prompt2, style, settings, options = {}) {
+    async generateImageNovelAI(prompt, style, settings, options = {}) {
       const parts = [];
       if (style) parts.push(style);
       parts.push(...EMPTY_REFS.textDirectives);
@@ -1221,7 +1221,7 @@ ${descriptions.join("\n")}`);
       for (const ref of EMPTY_REFS.imageRefs) {
         if (ref.type === "clothing" && ref.description) parts.push(`${ref.name || "Character"} is wearing: ${ref.description}`);
       }
-      parts.push(prompt2);
+      parts.push(prompt);
       const ratio = String(options.aspectRatio || "");
       let width = Number(settings.novelaiWidth);
       let height = Number(settings.novelaiHeight);
@@ -1316,7 +1316,7 @@ ${descriptions.join("\n")}`);
     }
     /* ─────────────────────────── OpenAI images API ─────────────────────────── */
     /** Port of generateImageOpenAI (2635-2736). refData is always empty here. */
-    async generateImageOpenAI(prompt2, style, settings, options = {}) {
+    async generateImageOpenAI(prompt, style, settings, options = {}) {
       const url = buildOpenAIUrl(settings.endpoint, "images/generations");
       const { imageRefs, textOnlyClothing, textDirectives } = EMPTY_REFS;
       const promptParts = [];
@@ -1328,7 +1328,7 @@ ${descriptions.join("\n")}`);
           promptParts.push(`[CLOTHING for ${ref.name}: ${ref.description}]`);
         }
       }
-      promptParts.push(prompt2);
+      promptParts.push(prompt);
       const fullPrompt = promptParts.join("\n\n");
       let size = settings.size;
       if (options.aspectRatio) {
@@ -1387,7 +1387,7 @@ ${descriptions.join("\n")}`);
     }
     /* ─────────────────────────── OpenAI chat / routers ─────────────────────────── */
     /** Port of generateImageOpenAIChat (2809-2911). refData is always empty here. */
-    async generateImageOpenAIChat(prompt2, style, settings, options = {}) {
+    async generateImageOpenAIChat(prompt, style, settings, options = {}) {
       const url = buildOpenAIUrl(settings.endpoint, "chat/completions");
       const { imageRefs, textOnlyClothing, textDirectives } = EMPTY_REFS;
       let aspectRatio = options.aspectRatio || settings.aspectRatio || "1:1";
@@ -1411,7 +1411,7 @@ ${descriptions.join("\n")}`);
         if (ref.type === "hairstyle") promptParts.push(`[HAIRSTYLE REFERENCE for ${ref.name}: copy only the hair, not the face]`);
       }
       promptParts.push(`[SCENE TO GENERATE]
-${prompt2}`);
+${prompt}`);
       const galleryNegative = options.negativePrompt == null ? this.getEffectiveNegativePrompt("") : String(options.negativePrompt || "").trim();
       if (galleryNegative) promptParts.push(`[NEGATIVE PROMPT: ${galleryNegative}]`);
       const fullPrompt = promptParts.join("\n\n");
@@ -1454,7 +1454,7 @@ ${prompt2}`);
     }
     /* ─────────────────────────── Gemini ─────────────────────────── */
     /** Port of generateImageGemini (2913-3114). refData is always empty here. */
-    async generateImageGemini(prompt2, style, settings, options = {}) {
+    async generateImageGemini(prompt, style, settings, options = {}) {
       const model = settings.model;
       if (!model) throw new Error("Gemini: \u043C\u043E\u0434\u0435\u043B\u044C \u043D\u0435 \u0432\u044B\u0431\u0440\u0430\u043D\u0430 (\u043D\u0430\u0441\u0442\u0440\u043E\u0439\u043A\u0438 haruspics).");
       const baseUrl = String(settings.endpoint || "").replace(/\/$/, "");
@@ -1561,7 +1561,7 @@ CRITICAL: Face features must be IDENTICAL to face references. Clothing reference
 
 `;
       fullPrompt += `[SCENE TO GENERATE]
-${prompt2}
+${prompt}
 [END SCENE]`;
       if (faceRefs.length > 0) {
         fullPrompt += `
@@ -1827,8 +1827,8 @@ ${prompt2}
         const state = this.storage.getState();
         const photo = state.gallery[index];
         if (!photo) return;
-        const prompt2 = this._buildPrompt(photo);
-        const url = await this.imageGen.generate(prompt2, {
+        const prompt = this._buildPrompt(photo);
+        const url = await this.imageGen.generate(prompt, {
           character: photo.character,
           type: "gallery_photo"
         });
@@ -1993,8 +1993,8 @@ ${prompt2}
         const state = this.storage.getState();
         const item = state.spicy[index];
         if (!item) return;
-        const prompt2 = [item.character, item.description].filter(Boolean).join(" \u2014 ");
-        const url = await this.imageGen.generate(prompt2, {
+        const prompt = [item.character, item.description].filter(Boolean).join(" \u2014 ");
+        const url = await this.imageGen.generate(prompt, {
           character: item.character,
           type: "spicy_thumbnail",
           nsfw: true
@@ -2140,13 +2140,30 @@ ${prompt2}
     }
     /* ─────────────────────────── profile ─────────────────────────── */
     _renderProfile(body, creator) {
-      const name = this.context.name2 || "\u041F\u0435\u0440\u0441\u043E\u043D\u0430\u0436";
+      const name = creator.displayName || this.context.name2 || "\u041F\u0435\u0440\u0441\u043E\u043D\u0430\u0436";
+      const handle = creator.handle || this._slug(name);
+      const avatar = creator.avatar || null;
       const posts = creator.posts || [];
+      const avaHtml = avatar ? `<img src="${this._esc(avatar)}" class="astral-profile-ava astral-profile-ava--img" alt="avatar">` : `<div class="astral-profile-ava">${this._esc((name[0] || "?").toUpperCase())}</div>`;
       body.innerHTML = `
             <div class="astral-profile">
-                <div class="astral-profile-ava">${this._esc((name[0] || "?").toUpperCase())}</div>
-                <div class="astral-profile-name">${this._esc(name)}</div>
-                <div class="astral-profile-handle">@${this._slug(name)}</div>
+                <div class="astral-profile-ava-wrap">
+                    ${avaHtml}
+                    <button class="astral-ava-edit-btn" id="astral-ava-btn" title="\u0418\u0437\u043C\u0435\u043D\u0438\u0442\u044C \u0430\u0432\u0430\u0442\u0430\u0440">
+                        <svg viewBox="0 0 24 24" width="14" height="14" stroke="currentColor" fill="none" stroke-width="2">
+                            <path d="M12 20h9M16.5 3.5a2.121 2.121 0 013 3L7 19l-4 1 1-4 12.5-12.5z"/>
+                        </svg>
+                    </button>
+                </div>
+
+                <div class="astral-profile-name-row">
+                    <div class="astral-profile-name" id="astral-cname-view">${this._esc(name)}</div>
+                    <button class="astral-inline-edit-btn" id="astral-edit-name-btn" title="\u0418\u0437\u043C\u0435\u043D\u0438\u0442\u044C">\u270E</button>
+                </div>
+                <div class="astral-profile-handle-row">
+                    <div class="astral-profile-handle" id="astral-chandle-view">@${this._esc(handle)}</div>
+                    <button class="astral-inline-edit-btn" id="astral-edit-handle-btn" title="\u0418\u0437\u043C\u0435\u043D\u0438\u0442\u044C">\u270E</button>
+                </div>
 
                 <div class="astral-stats-row">
                     <div class="astral-stat">
@@ -2169,6 +2186,129 @@ ${prompt2}
             </div>
         `;
       body.querySelector("#astral-new-post").addEventListener("click", () => this._openComposer());
+      body.querySelector("#astral-ava-btn").addEventListener("click", () => this._openAvatarPicker());
+      body.querySelector("#astral-edit-name-btn").addEventListener("click", () => this._openInlineEdit("name", name));
+      body.querySelector("#astral-edit-handle-btn").addEventListener("click", () => this._openInlineEdit("handle", handle));
+    }
+    /* ─────────────────────────── avatar picker ─────────────────────────── */
+    _openAvatarPicker() {
+      const gallery = (this.storage.getState().gallery || []).filter((p) => p.imageUrl);
+      const overlay = document.createElement("div");
+      overlay.className = "astral-modal";
+      const galleryItems = gallery.slice(0, 20).map((p, i) => `
+            <button class="astral-ava-pick" data-gidx="${i}">
+                <img src="${this._esc(p.imageUrl)}" alt="">
+            </button>
+        `).join("");
+      overlay.innerHTML = `
+            <div class="astral-modal-card astral-modal-card--ava-picker">
+                <div class="astral-modal-title">\u0410\u0432\u0430\u0442\u0430\u0440</div>
+
+                <div class="astral-ava-picker-section">
+                    <div class="astral-ava-picker-label">\u0417\u0430\u0433\u0440\u0443\u0437\u0438\u0442\u044C \u0441 \u0443\u0441\u0442\u0440\u043E\u0439\u0441\u0442\u0432\u0430</div>
+                    <label class="astral-upload-btn">
+                        <svg viewBox="0 0 24 24" width="16" height="16" stroke="currentColor" fill="none" stroke-width="2">
+                            <path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4M17 8l-5-5-5 5M12 3v12"/>
+                        </svg>
+                        \u0412\u044B\u0431\u0440\u0430\u0442\u044C \u0444\u0430\u0439\u043B
+                        <input type="file" id="astral-ava-file" accept="image/*" style="display:none">
+                    </label>
+                </div>
+
+                ${gallery.length > 0 ? `
+                <div class="astral-ava-picker-section">
+                    <div class="astral-ava-picker-label">\u0418\u0437 \u0433\u0430\u043B\u0435\u0440\u0435\u0438 \u0442\u0435\u043B\u0435\u0444\u043E\u043D\u0430</div>
+                    <div class="astral-ava-grid">${galleryItems}</div>
+                </div>` : ""}
+
+                <div class="astral-modal-actions">
+                    <button class="astral-btn" id="astral-ava-cancel">\u041E\u0442\u043C\u0435\u043D\u0430</button>
+                </div>
+            </div>
+        `;
+      document.querySelector(".astral-phone").appendChild(overlay);
+      const close = /* @__PURE__ */ __name(() => overlay.remove(), "close");
+      overlay.addEventListener("click", (e) => {
+        if (e.target === overlay) close();
+      });
+      overlay.querySelector("#astral-ava-cancel").addEventListener("click", close);
+      overlay.querySelector("#astral-ava-file").addEventListener("change", async (e) => {
+        const file = e.target.files?.[0];
+        if (!file) return;
+        const dataUrl = await this._fileToDataUrl(file);
+        close();
+        this._saveCreatorAvatar(dataUrl);
+      });
+      overlay.querySelectorAll("[data-gidx]").forEach((btn) => {
+        btn.addEventListener("click", () => {
+          const idx = Number(btn.dataset.gidx);
+          const url = gallery[idx]?.imageUrl;
+          if (url) {
+            close();
+            this._saveCreatorAvatar(url);
+          }
+        });
+      });
+    }
+    _fileToDataUrl(file) {
+      return new Promise((resolve, reject) => {
+        const reader = new FileReader();
+        reader.onload = (e) => resolve(e.target.result);
+        reader.onerror = reject;
+        reader.readAsDataURL(file);
+      });
+    }
+    _saveCreatorAvatar(url) {
+      const state = this.storage.getState();
+      if (!state.creator) state.creator = {};
+      state.creator.avatar = url;
+      this.storage.save();
+      this.render(document.querySelector(".astral-phone-body"));
+    }
+    /* ─────────────────────────── inline edit (name / handle) ─────────────────────────── */
+    _openInlineEdit(field, current) {
+      const labels = { name: "\u0418\u043C\u044F", handle: "\u041D\u0438\u043A (\u0431\u0435\u0437 @)" };
+      const overlay = document.createElement("div");
+      overlay.className = "astral-modal";
+      overlay.innerHTML = `
+            <div class="astral-modal-card astral-modal-card--sheet">
+                <div class="astral-modal-title">${labels[field]}</div>
+                <input class="astral-textarea astral-inline-input" id="astral-inline-val"
+                    value="${this._esc(current)}" placeholder="${labels[field]}">
+                <div class="astral-modal-actions">
+                    <button class="astral-btn" id="astral-inline-cancel">\u041E\u0442\u043C\u0435\u043D\u0430</button>
+                    <button class="astral-btn astral-btn-primary" id="astral-inline-save">\u0421\u043E\u0445\u0440\u0430\u043D\u0438\u0442\u044C</button>
+                </div>
+            </div>
+        `;
+      document.querySelector(".astral-phone").appendChild(overlay);
+      const close = /* @__PURE__ */ __name(() => overlay.remove(), "close");
+      const inp = overlay.querySelector("#astral-inline-val");
+      inp.focus();
+      inp.select();
+      overlay.addEventListener("click", (e) => {
+        if (e.target === overlay) close();
+      });
+      overlay.querySelector("#astral-inline-cancel").addEventListener("click", close);
+      overlay.querySelector("#astral-inline-save").addEventListener("click", () => {
+        let val = inp.value.trim();
+        if (!val) return;
+        if (field === "handle") val = val.replace(/^@/, "").replace(/\s+/g, "_").replace(/[^\p{L}\p{N}_]/gu, "").toLowerCase();
+        close();
+        this._saveCreatorField(field, val);
+      });
+      inp.addEventListener("keydown", (e) => {
+        if (e.key === "Enter") overlay.querySelector("#astral-inline-save").click();
+        if (e.key === "Escape") close();
+      });
+    }
+    _saveCreatorField(field, value) {
+      const state = this.storage.getState();
+      if (!state.creator) state.creator = {};
+      if (field === "name") state.creator.displayName = value;
+      if (field === "handle") state.creator.handle = value;
+      this.storage.save();
+      this.render(document.querySelector(".astral-phone-body"));
     }
     /* ─────────────────────────── feed ─────────────────────────── */
     _renderFeed(body, creator) {
@@ -2360,23 +2500,23 @@ ${prompt2}
       });
       overlay.querySelector("#astral-post-go").addEventListener("click", async () => {
         const caption = overlay.querySelector("#astral-post-caption").value.trim();
-        const prompt2 = overlay.querySelector("#astral-post-text").value.trim();
-        if (!caption && !prompt2) return;
+        const prompt = overlay.querySelector("#astral-post-text").value.trim();
+        if (!caption && !prompt) return;
         close();
-        if (post) this._updatePost(editIndex, { caption, prompt: prompt2 });
-        else await this._createPost(caption, prompt2);
+        if (post) this._updatePost(editIndex, { caption, prompt });
+        else await this._createPost(caption, prompt);
       });
       overlay.querySelector("#astral-post-caption").focus();
     }
     /* ─────────────────────────── create / update / delete ─────────────────────────── */
-    async _createPost(caption, prompt2) {
+    async _createPost(caption, prompt) {
       const state = this.storage.getState();
       if (!state.creator) state.creator = { posts: [], subscribers: 0, revenue: 0, fans: [] };
       if (!Array.isArray(state.creator.posts)) state.creator.posts = [];
       state.creator.posts.unshift({
         id: this._uid(),
         caption,
-        prompt: prompt2,
+        prompt,
         timestamp: Date.now(),
         imageUrl: null,
         imageW: 0,
@@ -2388,7 +2528,7 @@ ${prompt2}
       this.storage.save();
       this._tab = "feed";
       this.render(document.querySelector(".astral-phone-body"));
-      if (prompt2 && this.imageGen.isAvailable()) await this._generate(0, true);
+      if (prompt && this.imageGen.isAvailable()) await this._generate(0, true);
       this.render(document.querySelector(".astral-phone-body"));
     }
     _updatePost(index, patch) {
@@ -2535,8 +2675,8 @@ ${prompt2}
         const post = state.creator?.posts?.[index];
         if (!post) return;
         const scene = String(post.prompt || "").trim();
-        const prompt2 = [this.context.name2 || "\u041F\u0435\u0440\u0441\u043E\u043D\u0430\u0436", scene].filter(Boolean).join(" \u2014 ");
-        const url = await this.imageGen.generate(prompt2, {
+        const prompt = [this.context.name2 || "\u041F\u0435\u0440\u0441\u043E\u043D\u0430\u0436", scene].filter(Boolean).join(" \u2014 ");
+        const url = await this.imageGen.generate(prompt, {
           character: this.context.name2,
           type: "creator_post",
           nsfw: true
@@ -2737,11 +2877,22 @@ ${prompt2}
         }, 1500);
       });
       container.querySelector('[data-action="change-avatar"]')?.addEventListener("click", () => {
-        const url = prompt("\u0412\u0432\u0435\u0434\u0438\u0442\u0435 URL \u0430\u0432\u0430\u0442\u0430\u0440\u0430:");
-        if (!url) return;
-        this.accountManager.updateAccount({ avatar: url });
-        const img = container.querySelector(".astral-avatar-preview");
-        if (img) img.src = url;
+        const inp = document.createElement("input");
+        inp.type = "file";
+        inp.accept = "image/*";
+        inp.onchange = async () => {
+          const file = inp.files?.[0];
+          if (!file) return;
+          const reader = new FileReader();
+          reader.onload = (e) => {
+            const url = e.target.result;
+            this.accountManager.updateAccount({ avatar: url });
+            const img = container.querySelector(".astral-avatar-preview");
+            if (img) img.src = url;
+          };
+          reader.readAsDataURL(file);
+        };
+        inp.click();
       });
     }
     _esc(str) {

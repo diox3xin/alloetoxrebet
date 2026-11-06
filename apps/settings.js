@@ -100,12 +100,23 @@ export class SettingsApp {
         });
 
         container.querySelector('[data-action="change-avatar"]')?.addEventListener('click', () => {
-            const url = prompt('Введите URL аватара:');
-            if (!url) return;
-
-            this.accountManager.updateAccount({ avatar: url });
-            const img = container.querySelector('.astral-avatar-preview');
-            if (img) img.src = url;
+            // Hidden file input for local upload
+            const inp = document.createElement('input');
+            inp.type = 'file';
+            inp.accept = 'image/*';
+            inp.onchange = async () => {
+                const file = inp.files?.[0];
+                if (!file) return;
+                const reader = new FileReader();
+                reader.onload = (e) => {
+                    const url = e.target.result;
+                    this.accountManager.updateAccount({ avatar: url });
+                    const img = container.querySelector('.astral-avatar-preview');
+                    if (img) img.src = url;
+                };
+                reader.readAsDataURL(file);
+            };
+            inp.click();
         });
     }
 

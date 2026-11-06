@@ -1365,3 +1365,131 @@
 }
 
 .astral-stat-card--wide { grid-column: 1 / -1; }
+
+/* ── creator profile: editable name/handle/avatar ────────────── */
+.astral-profile-ava-wrap {
+  position: relative;
+  display: inline-flex;
+  margin-bottom: 10px;
+}
+
+.astral-profile-ava--img {
+  width: 68px;
+  height: 68px;
+  border-radius: 50%;
+  object-fit: cover;
+  border: 2px solid rgba(217,154,181,.35);
+  display: block;
+}
+
+.astral-ava-edit-btn {
+  position: absolute;
+  bottom: -2px;
+  right: -2px;
+  width: 22px;
+  height: 22px;
+  border-radius: 50%;
+  background: var(--phone-card);
+  border: 1px solid rgba(217,154,181,.4);
+  color: var(--phone-accent);
+  display: grid;
+  place-items: center;
+  cursor: pointer;
+  transition: .16s;
+}
+.astral-ava-edit-btn:hover {
+  background: rgba(217,154,181,.18);
+  border-color: var(--phone-accent);
+}
+
+.astral-profile-name-row,
+.astral-profile-handle-row {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.astral-inline-edit-btn {
+  padding: 2px 5px;
+  background: none;
+  border: 0;
+  border-radius: 6px;
+  font-size: 13px;
+  color: var(--phone-muted);
+  cursor: pointer;
+  opacity: .6;
+  transition: .15s;
+}
+.astral-inline-edit-btn:hover {
+  opacity: 1;
+  color: var(--phone-accent-light);
+  background: rgba(217,154,181,.1);
+}
+
+/* avatar picker modal */
+.astral-modal-card--ava-picker {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+
+.astral-ava-picker-section { display: flex; flex-direction: column; gap: 8px; }
+
+.astral-ava-picker-label {
+  font-size: 9px;
+  letter-spacing: .14em;
+  text-transform: uppercase;
+  color: var(--phone-muted);
+}
+
+.astral-upload-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  padding: 10px 14px;
+  border-radius: 12px;
+  background: rgba(40,32,39,.86);
+  border: 1px dashed rgba(217,154,181,.3);
+  color: var(--phone-accent-light);
+  font-size: 12px;
+  cursor: pointer;
+  transition: .16s;
+  user-select: none;
+}
+.astral-upload-btn:hover {
+  border-color: rgba(217,154,181,.6);
+  background: rgba(217,154,181,.1);
+}
+
+.astral-ava-grid {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 6px;
+}
+
+.astral-ava-pick {
+  aspect-ratio: 1 / 1;
+  border-radius: 10px;
+  overflow: hidden;
+  border: 2px solid transparent;
+  padding: 0;
+  cursor: pointer;
+  transition: .16s;
+  background: var(--phone-card);
+}
+.astral-ava-pick img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  display: block;
+}
+.astral-ava-pick:hover { border-color: var(--phone-accent); }
+
+/* inline input in sheet modal */
+.astral-inline-input {
+  padding: 10px 12px;
+  min-height: unset;
+  border-radius: 10px;
+  font-size: 13px;
+  resize: none;
+}

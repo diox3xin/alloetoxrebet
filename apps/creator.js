@@ -90,14 +90,34 @@ export class CreatorApp {
     /* ─────────────────────────── profile ─────────────────────────── */
 
     _renderProfile(body, creator) {
-        const name = this.context.name2 || 'Персонаж';
+        const name = creator.displayName || this.context.name2 || 'Персонаж';
+        const handle = creator.handle || this._slug(name);
+        const avatar = creator.avatar || null;
         const posts = creator.posts || [];
+
+        const avaHtml = avatar
+            ? `<img src="${this._esc(avatar)}" class="astral-profile-ava astral-profile-ava--img" alt="avatar">`
+            : `<div class="astral-profile-ava">${this._esc((name[0] || '?').toUpperCase())}</div>`;
 
         body.innerHTML = `
             <div class="astral-profile">
-                <div class="astral-profile-ava">${this._esc((name[0] || '?').toUpperCase())}</div>
-                <div class="astral-profile-name">${this._esc(name)}</div>
-                <div class="astral-profile-handle">@${this._slug(name)}</div>
+                <div class="astral-profile-ava-wrap">
+                    ${avaHtml}
+                    <button class="astral-ava-edit-btn" id="astral-ava-btn" title="Изменить аватар">
+                        <svg viewBox="0 0 24 24" width="14" height="14" stroke="currentColor" fill="none" stroke-width="2">
+                            <path d="M12 20h9M16.5 3.5a2.121 2.121 0 013 3L7 19l-4 1 1-4 12.5-12.5z"/>
+                        </svg>
+                    </button>
+                </div>
+
+                <div class="astral-profile-name-row">
+                    <div class="astral-profile-name" id="astral-cname-view">${this._esc(name)}</div>
+                    <button class="astral-inline-edit-btn" id="astral-edit-name-btn" title="Изменить">✎</button>
+                </div>
+                <div class="astral-profile-handle-row">
+                    <div class="astral-profile-handle" id="astral-chandle-view">@${this._esc(handle)}</div>
+                    <button class="astral-inline-edit-btn" id="astral-edit-handle-btn" title="Изменить">✎</button>
+                </div>
 
                 <div class="astral-stats-row">
                     <div class="astral-stat">
@@ -121,6 +141,142 @@ export class CreatorApp {
         `;
 
         body.querySelector('#astral-new-post').addEventListener('click', () => this._openComposer());
+        body.querySelector('#astral-ava-btn').addEventListener('click', () => this._openAvatarPicker());
+        body.querySelector('#astral-edit-name-btn').addEventListener('click', () => this._openInlineEdit('name', name));
+        body.querySelector('#astral-edit-handle-btn').addEventListener('click', () => this._openInlineEdit('handle', handle));
+    }
+
+    /* ─────────────────────────── avatar picker ─────────────────────────── */
+
+    _openAvatarPicker() {
+        const gallery = (this.storage.getState().gallery || []).filter(p => p.imageUrl);
+
+        const overlay = document.createElement('div');
+        overlay.className = 'astral-modal';
+
+        const galleryItems = gallery.slice(0, 20).map((p, i) => `
+            <button class="astral-ava-pick" data-gidx="${i}">
+                <img src="${this._esc(p.imageUrl)}" alt="">
+            </button>
+        `).join('');
+
+        overlay.innerHTML = `
+            <div class="astral-modal-card astral-modal-card--ava-picker">
+                <div class="astral-modal-title">Аватар</div>
+
+                <div class="astral-ava-picker-section">
+                    <div class="astral-ava-picker-label">Загрузить с устройства</div>
+                    <label class="astral-upload-btn">
+                        <svg viewBox="0 0 24 24" width="16" height="16" stroke="currentColor" fill="none" stroke-width="2">
+                            <path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4M17 8l-5-5-5 5M12 3v12"/>
+                        </svg>
+                        Выбрать файл
+                        <input type="file" id="astral-ava-file" accept="image/*" style="display:none">
+                    </label>
+                </div>
+
+                ${gallery.length > 0 ? `
+                <div class="astral-ava-picker-section">
+                    <div class="astral-ava-picker-label">Из галереи телефона</div>
+                    <div class="astral-ava-grid">${galleryItems}</div>
+                </div>` : ''}
+
+                <div class="astral-modal-actions">
+                    <button class="astral-btn" id="astral-ava-cancel">Отмена</button>
+                </div>
+            </div>
+        `;
+
+        document.querySelector('.astral-phone').appendChild(overlay);
+        const close = () => overlay.remove();
+
+        overlay.addEventListener('click', e => { if (e.target === overlay) close(); });
+        overlay.querySelector('#astral-ava-cancel').addEventListener('click', close);
+
+        // File upload
+        overlay.querySelector('#astral-ava-file').addEventListener('change', async (e) => {
+            const file = e.target.files?.[0];
+            if (!file) return;
+            const dataUrl = await this._fileToDataUrl(file);
+            close();
+            this._saveCreatorAvatar(dataUrl);
+        });
+
+        // From gallery
+        overlay.querySelectorAll('[data-gidx]').forEach(btn => {
+            btn.addEventListener('click', () => {
+                const idx = Number(btn.dataset.gidx);
+                const url = gallery[idx]?.imageUrl;
+                if (url) { close(); this._saveCreatorAvatar(url); }
+            });
+        });
+    }
+
+    _fileToDataUrl(file) {
+        return new Promise((resolve, reject) => {
+            const reader = new FileReader();
+            reader.onload = e => resolve(e.target.result);
+            reader.onerror = reject;
+            reader.readAsDataURL(file);
+        });
+    }
+
+    _saveCreatorAvatar(url) {
+        const state = this.storage.getState();
+        if (!state.creator) state.creator = {};
+        state.creator.avatar = url;
+        this.storage.save();
+        this.render(document.querySelector('.astral-phone-body'));
+    }
+
+    /* ─────────────────────────── inline edit (name / handle) ─────────────────────────── */
+
+    _openInlineEdit(field, current) {
+        const labels = { name: 'Имя', handle: 'Ник (без @)' };
+
+        const overlay = document.createElement('div');
+        overlay.className = 'astral-modal';
+        overlay.innerHTML = `
+            <div class="astral-modal-card astral-modal-card--sheet">
+                <div class="astral-modal-title">${labels[field]}</div>
+                <input class="astral-textarea astral-inline-input" id="astral-inline-val"
+                    value="${this._esc(current)}" placeholder="${labels[field]}">
+                <div class="astral-modal-actions">
+                    <button class="astral-btn" id="astral-inline-cancel">Отмена</button>
+                    <button class="astral-btn astral-btn-primary" id="astral-inline-save">Сохранить</button>
+                </div>
+            </div>
+        `;
+
+        document.querySelector('.astral-phone').appendChild(overlay);
+        const close = () => overlay.remove();
+        const inp = overlay.querySelector('#astral-inline-val');
+        inp.focus();
+        inp.select();
+
+        overlay.addEventListener('click', e => { if (e.target === overlay) close(); });
+        overlay.querySelector('#astral-inline-cancel').addEventListener('click', close);
+        overlay.querySelector('#astral-inline-save').addEventListener('click', () => {
+            let val = inp.value.trim();
+            if (!val) return;
+            if (field === 'handle') val = val.replace(/^@/, '').replace(/\s+/g, '_').replace(/[^\p{L}\p{N}_]/gu, '').toLowerCase();
+            close();
+            this._saveCreatorField(field, val);
+        });
+
+        inp.addEventListener('keydown', e => {
+            if (e.key === 'Enter') overlay.querySelector('#astral-inline-save').click();
+            if (e.key === 'Escape') close();
+        });
+    }
+
+    _saveCreatorField(field, value) {
+        const state = this.storage.getState();
+        if (!state.creator) state.creator = {};
+        if (field === 'name') state.creator.displayName = value;
+        if (field === 'handle') state.creator.handle = value;
+        this.storage.save();
+        this.render(document.querySelector('.astral-phone-body'));
     }
 
     /* ─────────────────────────── feed ─────────────────────────── */
