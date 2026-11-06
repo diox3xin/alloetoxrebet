@@ -1055,42 +1055,59 @@
     getStyle() {
       try {
         const s = this._rawSettings();
-        const style = s?.style || s?.artStyle || s?.imageStyle || s?.stylePreset || "";
-        return String(style || "").trim();
+        if (!s) return "";
+        const activeId = String(s.activeStyleId || "").trim();
+        if (!activeId) return "";
+        const presets = s.stylePresets;
+        if (!Array.isArray(presets)) return "";
+        const active = presets.find((p) => p.id === activeId);
+        return String(active?.text || active?.prompt || active?.name || "").trim();
       } catch (_) {
         return "";
       }
     }
-    /**
-     * Read character/clothing descriptions from Haruspics settings.
-     * Returns refs in the same shape as EMPTY_REFS so existing prompt-builders
-     * can use it transparently.
-     *
-     * Haruspics stores character data in several possible keys; we try them all.
-     */
     _collectRefs() {
       try {
         const s = this._rawSettings();
         if (!s) return EMPTY_REFS;
         const textDirectives = [];
         const textOnlyClothing = [];
-        const globalField = s.characterField || s.charField || s.charPrompt || s.characterPrompt || s.globalCharacterDescription || s.globalDescription || "";
-        if (globalField && String(globalField).trim()) {
-          textDirectives.push(String(globalField).trim());
+        const ctx = this._ctx();
+        const charName = ctx?.name2 || "";
+        const userName = ctx?.name1 || "";
+        const charLib = s.characterReferenceLibrary;
+        if (charLib && typeof charLib === "object") {
+          const addItems = /* @__PURE__ */ __name((bucket, displayName) => {
+            if (!displayName) return;
+            const entry = charLib[bucket]?.[displayName];
+            if (!entry) return;
+            for (const item of entry.appearanceItems || []) {
+              if (item.enabled === false) continue;
+              if (item.type !== "text") continue;
+              const desc = String(item.description || "").trim();
+              if (desc) textOnlyClothing.push({ charName: displayName, description: desc });
+            }
+          }, "addItems");
+          addItems("characters", charName);
+          addItems("users", userName);
         }
-        const chars = s.characters || s.characterDescriptions || s.charDescriptions || [];
-        if (Array.isArray(chars)) {
-          for (const c of chars) {
-            const name = String(c.name || c.charName || "").trim();
-            const desc = String(c.description || c.clothing || c.outfit || "").trim();
-            const enabled = c.enabled !== false;
-            if (name && desc && enabled) {
-              textOnlyClothing.push({ charName: name, description: desc });
+        const lorebooks = s.lorebooks;
+        if (Array.isArray(lorebooks)) {
+          for (const lb of lorebooks) {
+            if (lb.enabled === false) continue;
+            for (const ref of lb.refs || []) {
+              if (ref.enabled === false) continue;
+              const name = String(ref.name || "").trim();
+              const desc = String(ref.description || "").trim();
+              if (!desc) continue;
+              if (name) textOnlyClothing.push({ charName: name, description: desc });
+              else textDirectives.push(desc);
             }
           }
         }
         if (textDirectives.length === 0 && textOnlyClothing.length === 0) return EMPTY_REFS;
-        console.log(`[AstralImageGen] Synced from Haruspics \u2014 style="${this.getStyle()}", directives=${textDirectives.length}, clothing=${textOnlyClothing.length}`);
+        const style = this.getStyle();
+        console.log(`[AstralImageGen] Synced from IIG \u2014 style="${style}", directives=${textDirectives.length}, clothing=${textOnlyClothing.length}`);
         return { imageRefs: [], textDirectives, textOnlyClothing };
       } catch (_) {
         return EMPTY_REFS;

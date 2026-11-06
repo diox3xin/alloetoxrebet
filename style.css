@@ -1783,16 +1783,16 @@
 
 /* viewfinder */
 .astral-camera-viewfinder {
-  flex: 1;
+  flex: 0 0 auto;
   display: grid;
   place-items: center;
-  padding: 20px;
-  min-height: 0;
+  padding: 12px 20px 8px;
 }
 .astral-camera-vf-inner {
   position: relative;
   width: 100%;
   aspect-ratio: 3 / 4;
+  max-height: 200px;
   border-radius: 12px;
   background: linear-gradient(160deg, rgba(40,32,39,.6), rgba(13,11,16,.9));
   border: 1px solid rgba(217,154,181,.12);
