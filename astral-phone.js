@@ -2133,6 +2133,8 @@ description \u043F\u0438\u0448\u0438 \u043A\u0430\u043A \u043F\u0440\u043E\u043C
     core.registerApp("creator", new CreatorApp(context, storage, imageGen));
     window.__astralPhoneCore = core;
     injectLauncher();
+    injectSettingsPanel();
+    loadSettings();
     registerFunctionTool(context);
     registerSlashCommands(context);
     registerEventTagFallback(context);
@@ -2310,6 +2312,85 @@ description \u043F\u0438\u0448\u0438 \u043A\u0430\u043A \u043F\u0440\u043E\u043C
     );
   }
   __name(registerSlashCommands, "registerSlashCommands");
+  function injectSettingsPanel() {
+    const html = `
+<div id="astral-phone-settings" class="inline-drawer">
+    <div class="inline-drawer-toggle inline-drawer-header">
+        <b>Astral Phone</b>
+        <div class="inline-drawer-icon fa-solid fa-circle-chevron-down down"></div>
+    </div>
+    <div class="inline-drawer-content">
+        <label for="astral-phone-image-provider">\u041F\u0440\u043E\u0432\u0430\u0439\u0434\u0435\u0440 \u0438\u0437\u043E\u0431\u0440\u0430\u0436\u0435\u043D\u0438\u0439</label>
+        <select id="astral-phone-image-provider" class="text_pole">
+            <option value="haruspics">Haruspics Fusion (\u0430\u0432\u0442\u043E)</option>
+            <option value="openai">OpenAI DALL\xB7E</option>
+            <option value="novelai">NovelAI</option>
+            <option value="stability">Stability AI</option>
+            <option value="naisters">NAI-Sters (\u043B\u043E\u043A\u0430\u043B\u044C\u043D\u044B\u0439)</option>
+        </select>
+        
+        <label for="astral-phone-theme-accent">\u0426\u0432\u0435\u0442 \u0430\u043A\u0446\u0435\u043D\u0442\u0430</label>
+        <input type="color" id="astral-phone-theme-accent" value="#D99AB5" />
+        
+        <label for="astral-phone-theme-bg">\u0424\u043E\u043D \u0442\u0435\u043B\u0435\u0444\u043E\u043D\u0430</label>
+        <input type="color" id="astral-phone-theme-bg" value="#0D0B10" />
+        
+        <small class="notes">\u041F\u0440\u043E\u0432\u0430\u0439\u0434\u0435\u0440 Haruspics \u0438\u0441\u043F\u043E\u043B\u044C\u0437\u0443\u0435\u0442 \u043D\u0430\u0441\u0442\u0440\u043E\u0439\u043A\u0438 \u0438\u0437 \u0440\u0430\u0441\u0448\u0438\u0440\u0435\u043D\u0438\u044F Haruspics Fusion. \u041E\u0441\u0442\u0430\u043B\u044C\u043D\u044B\u0435 \u043F\u0440\u043E\u0432\u0430\u0439\u0434\u0435\u0440\u044B \u0442\u0440\u0435\u0431\u0443\u044E\u0442 API-\u043A\u043B\u044E\u0447\u0438 \u0432 User Settings \u2192 API.</small>
+    </div>
+</div>`;
+    const panel = document.getElementById("extensions_settings2");
+    if (panel) {
+      panel.insertAdjacentHTML("beforeend", html);
+      const toggle = document.querySelector("#astral-phone-settings .inline-drawer-toggle");
+      toggle?.addEventListener("click", () => {
+        const drawer = document.getElementById("astral-phone-settings");
+        drawer?.classList.toggle("openDrawer");
+      });
+      document.getElementById("astral-phone-image-provider")?.addEventListener("change", saveSettings);
+      document.getElementById("astral-phone-theme-accent")?.addEventListener("change", saveSettings);
+      document.getElementById("astral-phone-theme-bg")?.addEventListener("change", saveSettings);
+    }
+  }
+  __name(injectSettingsPanel, "injectSettingsPanel");
+  function loadSettings() {
+    const ctx = SillyTavern.getContext();
+    const settings = ctx.extensionSettings[MODULE_NAME] || {};
+    const provider = document.getElementById("astral-phone-image-provider");
+    const accent = document.getElementById("astral-phone-theme-accent");
+    const bg = document.getElementById("astral-phone-theme-bg");
+    if (provider) provider.value = settings.imageProvider || "haruspics";
+    if (accent) accent.value = settings.themeAccent || "#D99AB5";
+    if (bg) bg.value = settings.themeBg || "#0D0B10";
+    if (settings.themeAccent) {
+      document.documentElement.style.setProperty("--phone-accent", settings.themeAccent);
+    }
+    if (settings.themeBg) {
+      document.documentElement.style.setProperty("--phone-bg", settings.themeBg);
+    }
+  }
+  __name(loadSettings, "loadSettings");
+  function saveSettings() {
+    const ctx = SillyTavern.getContext();
+    if (!ctx.extensionSettings[MODULE_NAME]) {
+      ctx.extensionSettings[MODULE_NAME] = {};
+    }
+    const settings = ctx.extensionSettings[MODULE_NAME];
+    const provider = document.getElementById("astral-phone-image-provider");
+    const accent = document.getElementById("astral-phone-theme-accent");
+    const bg = document.getElementById("astral-phone-theme-bg");
+    if (provider) settings.imageProvider = provider.value;
+    if (accent) {
+      settings.themeAccent = accent.value;
+      document.documentElement.style.setProperty("--phone-accent", accent.value);
+    }
+    if (bg) {
+      settings.themeBg = bg.value;
+      document.documentElement.style.setProperty("--phone-bg", bg.value);
+    }
+    ctx.saveSettingsDebounced();
+    console.log("[Astral Phone] settings saved:", settings);
+  }
+  __name(saveSettings, "saveSettings");
   jQuery(async () => {
     const context = SillyTavern.getContext();
     context.eventSource.on(context.event_types.APP_INITIALIZED, init);

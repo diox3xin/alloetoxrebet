@@ -60,6 +60,8 @@ function init() {
 
     window.__astralPhoneCore = core;
     injectLauncher();
+    injectSettingsPanel();
+    loadSettings();
     registerFunctionTool(context);
     registerSlashCommands(context);
     registerEventTagFallback(context);
@@ -257,6 +259,99 @@ function registerSlashCommands(context) {
         true,
         true,
     );
+}
+
+/* ────────────────────────────── settings panel ────────────────────────────── */
+
+function injectSettingsPanel() {
+    const html = `
+<div id="astral-phone-settings" class="inline-drawer">
+    <div class="inline-drawer-toggle inline-drawer-header">
+        <b>Astral Phone</b>
+        <div class="inline-drawer-icon fa-solid fa-circle-chevron-down down"></div>
+    </div>
+    <div class="inline-drawer-content">
+        <label for="astral-phone-image-provider">Провайдер изображений</label>
+        <select id="astral-phone-image-provider" class="text_pole">
+            <option value="haruspics">Haruspics Fusion (авто)</option>
+            <option value="openai">OpenAI DALL·E</option>
+            <option value="novelai">NovelAI</option>
+            <option value="stability">Stability AI</option>
+            <option value="naisters">NAI-Sters (локальный)</option>
+        </select>
+        
+        <label for="astral-phone-theme-accent">Цвет акцента</label>
+        <input type="color" id="astral-phone-theme-accent" value="#D99AB5" />
+        
+        <label for="astral-phone-theme-bg">Фон телефона</label>
+        <input type="color" id="astral-phone-theme-bg" value="#0D0B10" />
+        
+        <small class="notes">Провайдер Haruspics использует настройки из расширения Haruspics Fusion. Остальные провайдеры требуют API-ключи в User Settings → API.</small>
+    </div>
+</div>`;
+
+    const panel = document.getElementById('extensions_settings2');
+    if (panel) {
+        panel.insertAdjacentHTML('beforeend', html);
+        
+        // Toggle drawer
+        const toggle = document.querySelector('#astral-phone-settings .inline-drawer-toggle');
+        toggle?.addEventListener('click', () => {
+            const drawer = document.getElementById('astral-phone-settings');
+            drawer?.classList.toggle('openDrawer');
+        });
+        
+        // Save on change
+        document.getElementById('astral-phone-image-provider')?.addEventListener('change', saveSettings);
+        document.getElementById('astral-phone-theme-accent')?.addEventListener('change', saveSettings);
+        document.getElementById('astral-phone-theme-bg')?.addEventListener('change', saveSettings);
+    }
+}
+
+function loadSettings() {
+    const ctx = SillyTavern.getContext();
+    const settings = ctx.extensionSettings[MODULE_NAME] || {};
+    
+    const provider = document.getElementById('astral-phone-image-provider');
+    const accent = document.getElementById('astral-phone-theme-accent');
+    const bg = document.getElementById('astral-phone-theme-bg');
+    
+    if (provider) provider.value = settings.imageProvider || 'haruspics';
+    if (accent) accent.value = settings.themeAccent || '#D99AB5';
+    if (bg) bg.value = settings.themeBg || '#0D0B10';
+    
+    // Apply theme
+    if (settings.themeAccent) {
+        document.documentElement.style.setProperty('--phone-accent', settings.themeAccent);
+    }
+    if (settings.themeBg) {
+        document.documentElement.style.setProperty('--phone-bg', settings.themeBg);
+    }
+}
+
+function saveSettings() {
+    const ctx = SillyTavern.getContext();
+    if (!ctx.extensionSettings[MODULE_NAME]) {
+        ctx.extensionSettings[MODULE_NAME] = {};
+    }
+    
+    const settings = ctx.extensionSettings[MODULE_NAME];
+    const provider = document.getElementById('astral-phone-image-provider');
+    const accent = document.getElementById('astral-phone-theme-accent');
+    const bg = document.getElementById('astral-phone-theme-bg');
+    
+    if (provider) settings.imageProvider = provider.value;
+    if (accent) {
+        settings.themeAccent = accent.value;
+        document.documentElement.style.setProperty('--phone-accent', accent.value);
+    }
+    if (bg) {
+        settings.themeBg = bg.value;
+        document.documentElement.style.setProperty('--phone-bg', bg.value);
+    }
+    
+    ctx.saveSettingsDebounced();
+    console.log('[Astral Phone] settings saved:', settings);
 }
 
 /* ────────────────────────────── boot ────────────────────────────── */
