@@ -1,0 +1,16 @@
+{
+  "display_name": "Astral Phone",
+  "loading_order": 120,
+  "requires": [],
+  "optional": ["third-party/haruspics-naistera"],
+  "js": "index.js",
+  "css": "style.css",
+  "author": "diox3xin",
+  "version": "1.0.0",
+  "homePage": "https://github.com/diox3xin/alloetoxrebet",
+  "auto_update": true,
+  "minimum_client_version": "1.13.0",
+  "hooks": {
+    "activate": "onActivate"
+  }
+}
