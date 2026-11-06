@@ -224,8 +224,8 @@ export class GalleryApp {
     async _takePhoto(mode = 'random') {
         try {
             const ctx = this.context || globalThis.SillyTavern?.getContext?.() || {};
-            const charName = ctx.name2 || 'Character';
-            const userName = ctx.name1 || 'You';
+            const charName = this._resolveCharName(ctx);
+            const userName = this._resolveUserName(ctx);
             const prefs = this._loadCameraPrefs();
 
             const resolvedMode = mode === 'random'
@@ -256,15 +256,13 @@ export class GalleryApp {
                     : prefs.photoInstruction.trim(),
             });
 
-            const action = await this._askModel(ctx, ask);
-            const cleanAction = String(action || '')
-                .replace(/^```[a-z]*\n?/i, '')
-                .replace(/\n?```$/, '')
-                .replace(/^(prompt|description|answer)\s*:\s*/i, '')
-                .replace(/^["'«]|["'»]$/g, '')
-                .replace(/\s+/g, ' ')
-                .trim()
-                .slice(0, 300);
+            let cleanAction = await this._askModel(ctx, ask);
+            if (!cleanAction) {
+                cleanAction = this._fallbackAction(ctx, charName);
+                if (cleanAction) {
+                    console.warn('[Astral Phone] using character card description as visual fallback');
+                }
+            }
 
             // ── assemble the final prompt ──
             const parts = [];
@@ -281,7 +279,11 @@ export class GalleryApp {
                 ? `${charName}, ${appearance}`
                 : charName);
 
-            if (cleanAction) parts.push(cleanAction);
+            if (cleanAction) {
+                parts.push(cleanAction);
+            } else {
+                console.warn('[Astral Phone] model gave no usable English visual text; building prompt from scene only');
+            }
 
             parts.push('natural lighting, shallow depth of field, realistic photograph, detailed');
 
@@ -308,6 +310,53 @@ export class GalleryApp {
             console.error('[Astral Phone] takePhoto failed:', err);
             this._toast(`Error: ${err.message}`, 'error');
         }
+    }
+
+    /**
+     * Character name. `name2` is sometimes the wrong thing entirely (it can come
+     * back as "SillyTavern System"), so prefer the actual active character card.
+     */
+    _resolveCharName(ctx) {
+        const fromCard = ctx.characters?.[ctx.characterId]?.name;
+        const candidate = String(fromCard || ctx.name2 || '').trim();
+        if (!candidate || /sillytavern/i.test(candidate)) {
+            return String(fromCard || '').trim() || 'the character';
+        }
+        return candidate;
+    }
+
+    /** User / persona name, with the same guard. */
+    _resolveUserName(ctx) {
+        const candidate = String(ctx.name1 || '').trim();
+        if (!candidate || /sillytavern/i.test(candidate)) return 'the viewer';
+        return candidate;
+    }
+
+    /**
+     * Force the model's sentence into usable English visual text.
+     * The RP model leaks `<horae>`-style tags and Russian prose no matter what
+     * the instructions say, so anything non-Latin is dropped rather than trusted.
+     */
+    _sanitizeVisual(raw) {
+        let text = String(raw || '');
+
+        // strip fence markers but KEEP their contents
+        text = text.replace(/```[a-z]*\n?/gi, ' ');
+        // drop any <tag> / [TAG] blocks
+        text = text.replace(/<[^>]*>/g, ' ');
+        text = text.replace(/\[[A-Z_]{3,}[^\]]*\]/g, ' ');
+        text = text.replace(/^(prompt|description|answer|sentence)\s*:\s*/i, '');
+        text = text.replace(/^["'«]|["'»]$/g, '');
+
+        // keep only sentences that are latin script (no Cyrillic / CJK)
+        const sentences = text
+            .split(/(?<=[.!?])\s+|\n+/)
+            .map(s => s.replace(/\s+/g, ' ').trim())
+            .filter(Boolean)
+            .filter(s => !/[\u0400-\u04FF\u4E00-\u9FFF\u3040-\u30FF]/.test(s))
+            .filter(s => /[A-Za-z]{3,}/.test(s));
+
+        return sentences.join(' ').trim().slice(0, 240);
     }
 
     /** Last few roleplay messages, tag-stripped — the visual source material. */
@@ -348,34 +397,76 @@ Rules:
 SENTENCE:`;
     }
 
-    /** Ask the model, preferring generateRaw (no character context contamination). */
+    /**
+     * Ask the model for one visual sentence, validating that the answer is
+     * actually usable English. Retries once with a harder prompt; returns null
+     * rather than letting Russian prose or leaked tags into the image prompt.
+     */
     async _askModel(ctx, ask) {
         const system = 'You are an image prompt engineer. You output English only. You never narrate or roleplay.';
 
-        if (typeof ctx.generateRaw === 'function') {
-            try {
-                const out = await ctx.generateRaw({
-                    prompt: ask,
-                    systemPrompt: system,
-                    responseLength: 150,
-                });
-                const text = String(out || '').trim();
-                if (text) return text;
-            } catch (err) {
-                console.warn('[Astral Phone] generateRaw failed, falling back:', err?.message);
+        const attempts = [
+            ask,
+            `${ask}
+
+FINAL WARNING: your previous answer was not usable. Answer with ENGLISH WORDS ONLY, one short sentence. Do not translate the scene. Do not use the scene's language.`,
+        ];
+
+        for (let i = 0; i < attempts.length; i++) {
+            let raw = '';
+
+            if (typeof ctx.generateRaw === 'function') {
+                try {
+                    raw = await ctx.generateRaw({
+                        prompt: attempts[i],
+                        systemPrompt: system,
+                        responseLength: 160,
+                    });
+                } catch (err) {
+                    console.warn('[Astral Phone] generateRaw failed:', err?.message);
+                }
             }
+
+            if (!raw && typeof ctx.generateQuietPrompt === 'function') {
+                try {
+                    raw = await ctx.generateQuietPrompt(
+                        `[IMAGE PROMPT — ENGLISH ONLY — NO NARRATION — NO TAGS]\n${attempts[i]}`,
+                        false,
+                        false,
+                    );
+                } catch (err) {
+                    console.warn('[Astral Phone] generateQuietPrompt failed:', err?.message);
+                }
+            }
+
+            const cleaned = this._sanitizeVisual(raw);
+            if (cleaned && cleaned.split(' ').length >= 3) return cleaned;
+
+            console.warn(`[Astral Phone] attempt ${i + 1} produced unusable text:`, String(raw || '').slice(0, 200));
         }
 
-        if (typeof ctx.generateQuietPrompt === 'function') {
-            const out = await ctx.generateQuietPrompt(
-                `[VISUAL DESCRIPTION ONLY — ENGLISH ONLY — NO NARRATION]\n${ask}`,
-                false,
-                false,
-            );
-            return String(out || '').trim();
-        }
+        return null;
+    }
 
-        throw new Error('No generation function available (generateRaw / generateQuietPrompt).');
+    /**
+     * Last-resort visual description built without the model: the character
+     * card's own description plus any outfit text from Haruspics.
+     */
+    _fallbackAction(ctx, charName) {
+        const card = ctx.characters?.[ctx.characterId] || {};
+        const source = String(card.description || card.personality || '')
+            .replace(/<[^>]*>/g, ' ')
+            .replace(/\s+/g, ' ')
+            .trim();
+
+        if (!source) return '';
+        // keep latin sentences only
+        return source
+            .split(/(?<=[.!?])\s+/)
+            .filter(s => !/[\u0400-\u04FF]/.test(s) && /[A-Za-z]{3,}/.test(s))
+            .slice(0, 2)
+            .join(' ')
+            .slice(0, 200);
     }
 
     _inferBackground(messages) {
