@@ -1152,7 +1152,7 @@
       if (!text) throw new Error("\u041F\u0443\u0441\u0442\u043E\u0439 \u043F\u0440\u043E\u043C\u043F\u0442 \u0434\u043B\u044F \u0433\u0435\u043D\u0435\u0440\u0430\u0446\u0438\u0438 \u0438\u0437\u043E\u0431\u0440\u0430\u0436\u0435\u043D\u0438\u044F.");
       const style = metadata.style !== void 0 ? String(metadata.style) : this.getStyle();
       const refs = metadata.refs !== void 0 ? metadata.refs : this._collectRefs();
-      const dataUrl = await this._generateWithTimeout(text, settings, style, refs);
+      const dataUrl = await this._generateWithTimeout(text, settings, style, refs, metadata.negativePrompt);
       return this.saveImageToFile(dataUrl, metadata?.character);
     }
     /* ─────────────────────── save to ST images folder ─────────────────────── */
@@ -1203,11 +1203,14 @@
     }
     /* ─────────────────────────── dispatch + timeout ─────────────────────────── */
     /** Port of generateImageWithRetry (3136-3213) with retries and toasts removed. */
-    async _generateWithTimeout(prompt, settings, style = "", refs = EMPTY_REFS) {
+    async _generateWithTimeout(prompt, settings, style = "", refs = EMPTY_REFS, negativePrompt = void 0) {
       const timeoutMs = Math.max(5, Number(settings.requestTimeout) || 120) * 1e3;
       const controller = new AbortController();
       const timeoutId = setTimeout(() => controller.abort(), timeoutMs);
       const options = { signal: controller.signal, _refs: refs };
+      if (negativePrompt != null && String(negativePrompt).trim() !== "") {
+        options.negativePrompt = String(negativePrompt).trim();
+      }
       try {
         const isRouterApi = isRouterEndpoint(settings.endpoint);
         const useGeminiApi = settings.apiType === "gemini" && !isRouterApi;
@@ -2063,6 +2066,284 @@ REPLY (text only):`;
     }
   };
 
+  // apps/prompt-builder.js
+  var MODULE = "[AstralPrompt]";
+  var QUALITY_TAGS = "masterpiece, best quality, very aesthetic, absurdres, highly detailed";
+  var DEFAULT_NEGATIVE = "lowres, bad anatomy, bad hands, text, watermark, logo, blurry, jpeg artifacts, worst quality, low quality, deformed, extra limbs, extra fingers, cropped, out of frame";
+  function collectHaruspics(imageGen2, ctx) {
+    const empty = {
+      available: false,
+      style: "",
+      negative: "",
+      refInstruction: "",
+      chars: [],
+      lorebook: [],
+      sendCharAvatar: false,
+      sendUserAvatar: false
+    };
+    let raw = null;
+    try {
+      raw = imageGen2?._rawSettings?.() || null;
+    } catch (_) {
+    }
+    if (!raw) return empty;
+    const charName = resolveCharName(ctx);
+    const userName = resolveUserName(ctx);
+    const out = { ...empty, available: true };
+    try {
+      const activeId = String(raw.activeStyleId || "").trim();
+      const presets = Array.isArray(raw.stylePresets) ? raw.stylePresets : [];
+      const preset = presets.find((p) => p.id === activeId);
+      out.style = String(preset?.text || preset?.prompt || "").trim();
+    } catch (_) {
+    }
+    try {
+      const negId = String(raw.activeNegativeId || "").trim();
+      const items = Array.isArray(raw.negativeGalleryItems) ? raw.negativeGalleryItems : [];
+      const active = items.find((i) => i.id === negId);
+      out.negative = String(active?.prompt || "").trim();
+    } catch (_) {
+    }
+    try {
+      if (raw.refInstructionEnabled !== false) {
+        out.refInstruction = String(raw.refInstruction || "").trim();
+      }
+    } catch (_) {
+    }
+    try {
+      const lib = raw.characterReferenceLibrary;
+      const grab = /* @__PURE__ */ __name((bucket, name) => {
+        if (!lib || !name) return null;
+        const entry = lib[bucket]?.[name];
+        if (!entry) return null;
+        const texts = [];
+        const refs = [];
+        for (const item of entry.appearanceItems || []) {
+          if (item.enabled === false) continue;
+          if (item.type === "image") {
+            if (item.imagePath) refs.push(item.imagePath);
+            if (item.description) texts.push(String(item.description).trim());
+          } else if (item.description) {
+            texts.push(String(item.description).trim());
+          }
+        }
+        if (texts.length === 0 && refs.length === 0) return null;
+        return { name, appearance: texts.join(", ").replace(/,\s*,/g, ",").trim(), refs };
+      }, "grab");
+      const ch = grab("characters", charName);
+      if (ch) out.chars.push(ch);
+      const us = grab("users", userName);
+      if (us) out.chars.push(us);
+    } catch (_) {
+    }
+    try {
+      const books = Array.isArray(raw.lorebooks) ? raw.lorebooks : [];
+      for (const book of books) {
+        if (book.enabled === false) continue;
+        for (const ref of book.refs || []) {
+          if (ref.enabled === false) continue;
+          const desc = String(ref.description || "").trim();
+          if (!desc) continue;
+          const name = String(ref.name || "").trim();
+          out.lorebook.push(name ? `${name}, ${desc}` : desc);
+        }
+      }
+    } catch (_) {
+    }
+    out.sendCharAvatar = Boolean(raw.sendCharAvatar);
+    out.sendUserAvatar = Boolean(raw.sendUserAvatar);
+    console.log(`${MODULE} Haruspics: style=${out.style ? "yes" : "no"} chars=${out.chars.length} lorebook=${out.lorebook.length} neg=${out.negative ? "yes" : "no"}`);
+    return out;
+  }
+  __name(collectHaruspics, "collectHaruspics");
+  function resolveCharName(ctx) {
+    const fromCard = String(ctx?.characters?.[ctx?.characterId]?.name || "").trim();
+    const fallback = String(ctx?.name2 || "").trim();
+    const pick = fromCard || fallback;
+    if (!pick || /sillytavern/i.test(pick)) return fromCard || "the character";
+    return pick;
+  }
+  __name(resolveCharName, "resolveCharName");
+  function resolveUserName(ctx) {
+    const pick = String(ctx?.name1 || "").trim();
+    if (!pick || /sillytavern/i.test(pick)) return "the viewer";
+    return pick;
+  }
+  __name(resolveUserName, "resolveUserName");
+  function buildAsk({ mode, charName, userName, sceneText, knownAppearance, customInstruction }) {
+    const who = mode === "selfie" ? `"${charName}" AND "${userName}" (both in frame)` : `"${charName}" (alone in frame, "${userName}" holds the camera and is NOT visible)`;
+    const appearanceRule = knownAppearance ? `Appearance (hair, eyes, build, skin) is provided separately \u2014 do NOT include it.` : `No appearance data exists \u2014 fill hair, eyes, build, skin, outfit from the scene or the character card.`;
+    const custom = customInstruction ? `
+USER'S EXTRA GUIDANCE (follow it, but still answer as JSON):
+${customInstruction}
+` : "";
+    return `You are an image-prompt tagger for NovelAI v5. You do not write prose.
+You read a roleplay scene and return ONLY a JSON object of short English tags.
+
+ROLEPLAY SCENE (may be in any language \u2014 read it, do not copy its language):
+${sceneText}
+
+What is being photographed: ${who}
+${appearanceRule}${custom}
+Return exactly this JSON shape, every value a short English tag string, lowercase, comma-separated tags inside each string:
+
+{
+  "shot": "camera framing, e.g. chest-up two-shot / close-up selfie / full body shot",
+  "setting": "location and time, e.g. cozy kitchen, evening",
+  "lighting": "light and mood, e.g. soft window light, warm colors, low contrast",
+  "characters": [
+    {
+      "ref": "${charName}",
+      "genderTag": "1girl or 1boy or 1other",
+      "position": "e.g. left side",
+      "hair": "",
+      "eyes": "",
+      "build": "",
+      "skin": "",
+      "outfit": "current clothing",
+      "expression": "e.g. open mouth, smiling",
+      "action": "e.g. hand gripping coffee cup",
+      "gaze": "e.g. looking at ${userName} / looking at viewer"
+    }
+  ]
+}
+
+RULES:
+- ENGLISH ONLY. No Cyrillic, no other scripts, no transliteration.
+- Tags, not sentences. "long silver hair, blunt bangs" not "she has long silver hair".
+- No quality tags, no style tags, no "masterpiece" \u2014 those are added separately.
+- Reference characters by the exact names given ("${charName}", "${userName}").
+- For selfie mode add both characters to the array and make the gaze "looking at viewer".
+- Output the JSON only. No markdown fences, no commentary.`;
+  }
+  __name(buildAsk, "buildAsk");
+  function parseStructured(raw) {
+    let text = String(raw || "").trim();
+    if (!text) return null;
+    text = text.replace(/```[a-z]*\n?/gi, "").trim();
+    const start = text.indexOf("{");
+    const end = text.lastIndexOf("}");
+    if (start === -1 || end === -1 || end <= start) return null;
+    const candidate = text.slice(start, end + 1);
+    try {
+      const parsed = JSON.parse(candidate);
+      if (!parsed || typeof parsed !== "object") return null;
+      if (!Array.isArray(parsed.characters)) parsed.characters = [];
+      return parsed;
+    } catch (_) {
+      return null;
+    }
+  }
+  __name(parseStructured, "parseStructured");
+  function cleanTags(value) {
+    let s = String(value || "");
+    if (!s) return "";
+    s = s.replace(/```[a-z]*\n?/gi, " ");
+    s = s.replace(/<[^>]*>/g, " ");
+    s = s.replace(/\[[A-Z_]{3,}[^\]]*\]/g, " ");
+    s = s.replace(/^(tags?|prompt|description|answer)\s*:\s*/i, "");
+    const chunks = s.split(/[,;]\s*|\n+/).map((c) => c.replace(/\s+/g, " ").trim()).filter(Boolean).filter((c) => !/[\u0400-\u04FF\u4E00-\u9FFF\u3040-\u30FF]/.test(c)).filter((c) => /[A-Za-z]{2,}/.test(c));
+    return chunks.join(", ").trim();
+  }
+  __name(cleanTags, "cleanTags");
+  function assemble(structured, haruspics, opts) {
+    const { mode, charName, userName } = opts;
+    const h = haruspics || {};
+    const st = structured || {};
+    const base = [];
+    if (h.style) base.push(cleanTags(h.style));
+    const shot = cleanTags(st.shot) || (mode === "selfie" ? "close-up selfie" : "candid photo, upper body shot");
+    base.push(shot);
+    if (mode === "selfie") base.push("selfie, looking at viewer");
+    else base.push("shot on smartphone, candid");
+    for (const c of st.characters || []) {
+      const nm = String(c.ref || "").trim();
+      const act = cleanTags(c.action);
+      if (nm && act) base.push(`${nm} ${act}`);
+    }
+    const setting = cleanTags(st.setting);
+    if (setting) base.push(setting);
+    const lighting = cleanTags(st.lighting);
+    if (lighting) base.push(lighting);
+    if (h.lorebook?.length) base.push(cleanTags(h.lorebook.join(", ")));
+    base.push(QUALITY_TAGS);
+    const charBlocks = [];
+    for (const c of st.characters || []) {
+      const ref = String(c.ref || "").trim();
+      if (!ref) continue;
+      const tags = [];
+      const gender = cleanTags(c.genderTag);
+      if (gender) tags.push(gender);
+      const pos = cleanTags(c.position);
+      if (pos) tags.push(pos);
+      tags.push(ref);
+      const known = (h.chars || []).find((x) => x.name === ref);
+      const knownAppearance = cleanTags(known?.appearance || "");
+      if (knownAppearance) {
+        tags.push(knownAppearance);
+      } else {
+        for (const k of ["hair", "eyes", "build", "skin"]) {
+          const t = cleanTags(c[k]);
+          if (t) tags.push(t);
+        }
+      }
+      const outfit = cleanTags(c.outfit);
+      if (outfit) tags.push(outfit);
+      const expr = cleanTags(c.expression);
+      if (expr) tags.push(expr);
+      const action = cleanTags(c.action);
+      if (action) tags.push(action);
+      const gaze = cleanTags(c.gaze);
+      if (gaze) tags.push(gaze);
+      else if (mode === "selfie") tags.push("looking at viewer");
+      charBlocks.push(tags.filter(Boolean).join(", "));
+    }
+    const prompt = [base.filter(Boolean).join(", "), ...charBlocks.filter(Boolean)].join(" | ");
+    const negative = h.negative ? cleanTags(h.negative) : DEFAULT_NEGATIVE;
+    return { prompt, negative };
+  }
+  __name(assemble, "assemble");
+  async function buildPhotoPrompt({ imageGen: imageGen2, ctx, askModel, sceneText, mode, customInstruction }) {
+    const charName = resolveCharName(ctx);
+    const userName = resolveUserName(ctx);
+    const haruspics = collectHaruspics(imageGen2, ctx);
+    const knownAppearance = (haruspics.chars || []).some((x) => x.name === charName && x.appearance);
+    const ask = buildAsk({
+      mode,
+      charName,
+      userName,
+      sceneText,
+      knownAppearance,
+      customInstruction
+    });
+    let structured = null;
+    try {
+      const raw = await askModel(ask);
+      structured = parseStructured(raw);
+      if (!structured) {
+        console.warn(`${MODULE} model returned no parseable JSON:`, String(raw || "").slice(0, 200));
+      }
+    } catch (err) {
+      console.warn(`${MODULE} model call failed:`, err?.message || err);
+    }
+    if (!structured || !(structured.characters || []).some((c) => c.ref === charName)) {
+      structured = structured || {};
+      structured.characters = Array.isArray(structured.characters) ? structured.characters : [];
+      structured.characters.unshift({
+        ref: charName,
+        genderTag: "",
+        position: mode === "selfie" ? "left side" : "center",
+        outfit: "",
+        expression: "",
+        action: "",
+        gaze: mode === "selfie" ? "looking at viewer" : ""
+      });
+    }
+    const { prompt, negative } = assemble(structured, haruspics, { mode, charName, userName });
+    return { prompt, negative, structured, haruspics };
+  }
+  __name(buildPhotoPrompt, "buildPhotoPrompt");
+
   // apps/gallery.js
   var GalleryApp = class {
     static {
@@ -2250,202 +2531,78 @@ REPLY (text only):`;
       }
     }
     /**
-     * Build a NovelAI v5 prompt.
-     *
-     * The prompt is assembled HERE, in code — style and character appearance are
-     * pulled straight from Haruspics, so they are guaranteed to be present and
-     * in English. The RP model is asked for one thing only: a short English
-     * sentence describing the action and setting. Letting it write the whole
-     * prompt produced Russian narration instead of an image prompt.
+     * Take a photo: the prompt is built by prompt-builder.js, which merges
+     * Haruspics (style / appearance / lorebooks / negative) with a strict JSON
+     * of scene tags from the model. The model never writes the final prompt.
      */
     async _takePhoto(mode = "random") {
       try {
         const ctx = this.context || globalThis.SillyTavern?.getContext?.() || {};
-        const charName = this._resolveCharName(ctx);
-        const userName = this._resolveUserName(ctx);
         const prefs = this._loadCameraPrefs();
         const resolvedMode = mode === "random" ? Math.random() < 0.5 ? "photo" : "selfie" : mode;
-        const style = String(this.imageGen?.getStyle?.() || "").trim();
-        let appearance = "";
-        try {
-          const refs = this.imageGen?._collectRefs?.() || {};
-          appearance = (refs.textOnlyClothing || []).filter((c) => c.charName === charName).map((c) => c.description).join(", ");
-        } catch (_) {
-        }
-        const sceneText = this._sceneText(ctx);
-        const ask = this._buildSceneAsk({
-          charName,
-          userName,
+        const customInstruction = resolvedMode === "selfie" ? prefs.selfieInstruction.trim() : prefs.photoInstruction.trim();
+        const { prompt, negative, structured } = await buildPhotoPrompt({
+          imageGen: this.imageGen,
+          ctx,
+          sceneText: this._sceneText(ctx),
           mode: resolvedMode,
-          sceneText,
-          needAppearance: !appearance,
-          customInstruction: resolvedMode === "selfie" ? prefs.selfieInstruction.trim() : prefs.photoInstruction.trim()
+          customInstruction,
+          askModel: /* @__PURE__ */ __name((ask) => this._askModel(ctx, ask), "askModel")
         });
-        let cleanAction = await this._askModel(ctx, ask);
-        if (!cleanAction) {
-          cleanAction = this._fallbackAction(ctx, charName);
-          if (cleanAction) {
-            console.warn("[Astral Phone] using character card description as visual fallback");
-          }
-        }
-        const parts = [];
-        if (style) parts.push(style);
-        if (resolvedMode === "selfie") {
-          parts.push(`selfie, front camera, ${userName} and ${charName} in frame`);
-          parts.push(userName);
-        } else {
-          parts.push(`candid photo, shot on smartphone, ${charName} in frame`);
-        }
-        parts.push(appearance ? `${charName}, ${appearance}` : charName);
-        if (cleanAction) {
-          parts.push(cleanAction);
-        } else {
-          console.warn("[Astral Phone] model gave no usable English visual text; building prompt from scene only");
-        }
-        parts.push("natural lighting, shallow depth of field, realistic photograph, detailed");
-        const finalPrompt = parts.filter(Boolean).join(", ");
-        console.log("[Astral Phone] photo prompt:", finalPrompt);
+        console.log("[Astral Phone] prompt:", prompt);
+        console.log("[Astral Phone] negative:", negative);
         const state = this.storage.getState();
         if (!Array.isArray(state.gallery)) state.gallery = [];
         state.gallery.push({
           id: `photo_${Date.now()}_${Math.random().toString(36).slice(2, 7)}`,
-          description: finalPrompt,
+          description: prompt,
+          negative,
           imageUrl: null,
           timestamp: Date.now(),
           source: resolvedMode,
-          character: charName,
-          style
+          character: ctx.characters?.[ctx.characterId]?.name || ""
         });
         this.storage.save();
-        this._toast(resolvedMode === "selfie" ? "\u0421\u0435\u043B\u0444\u0438 \u0434\u043E\u0431\u0430\u0432\u043B\u0435\u043D\u043E \u0432 \u0433\u0430\u043B\u0435\u0440\u0435\u044E" : "\u0424\u043E\u0442\u043E \u0434\u043E\u0431\u0430\u0432\u043B\u0435\u043D\u043E \u0432 \u0433\u0430\u043B\u0435\u0440\u0435\u044E");
+        this._toast(resolvedMode === "selfie" ? "\u0421\u0435\u043B\u0444\u0438 \u0434\u043E\u0431\u0430\u0432\u043B\u0435\u043D\u043E" : "\u0424\u043E\u0442\u043E \u0434\u043E\u0431\u0430\u0432\u043B\u0435\u043D\u043E");
         this.render(document.querySelector(".astral-phone-body"));
       } catch (err) {
         console.error("[Astral Phone] takePhoto failed:", err);
         this._toast(`Error: ${err.message}`, "error");
       }
     }
-    /**
-     * Character name. `name2` is sometimes the wrong thing entirely (it can come
-     * back as "SillyTavern System"), so prefer the actual active character card.
-     */
-    _resolveCharName(ctx) {
-      const fromCard = ctx.characters?.[ctx.characterId]?.name;
-      const candidate = String(fromCard || ctx.name2 || "").trim();
-      if (!candidate || /sillytavern/i.test(candidate)) {
-        return String(fromCard || "").trim() || "the character";
-      }
-      return candidate;
-    }
-    /** User / persona name, with the same guard. */
-    _resolveUserName(ctx) {
-      const candidate = String(ctx.name1 || "").trim();
-      if (!candidate || /sillytavern/i.test(candidate)) return "the viewer";
-      return candidate;
-    }
-    /**
-     * Force the model's sentence into usable English visual text.
-     * The RP model leaks `<horae>`-style tags and Russian prose no matter what
-     * the instructions say, so anything non-Latin is dropped rather than trusted.
-     */
-    _sanitizeVisual(raw) {
-      let text = String(raw || "");
-      text = text.replace(/```[a-z]*\n?/gi, " ");
-      text = text.replace(/<[^>]*>/g, " ");
-      text = text.replace(/\[[A-Z_]{3,}[^\]]*\]/g, " ");
-      text = text.replace(/^(prompt|description|answer|sentence)\s*:\s*/i, "");
-      text = text.replace(/^["'«]|["'»]$/g, "");
-      const sentences = text.split(/(?<=[.!?])\s+|\n+/).map((s) => s.replace(/\s+/g, " ").trim()).filter(Boolean).filter((s) => !/[\u0400-\u04FF\u4E00-\u9FFF\u3040-\u30FF]/.test(s)).filter((s) => /[A-Za-z]{3,}/.test(s));
-      return sentences.join(" ").trim().slice(0, 240);
-    }
-    /** Last few roleplay messages, tag-stripped — the visual source material. */
+    /** Последние сообщения РП — визуальный источник для теггера. */
     _sceneText(ctx) {
       const chat = Array.isArray(ctx.chat) ? ctx.chat : [];
-      const lines = chat.filter((m) => m && !m.is_system && typeof m.mes === "string").slice(-4).map((m) => String(m.mes).replace(/<[^>]+>/g, " ").replace(/\s+/g, " ").trim().slice(0, 500)).filter(Boolean);
-      return lines.join("\n---\n") || "(quiet moment)";
-    }
-    _buildSceneAsk({ charName, userName, mode, sceneText, needAppearance, customInstruction }) {
-      const who = mode === "selfie" ? `${charName} and ${userName}` : charName;
-      const appearanceRule = needAppearance ? `Include a brief physical description of ${who} (hair, eyes, build, clothing) \u2014 it is not available elsewhere.` : `Do NOT describe ${who}'s appearance \u2014 it is added automatically.`;
-      const custom = customInstruction ? `
-EXTRA GUIDANCE FROM THE USER:
-${customInstruction}
-` : "";
-      return `You write IMAGE PROMPTS. Never narrate, never roleplay, never translate.
-
-ROLEPLAY SCENE (source material, may be in any language):
-${sceneText}
-
-TASK:
-Write ONE English sentence, maximum 30 words, describing only the VISUAL content of a photo being taken right now: what ${who} is doing, their pose and expression, and where they are.
-${appearanceRule}${custom}
-Rules:
-- English only. No Russian words, no transliteration.
-- Visual facts only. No plot, no dialogue, no feelings, no metaphors.
-- No names of camera apps, no quotes, no labels, no markdown.
-
-SENTENCE:`;
+      const lines = chat.filter((m) => m && !m.is_system && typeof m.mes === "string").slice(-4).map((m) => String(m.mes).replace(/\s+/g, " ").trim().slice(0, 600)).filter(Boolean);
+      return lines.join("\n---\n") || "(quiet moment, no scene text)";
     }
     /**
-     * Ask the model for one visual sentence, validating that the answer is
-     * actually usable English. Retries once with a harder prompt; returns null
-     * rather than letting Russian prose or leaked tags into the image prompt.
+     * Один вызов модели без контекста персонажа.
+     * generateRaw предпочтителен; generateQuietPrompt — фолбэк.
      */
     async _askModel(ctx, ask) {
-      const system = "You are an image prompt engineer. You output English only. You never narrate or roleplay.";
-      const attempts = [
-        ask,
-        `${ask}
-
-FINAL WARNING: your previous answer was not usable. Answer with ENGLISH WORDS ONLY, one short sentence. Do not translate the scene. Do not use the scene's language.`
-      ];
-      for (let i = 0; i < attempts.length; i++) {
-        let raw = "";
-        if (typeof ctx.generateRaw === "function") {
-          try {
-            raw = await ctx.generateRaw({
-              prompt: attempts[i],
-              systemPrompt: system,
-              responseLength: 160
-            });
-          } catch (err) {
-            console.warn("[Astral Phone] generateRaw failed:", err?.message);
-          }
+      const system = "You are an image-prompt tagger. You answer with JSON only. English tags only. You never narrate, roleplay or translate.";
+      if (typeof ctx.generateRaw === "function") {
+        try {
+          const out = await ctx.generateRaw({
+            prompt: ask,
+            systemPrompt: system,
+            responseLength: 500
+          });
+          if (String(out || "").trim()) return out;
+        } catch (err) {
+          console.warn("[Astral Phone] generateRaw failed:", err?.message);
         }
-        if (!raw && typeof ctx.generateQuietPrompt === "function") {
-          try {
-            raw = await ctx.generateQuietPrompt(
-              `[IMAGE PROMPT \u2014 ENGLISH ONLY \u2014 NO NARRATION \u2014 NO TAGS]
-${attempts[i]}`,
-              false,
-              false
-            );
-          } catch (err) {
-            console.warn("[Astral Phone] generateQuietPrompt failed:", err?.message);
-          }
-        }
-        const cleaned = this._sanitizeVisual(raw);
-        if (cleaned && cleaned.split(" ").length >= 3) return cleaned;
-        console.warn(`[Astral Phone] attempt ${i + 1} produced unusable text:`, String(raw || "").slice(0, 200));
       }
-      return null;
-    }
-    /**
-     * Last-resort visual description built without the model: the character
-     * card's own description plus any outfit text from Haruspics.
-     */
-    _fallbackAction(ctx, charName) {
-      const card = ctx.characters?.[ctx.characterId] || {};
-      const source = String(card.description || card.personality || "").replace(/<[^>]*>/g, " ").replace(/\s+/g, " ").trim();
-      if (!source) return "";
-      return source.split(/(?<=[.!?])\s+/).filter((s) => !/[\u0400-\u04FF]/.test(s) && /[A-Za-z]{3,}/.test(s)).slice(0, 2).join(" ").slice(0, 200);
-    }
-    _inferBackground(messages) {
-      if (messages.includes("home") || messages.includes("house") || messages.includes("room")) return "cozy indoor setting";
-      if (messages.includes("outside") || messages.includes("park") || messages.includes("street")) return "outdoor environment";
-      if (messages.includes("cafe") || messages.includes("bar") || messages.includes("restaurant")) return "social venue";
-      if (messages.includes("night") || messages.includes("dark")) return "dimly lit ambiance";
-      if (messages.includes("sun") || messages.includes("light")) return "bright, sunny setting";
-      return "intimate moment";
+      if (typeof ctx.generateQuietPrompt === "function") {
+        return await ctx.generateQuietPrompt(
+          `[JSON TAGS ONLY \u2014 ENGLISH ONLY \u2014 NO PROSE]
+${ask}`,
+          false,
+          false
+        );
+      }
+      throw new Error("\u041D\u0435\u0442 \u0434\u043E\u0441\u0442\u0443\u043F\u043D\u043E\u0439 \u0444\u0443\u043D\u043A\u0446\u0438\u0438 \u0433\u0435\u043D\u0435\u0440\u0430\u0446\u0438\u0438 (generateRaw / generateQuietPrompt).");
     }
     async _generate(index, silent = false) {
       if (!this.imageGen.isAvailable()) {
@@ -2463,7 +2620,7 @@ ${attempts[i]}`,
         const url = await this.imageGen.generate(prompt, {
           character: photo.character || this.context?.name2,
           type: "gallery_photo",
-          style: photo.style !== void 0 ? photo.style : void 0
+          negativePrompt: photo.negative || void 0
         });
         state.gallery[index].imageUrl = url;
         this.storage.save();

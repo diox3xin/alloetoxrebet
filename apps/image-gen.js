@@ -563,7 +563,7 @@ export class ImageGenerator {
         const style = metadata.style !== undefined ? String(metadata.style) : this.getStyle();
         const refs = metadata.refs !== undefined ? metadata.refs : this._collectRefs();
 
-        const dataUrl = await this._generateWithTimeout(text, settings, style, refs);
+        const dataUrl = await this._generateWithTimeout(text, settings, style, refs, metadata.negativePrompt);
         return this.saveImageToFile(dataUrl, metadata?.character);
     }
 
@@ -626,11 +626,16 @@ export class ImageGenerator {
     /* ─────────────────────────── dispatch + timeout ─────────────────────────── */
 
     /** Port of generateImageWithRetry (3136-3213) with retries and toasts removed. */
-    async _generateWithTimeout(prompt, settings, style = '', refs = EMPTY_REFS) {
+    async _generateWithTimeout(prompt, settings, style = '', refs = EMPTY_REFS, negativePrompt = undefined) {
         const timeoutMs = Math.max(5, Number(settings.requestTimeout) || 120) * 1000;
         const controller = new AbortController();
         const timeoutId = setTimeout(() => controller.abort(), timeoutMs);
         const options = { signal: controller.signal, _refs: refs };
+        // An explicit negative from the prompt builder must win over the
+        // gallery default read inside each provider.
+        if (negativePrompt != null && String(negativePrompt).trim() !== '') {
+            options.negativePrompt = String(negativePrompt).trim();
+        }
 
         try {
             const isRouterApi = isRouterEndpoint(settings.endpoint);
