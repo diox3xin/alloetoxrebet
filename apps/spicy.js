@@ -1,160 +1,198 @@
 /**
- * Spicy Hub — anonymous NSFW content feed (like Porn Hub)
+ * Spicy Hub — anonymous adult feed. Same idea as Creator Studio but the
+ * content is posted "anonymously", so it reads like a tube site.
  */
+
+import { ICONS } from './phone-core.js';
+
+const CATEGORIES = ['Все', 'Новое', 'Тренды', 'Смотреть позже'];
 
 export class SpicyApp {
     constructor(context, storage, imageGen) {
         this.context = context;
         this.storage = storage;
         this.imageGen = imageGen;
-        
         this.id = 'spicy';
         this.title = 'Spicy Hub';
-        this.icon = '🔞';
+        this.icon = ICONS.spicy;
+        this._filter = 'Все';
+        this._busy = new Set();
     }
-    
-    /**
-     * Render content feed
-     */
-    render(container, params = {}) {
-        const chatId = this.context.getCurrentChatId?.() || 'default';
-        const state = this.storage.getState(chatId);
-        const videos = state.spicy || [];
-        
+
+    render(container) {
+        const state = this.storage.getState();
+        const items = state.spicy || [];
+
         container.innerHTML = '';
-        
-        if (videos.length === 0) {
-            container.innerHTML = `
+        container.appendChild(this._buildTopBar());
+
+        if (items.length === 0) {
+            container.innerHTML += `
                 <div class="astral-empty-state">
-                    <div class="astral-empty-state-icon">🔞</div>
-                    <div>No content yet</div>
-                    <div style="margin-top: 14px;">Videos appear when spicy events happen in the story</div>
-                </div>
-            `;
+                    <div class="astral-empty-state-icon">${ICONS.spicy}</div>
+                    <div>Лента пуста</div>
+                    <div style="margin-top:10px;opacity:.7">Ролики появятся, когда персонаж что-нибудь выложит</div>
+                </div>`;
             return;
         }
-        
+
+        const filtered = this._applyFilter(items);
         const feed = document.createElement('div');
-        feed.style.cssText = 'display: flex; flex-direction: column; gap: 16px;';
-        
-        videos.forEach((video, idx) => {
-            const card = document.createElement('div');
-            card.style.cssText = `
-                border-radius: 12px;
-                overflow: hidden;
-                background: var(--phone-card);
-                border: 1px solid rgba(217,154,181,.18);
-            `;
-            
-            const thumbnail = video.thumbnailUrl 
-                ? `<img src="${video.thumbnailUrl}" style="width: 100%; aspect-ratio: 16/9; object-fit: cover;" />`
-                : `<div style="width: 100%; aspect-ratio: 16/9; display: grid; place-items: center; background: rgba(13,11,16,.6);">
-                     <button class="astral-btn" data-video-idx="${idx}">Generate Thumbnail</button>
-                   </div>`;
-            
-            card.innerHTML = `
-                ${thumbnail}
-                <div style="padding: 12px;">
-                    <div style="font-size: 12px; font-weight: 500; margin-bottom: 6px;">
-                        ${video.title || video.description}
-                    </div>
-                    <div style="font-size: 9px; color: var(--phone-text-dim); display: flex; gap: 12px;">
-                        <span>👁️ ${video.views || 0}</span>
-                        <span>❤️ ${video.likes || 0}</span>
-                        <span>${this.formatTime(video.timestamp)}</span>
-                    </div>
-                </div>
-            `;
-            
-            feed.appendChild(card);
-        });
-        
+        feed.className = 'astral-card-feed';
+
+        filtered.forEach((item) => feed.appendChild(this._renderCard(item, items.indexOf(item))));
+
         container.appendChild(feed);
-        
-        // Attach thumbnail generation handlers
-        container.querySelectorAll('[data-video-idx]').forEach(btn => {
+    }
+
+    _buildTopBar() {
+        const bar = document.createElement('div');
+        bar.className = 'astral-chips';
+        for (const cat of CATEGORIES) {
+            const chip = document.createElement('button');
+            chip.className = 'astral-chip' + (cat === this._filter ? ' astral-chip--on' : '');
+            chip.textContent = cat;
+            chip.addEventListener('click', () => {
+                this._filter = cat;
+                this.render(document.querySelector('.astral-phone-body'));
+            });
+            bar.appendChild(chip);
+        }
+        return bar;
+    }
+
+    _applyFilter(items) {
+        if (this._filter === 'Новое') return [...items].sort((a, b) => b.timestamp - a.timestamp);
+        if (this._filter === 'Тренды') return [...items].sort((a, b) => (b.views || 0) - (a.views || 0));
+        return items;
+    }
+
+    _renderCard(item, idx) {
+        const card = document.createElement('div');
+        card.className = 'astral-card';
+        const busy = this._busy.has(idx);
+
+        const media = item.thumbnailUrl
+            ? `<img class="astral-card-media" src="${item.thumbnailUrl}" alt="" loading="lazy">
+               <div class="astral-card-duration">${this._esc(item.duration || '12:04')}</div>`
+            : `<div class="astral-card-media astral-card-media--empty">
+                    <div class="astral-card-empty-inner">
+                        <div class="astral-card-empty-icon">${ICONS.spicy}</div>
+                        <button class="astral-btn" data-gen="${idx}" ${busy ? 'disabled' : ''}>
+                            ${busy ? 'Генерация…' : 'Создать превью'}
+                        </button>
+                    </div>
+               </div>`;
+
+        card.innerHTML = `
+            ${media}
+            <div class="astral-card-body">
+                <div class="astral-card-title">${this._esc(item.title || item.description)}</div>
+                <div class="astral-card-meta">
+                    <span>${this._n(item.views)} просмотров</span>
+                    <span>${this._n(item.likes)} ❤</span>
+                    <span>${this._ago(item.timestamp)}</span>
+                </div>
+                ${item.tags?.length ? `<div class="astral-card-tags">${item.tags.map((t) => `<span class="astral-tag">#${this._esc(t)}</span>`).join('')}</div>` : ''}
+            </div>
+        `;
+
+        const btn = card.querySelector(`[data-gen="${idx}"]`);
+        if (btn && !busy) {
             btn.addEventListener('click', async (e) => {
                 e.stopPropagation();
-                const idx = parseInt(btn.dataset.videoIdx);
-                await this.generateThumbnail(idx);
-                this.render(container, params);
+                await this._generate(idx);
             });
-        });
+        }
+
+        return card;
     }
-    
-    /**
-     * Handle content_posted event (when type = 'spicy')
-     */
-    async handleEvent(eventData) {
-        const chatId = this.context.getCurrentChatId?.() || 'default';
-        const state = this.storage.getState(chatId);
-        
-        if (!state.spicy) state.spicy = [];
-        
-        state.spicy.push({
-            character: eventData.character,
-            title: eventData.metadata?.title || eventData.description,
-            description: eventData.description,
-            timestamp: Date.now(),
-            thumbnailUrl: null,
-            views: Math.floor(Math.random() * 5000) + 100,
-            likes: Math.floor(Math.random() * 500) + 10
-        });
-        
-        this.storage.setState(chatId, state);
-        
-        return { success: true, message: `Spicy content added` };
-    }
-    
-    /**
-     * Generate thumbnail on demand
-     */
-    async generateThumbnail(index) {
+
+    async _generate(index) {
         if (!this.imageGen.isAvailable()) {
-            alert('Haruspics not installed. Install haruspics-naistera extension to generate images.');
+            this._toast('Haruspics не установлен', 'error');
             return;
         }
-        
-        const chatId = this.context.getCurrentChatId?.() || 'default';
-        const state = this.storage.getState(chatId);
-        const video = state.spicy[index];
-        
-        if (!video) return;
-        
+        if (this._busy.has(index)) return;
+
+        this._busy.add(index);
+        this._toast('Генерирую превью…', 'info');
+
         try {
-            // Build NSFW prompt
-            const prompt = `${video.character} — ${video.description} — thumbnail preview, suggestive`;
-            
-            const imageUrl = await this.imageGen.generate(prompt, {
-                character: video.character,
+            const state = this.storage.getState();
+            const item = state.spicy[index];
+            if (!item) return;
+
+            const prompt = [item.character, item.description].filter(Boolean).join(' — ');
+            const url = await this.imageGen.generate(prompt, {
+                character: item.character,
                 type: 'spicy_thumbnail',
-                nsfw: true
+                nsfw: true,
             });
-            
-            video.thumbnailUrl = imageUrl;
-            state.spicy[index] = video;
-            
-            this.storage.setState(chatId, state);
+
+            state.spicy[index].thumbnailUrl = url;
+            this.storage.save();
+            this._toast('Готово', 'success');
         } catch (err) {
-            console.error('[Spicy] Generation failed:', err);
-            alert(`Thumbnail generation failed: ${err.message}`);
+            console.error('[Spicy] generation failed:', err);
+            this._toast(`Не получилось: ${err.message}`, 'error');
+        } finally {
+            this._busy.delete(index);
+            this.render(document.querySelector('.astral-phone-body'));
         }
     }
-    
-    /**
-     * Format timestamp
-     */
-    formatTime(ts) {
-        const d = new Date(ts);
-        const now = Date.now();
-        const diff = now - ts;
-        
-        if (diff < 3600000) {
-            return `${Math.floor(diff / 60000)}m ago`;
-        } else if (diff < 86400000) {
-            return `${Math.floor(diff / 3600000)}h ago`;
-        } else {
-            return `${Math.floor(diff / 86400000)}d ago`;
-        }
+
+    async handleEvent(eventData) {
+        const state = this.storage.getState();
+        const meta = eventData.metadata || {};
+
+        state.spicy.push({
+            character: eventData.character || this.context.name2 || '',
+            title: meta.title || this._titleFrom(eventData.description),
+            description: eventData.description || '',
+            timestamp: Date.now(),
+            thumbnailUrl: null,
+            views: this._rand(400, 40000),
+            likes: this._rand(10, 2400),
+            duration: `${this._rand(3, 24)}:${String(this._rand(0, 59)).padStart(2, '0')}`,
+            tags: meta.tags || [],
+        });
+
+        this.storage.save();
+        return { success: true, message: 'Ролик добавлен в Spicy Hub' };
+    }
+
+    _titleFrom(desc = '') {
+        const clean = String(desc).trim();
+        if (!clean) return 'без названия';
+        const first = clean.split(/[.,;—]/)[0].trim();
+        return first.length > 42 ? first.slice(0, 42) + '…' : first;
+    }
+
+    _rand(min, max) {
+        return Math.floor(Math.random() * (max - min + 1)) + min;
+    }
+
+    _n(num) {
+        if (!num) return '0';
+        if (num >= 1e6) return (num / 1e6).toFixed(1) + 'M';
+        if (num >= 1e3) return (num / 1e3).toFixed(1) + 'K';
+        return String(num);
+    }
+
+    _ago(ts) {
+        const diff = Date.now() - ts;
+        if (diff < 36e5) return `${Math.floor(diff / 6e4)} мин`;
+        if (diff < 864e5) return `${Math.floor(diff / 36e5)} ч`;
+        return `${Math.floor(diff / 864e5)} дн`;
+    }
+
+    _toast(text, kind = 'info') {
+        if (window.toastr) (toastr[kind] || toastr.info)(text);
+        else console.log(`[Spicy] ${text}`);
+    }
+
+    _esc(str) {
+        return String(str ?? '').replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
     }
 }

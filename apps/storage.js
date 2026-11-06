@@ -1,17 +1,25 @@
 /**
- * PhoneStorage - Per-chat phone state persistence layer
- * Stores phone app state in SillyTavern chat_metadata
+ * PhoneStorage — per-chat state persistence.
+ * Everything lives in chat_metadata so each chat has its own inbox/feed.
  */
-class PhoneStorage {
+
+export class PhoneStorage {
     constructor(context) {
         this.context = context;
-        this.storageKey = 'astral-phone';
+        this.key = 'astral_phone';
     }
 
-    /**
-     * Get default state structure
-     */
-    _getDefaultState() {
+    _root() {
+        if (!this.context.chat_metadata) {
+            this.context.chat_metadata = {};
+        }
+        if (!this.context.chat_metadata[this.key]) {
+            this.context.chat_metadata[this.key] = {};
+        }
+        return this.context.chat_metadata[this.key];
+    }
+
+    _defaults() {
         return {
             messages: [],
             gallery: [],
@@ -20,73 +28,61 @@ class PhoneStorage {
                 posts: [],
                 subscribers: 0,
                 revenue: 0,
-                stats: {}
-            }
+                fans: [],
+            },
         };
     }
 
     /**
-     * Get state for a specific chat
-     * @param {string} chatId - Chat identifier
-     * @returns {object} State object
+     * Get state. The chat is implicit — chat_metadata is already per-chat,
+     * so the `chatId` argument is accepted for API compatibility and ignored.
      */
-    getState(chatId) {
-        if (!this.context.chat_metadata) {
-            this.context.chat_metadata = {};
+    getState() {
+        const root = this._root();
+        if (!root.state) root.state = this._defaults();
+
+        // Defensive: fill in keys added in later versions
+        const d = this._defaults();
+        for (const k of Object.keys(d)) {
+            if (root.state[k] === undefined) root.state[k] = d[k];
+        }
+        if (!root.state.creator) root.state.creator = d.creator;
+        for (const k of Object.keys(d.creator)) {
+            if (root.state.creator[k] === undefined) root.state.creator[k] = d.creator[k];
         }
 
-        if (!this.context.chat_metadata[this.storageKey]) {
-            this.context.chat_metadata[this.storageKey] = {};
-        }
-
-        const storage = this.context.chat_metadata[this.storageKey];
-        
-        if (!storage[chatId]) {
-            storage[chatId] = this._getDefaultState();
-        }
-
-        return storage[chatId];
+        return root.state;
     }
 
-    /**
-     * Set complete state for a chat
-     * @param {string} chatId - Chat identifier
-     * @param {object} state - Complete state object
-     */
-    setState(chatId, state) {
-        if (!this.context.chat_metadata) {
-            this.context.chat_metadata = {};
-        }
-
-        if (!this.context.chat_metadata[this.storageKey]) {
-            this.context.chat_metadata[this.storageKey] = {};
-        }
-
-        this.context.chat_metadata[this.storageKey][chatId] = state;
-        this.context.updateChatMetadata();
+    setState(_chatId, state) {
+        this._root().state = state;
+        this.save();
     }
 
-    /**
-     * Update state with partial data (deep merge)
-     * @param {string} chatId - Chat identifier
-     * @param {object} partial - Partial state updates
-     */
-    updateState(chatId, partial) {
-        const currentState = this.getState(chatId);
-        
-        // Deep merge for nested objects like creator
-        const mergedState = { ...currentState };
-        
-        for (const key in partial) {
-            if (partial[key] && typeof partial[key] === 'object' && !Array.isArray(partial[key])) {
-                mergedState[key] = { ...currentState[key], ...partial[key] };
+    updateState(_chatId, partial) {
+        const state = this.getState();
+        for (const key of Object.keys(partial)) {
+            const val = partial[key];
+            if (val && typeof val === 'object' && !Array.isArray(val)) {
+                state[key] = { ...(state[key] || {}), ...val };
             } else {
-                mergedState[key] = partial[key];
+                state[key] = val;
             }
         }
+        this.save();
+        return state;
+    }
 
-        this.setState(chatId, mergedState);
+    save() {
+        try {
+            this.context.updateChatMetadata?.(null, true);
+        } catch (err) {
+            console.warn('[Astral Phone] Could not persist chat metadata:', err);
+        }
+    }
+
+    reset() {
+        this._root().state = this._defaults();
+        this.save();
     }
 }
-
-module.exports = PhoneStorage;

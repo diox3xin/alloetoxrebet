@@ -1,461 +1,241 @@
 /**
- * PhoneCore - Main phone overlay system for SillyTavern Astral Phone extension
- * Manages phone UI, app registration, navigation, and event routing
+ * PhoneCore — phone shell, home screen, app navigation, event routing.
+ * Builds the exact DOM that style.css targets.
  */
+
+/** Line icons drawn in the accent colour — one visual system instead of emoji. */
+export const ICONS = {
+    home: `<svg viewBox="0 0 24 24"><path d="M12 3.2l1.9 4.6 4.9.4-3.7 3.2 1.1 4.8L12 13.7 7.8 16.2l1.1-4.8L5.2 8.2l4.9-.4z"/></svg>`,
+    messages: `<svg viewBox="0 0 24 24"><path d="M20.5 12.2c0 4-3.8 7.2-8.5 7.2-1 0-2-.1-2.9-.4L4 20.5l1.3-3.5C4.2 15.6 3.5 14 3.5 12.2c0-4 3.8-7.2 8.5-7.2s8.5 3.2 8.5 7.2z"/><path d="M8.5 11.5h.01M12 11.5h.01M15.5 11.5h.01" stroke-width="2"/></svg>`,
+    gallery: `<svg viewBox="0 0 24 24"><rect x="3.2" y="5.4" width="17.6" height="13.2" rx="3"/><circle cx="12" cy="12" r="3.6"/><path d="M17.4 8.4h.01" stroke-width="2.4"/></svg>`,
+    spicy: `<svg viewBox="0 0 24 24"><path d="M12 21c3.6 0 6.4-2.6 6.4-6.2 0-4.4-4.3-6.6-4.3-10.8-2.2 1-3.3 3-3.3 5.2 0 1.4.4 2.2.4 2.2-1.4-.6-2.4-2-2.4-3.6-1.6 1.6-2.6 3.9-2.6 6.4C6.2 18.2 8.6 21 12 21z"/></svg>`,
+    creator: `<svg viewBox="0 0 24 24"><path d="M12 2.8l3.1 5.9 6.3 1-4.6 4.4 1.1 6.4-5.9-3.2-5.9 3.2 1.1-6.4L2.6 9.7l6.3-1z"/></svg>`,
+};
 
 export class PhoneCore {
     constructor(context, storage, imageGen) {
         this.context = context;
         this.storage = storage;
         this.imageGen = imageGen;
-        
+
         this.apps = new Map();
-        this.currentApp = null;
+        this.currentAppId = null;
         this.overlay = null;
-        this.homeScreen = null;
-        this.appContainer = null;
-        
+        this.bodyEl = null;
+        this.titleEl = null;
+        this.iconEl = null;
+        this.backEl = null;
+        this.timeEl = null;
         this.isOpen = false;
-        
-        this._injectStyles();
+        this._clockTimer = null;
+
+        this._onKeyDown = (e) => {
+            if (e.key === 'Escape') {
+                if (this.currentAppId) this.showHome();
+                else this.close();
+            }
+        };
     }
-    
-    /**
-     * Register an app with the phone system
-     * @param {string} id - Unique app identifier
-     * @param {Object} appInstance - App object with {id, title, icon, render(container)}
-     */
+
     registerApp(id, appInstance) {
-        if (!appInstance.render || typeof appInstance.render !== 'function') {
-            throw new Error(`App ${id} must implement render(container) method`);
+        if (typeof appInstance.render !== 'function') {
+            throw new Error(`App "${id}" must implement render(container, params)`);
         }
         this.apps.set(id, appInstance);
     }
-    
-    /**
-     * Open the phone overlay
-     */
+
+    /* ─────────────────────────── open / close ─────────────────────────── */
+
     open() {
-        if (this.isOpen) return;
-        
-        if (!this.overlay) {
-            this._createOverlay();
-        }
-        
-        this.overlay.classList.add('astral-phone--active');
+        if (!this.overlay) this._build();
+        this.overlay.classList.add('active');
         this.isOpen = true;
-        this._showHome();
-        
-        // Notify ST event system
-        if (this.context.eventSource) {
-            this.context.eventSource.emit('astral_phone_opened', {});
-        }
+        this.showHome();
+        this._startClock();
+        document.addEventListener('keydown', this._onKeyDown);
+        document.body.style.overflow = 'hidden';
     }
-    
-    /**
-     * Close the phone overlay
-     */
+
     close() {
         if (!this.isOpen) return;
-        
-        this.overlay?.classList.remove('astral-phone--active');
+        this.overlay.classList.remove('active');
         this.isOpen = false;
-        this.currentApp = null;
-        
-        if (this.context.eventSource) {
-            this.context.eventSource.emit('astral_phone_closed', {});
-        }
+        this._stopClock();
+        document.removeEventListener('keydown', this._onKeyDown);
+        document.body.style.overflow = '';
     }
-    
-    /**
-     * Handle incoming phone events from function-tool calls
-     * Routes events to appropriate apps
-     * @param {Object} eventData - Event payload with type and data
-     */
-    handleEvent(eventData) {
-        const { type, ...data } = eventData;
-        
-        const eventRouting = {
-            'photo_taken': 'gallery',
-            'message_received': 'messages',
-            'content_posted': 'creator',
-            'donation_received': 'creator'
-        };
-        
-        const targetAppId = eventRouting[type];
-        if (!targetAppId) {
-            console.warn(`[PhoneCore] Unhandled event type: ${type}`);
-            return;
-        }
-        
-        const app = this.apps.get(targetAppId);
-        if (!app) {
-            console.warn(`[PhoneCore] App '${targetAppId}' not registered for event '${type}'`);
-            return;
-        }
-        
-        // If app has an event handler, call it
-        if (app.handleEvent && typeof app.handleEvent === 'function') {
-            app.handleEvent({ type, ...data });
-        }
-        
-        // Auto-open phone and navigate to app if event is high-priority
-        const autoOpenEvents = ['message_received', 'donation_received'];
-        if (autoOpenEvents.includes(type) && !this.isOpen) {
-            this.open();
-            this._openApp(targetAppId);
-        }
+
+    toggle() {
+        this.isOpen ? this.close() : this.open();
     }
-    
-    /**
-     * Navigate to home screen
-     */
-    _showHome() {
-        this.currentApp = null;
-        this.homeScreen.style.display = 'grid';
-        this.appContainer.style.display = 'none';
-        this.appContainer.innerHTML = '';
+
+    /* ─────────────────────────── navigation ─────────────────────────── */
+
+    showHome() {
+        this.currentAppId = null;
+        if (!this.overlay) return;
+        this.backEl.style.visibility = 'hidden';
+        this.iconEl.innerHTML = ICONS.home;
+        this.titleEl.textContent = 'Astral';
+        this.bodyEl.innerHTML = '';
+        this._renderHome();
     }
-    
-    /**
-     * Open a specific app
-     */
-    _openApp(appId) {
+
+    openApp(appId, params = {}) {
         const app = this.apps.get(appId);
         if (!app) {
-            console.error(`[PhoneCore] App '${appId}' not found`);
+            console.warn(`[Astral Phone] App "${appId}" is not registered`);
             return;
         }
-        
-        this.currentApp = appId;
-        this.homeScreen.style.display = 'none';
-        this.appContainer.style.display = 'block';
-        this.appContainer.innerHTML = '';
-        
-        // Call app's render method
-        app.render(this.appContainer);
+
+        this.currentAppId = appId;
+        this.backEl.style.visibility = 'visible';
+        this.iconEl.innerHTML = app.icon || ICONS.home;
+        this.titleEl.textContent = app.title || appId;
+        this.bodyEl.innerHTML = '';
+        this.bodyEl.scrollTop = 0;
+
+        try {
+            app.render(this.bodyEl, params);
+        } catch (err) {
+            console.error(`[Astral Phone] App "${appId}" failed to render:`, err);
+            this.bodyEl.innerHTML = `
+                <div class="astral-empty-state">
+                    <div class="astral-empty-state-icon">⚠</div>
+                    <div>${this._esc(err.message)}</div>
+                </div>`;
+        }
     }
-    
-    /**
-     * Create the phone overlay DOM structure
-     */
-    _createOverlay() {
+
+    /** Re-render the currently open app (used after an event lands). */
+    refresh() {
+        if (this.isOpen && this.currentAppId) this.openApp(this.currentAppId);
+    }
+
+    /* ─────────────────────────── DOM ─────────────────────────── */
+
+    _build() {
         const overlay = document.createElement('div');
-        overlay.className = 'astral-phone-overlay';
+        overlay.id = 'astral-phone-overlay';
         overlay.innerHTML = `
             <div class="astral-phone">
-                <div class="astral-phone__header">
-                    <div class="astral-phone__status-bar">
-                        <span class="astral-phone__time">${this._getCurrentTime()}</span>
-                        <div class="astral-phone__indicators">
-                            <span class="astral-phone__signal">📶</span>
-                            <span class="astral-phone__battery">🔋</span>
-                        </div>
+                <div class="astral-nebula"></div>
+                <div class="astral-phone-notch"></div>
+
+                <div class="astral-phone-statusbar">
+                    <span class="astral-sb-time">--:--</span>
+                    <div class="astral-sb-right">
+                        <span class="astral-signal-bars"><i></i><i></i><i></i><i></i></span>
+                        <span class="astral-battery"></span>
                     </div>
-                    <button class="astral-phone__close" title="Close phone">×</button>
                 </div>
-                
-                <div class="astral-phone__body">
-                    <div class="astral-phone__home">
-                        <div class="astral-phone__app-grid"></div>
-                    </div>
-                    <div class="astral-phone__app-view"></div>
+
+                <div class="astral-phone-header">
+                    <span class="astral-back-btn">‹</span>
+                    <div class="astral-app-icon">${ICONS.home}</div>
+                    <div class="astral-app-title">Astral</div>
+                    <div class="astral-phone-close" title="Закрыть">✕</div>
                 </div>
-                
-                <div class="astral-phone__nav">
-                    <button class="astral-phone__nav-btn astral-phone__nav-btn--home" title="Home">⌂</button>
-                </div>
+
+                <div class="astral-phone-body"></div>
             </div>
         `;
-        
+
         document.body.appendChild(overlay);
-        
+
         this.overlay = overlay;
-        this.homeScreen = overlay.querySelector('.astral-phone__home');
-        this.appContainer = overlay.querySelector('.astral-phone__app-view');
-        
-        // Wire up event listeners
-        overlay.querySelector('.astral-phone__close').addEventListener('click', () => this.close());
-        overlay.querySelector('.astral-phone__nav-btn--home').addEventListener('click', () => this._showHome());
+        this.bodyEl = overlay.querySelector('.astral-phone-body');
+        this.titleEl = overlay.querySelector('.astral-app-title');
+        this.iconEl = overlay.querySelector('.astral-app-icon');
+        this.backEl = overlay.querySelector('.astral-back-btn');
+        this.timeEl = overlay.querySelector('.astral-sb-time');
+
+        overlay.querySelector('.astral-phone-close').addEventListener('click', () => this.close());
+        this.backEl.addEventListener('click', () => {
+            if (this.currentAppId) this.showHome();
+        });
         overlay.addEventListener('click', (e) => {
             if (e.target === overlay) this.close();
         });
-        
-        // Render app grid
-        this._renderAppGrid();
-        
-        // Update time every minute
-        setInterval(() => this._updateTime(), 60000);
     }
-    
-    /**
-     * Render the home screen app grid
-     */
-    _renderAppGrid() {
-        const grid = this.homeScreen.querySelector('.astral-phone__app-grid');
-        
-        const defaultApps = [
-            { id: 'messages', title: 'Messages', icon: '💬' },
-            { id: 'gallery', title: 'Gallery', icon: '📷' },
-            { id: 'spicy', title: 'Spicy Hub', icon: '🔞' },
-            { id: 'creator', title: 'Creator Studio', icon: '💎' }
-        ];
-        
-        defaultApps.forEach(appDef => {
-            const appIcon = document.createElement('button');
-            appIcon.className = 'astral-phone__app-icon';
-            appIcon.innerHTML = `
-                <div class="astral-phone__app-icon-img">${appDef.icon}</div>
-                <div class="astral-phone__app-icon-label">${appDef.title}</div>
+
+    _renderHome() {
+        const grid = document.createElement('div');
+        grid.className = 'astral-home-grid';
+
+        for (const [id, app] of this.apps.entries()) {
+            const card = document.createElement('div');
+            card.className = 'astral-app-card';
+            card.innerHTML = `
+                <div class="astral-app-card-icon">${app.icon || ICONS.home}</div>
+                <div class="astral-app-card-label">${this._esc(app.title || id)}</div>
             `;
-            
-            appIcon.addEventListener('click', () => {
-                if (this.apps.has(appDef.id)) {
-                    this._openApp(appDef.id);
-                } else {
-                    console.warn(`[PhoneCore] App '${appDef.id}' not yet registered`);
-                }
-            });
-            
-            grid.appendChild(appIcon);
-        });
+            card.addEventListener('click', () => this.openApp(id));
+            grid.appendChild(card);
+        }
+
+        this.bodyEl.appendChild(grid);
     }
-    
-    /**
-     * Get current time formatted for status bar
-     */
-    _getCurrentTime() {
-        const now = new Date();
-        return now.toLocaleTimeString('en-US', { 
-            hour: 'numeric', 
-            minute: '2-digit',
-            hour12: true 
-        });
+
+    _startClock() {
+        this._tick();
+        if (!this._clockTimer) this._clockTimer = setInterval(() => this._tick(), 20000);
     }
-    
-    /**
-     * Update time display in status bar
-     */
-    _updateTime() {
-        const timeEl = this.overlay?.querySelector('.astral-phone__time');
-        if (timeEl) {
-            timeEl.textContent = this._getCurrentTime();
+
+    _stopClock() {
+        if (this._clockTimer) {
+            clearInterval(this._clockTimer);
+            this._clockTimer = null;
         }
     }
-    
-    /**
-     * Inject phone overlay styles
-     */
-    _injectStyles() {
-        if (document.getElementById('astral-phone-core-styles')) return;
-        
-        const style = document.createElement('style');
-        style.id = 'astral-phone-core-styles';
-        style.textContent = `
-            :root {
-                --phone-surface-0: #05070C;
-                --phone-surface-1: #0A0D12;
-                --phone-surface-2: #0F131C;
-                --phone-surface-3: #161D2B;
-                --phone-surface-4: #1E2636;
-                --phone-accent: #38BDF8;
-                --phone-accent-dim: #1E5B7A;
-                --phone-text: #E5E7EB;
-                --phone-text-dim: #9CA3AF;
-                --phone-radius-sm: 12px;
-                --phone-radius-md: 24px;
-                --phone-radius-full: 999px;
-                --phone-spacing-xs: 0.5rem;
-                --phone-spacing-sm: 0.75rem;
-                --phone-spacing-md: 1rem;
-                --phone-spacing-lg: 1.5rem;
-                --phone-shadow: 0 20px 60px rgba(0, 0, 0, 0.6);
-            }
-            
-            .astral-phone-overlay {
-                position: fixed;
-                inset: 0;
-                background: rgba(0, 0, 0, 0.85);
-                backdrop-filter: blur(8px);
-                z-index: 10000;
-                display: none;
-                align-items: center;
-                justify-content: center;
-                animation: astral-fade-in 0.2s ease-out;
-            }
-            
-            .astral-phone-overlay.astral-phone--active {
-                display: flex;
-            }
-            
-            @keyframes astral-fade-in {
-                from { opacity: 0; }
-                to { opacity: 1; }
-            }
-            
-            .astral-phone {
-                width: min(420px, 90vw);
-                height: min(860px, 90vh);
-                background: var(--phone-surface-1);
-                border-radius: var(--phone-radius-md);
-                box-shadow: var(--phone-shadow);
-                display: grid;
-                grid-template-rows: auto 1fr auto;
-                overflow: hidden;
-                animation: astral-phone-slide-up 0.3s cubic-bezier(0.16, 1, 0.3, 1);
-            }
-            
-            @keyframes astral-phone-slide-up {
-                from {
-                    opacity: 0;
-                    transform: translateY(40px) scale(0.96);
-                }
-                to {
-                    opacity: 1;
-                    transform: translateY(0) scale(1);
-                }
-            }
-            
-            .astral-phone__header {
-                background: var(--phone-surface-2);
-                padding: var(--phone-spacing-md);
-                border-bottom: 1px solid var(--phone-surface-3);
-            }
-            
-            .astral-phone__status-bar {
-                display: flex;
-                justify-content: space-between;
-                align-items: center;
-                color: var(--phone-text);
-                font-size: clamp(0.75rem, 2vw, 0.875rem);
-                font-weight: 600;
-                margin-bottom: var(--phone-spacing-sm);
-            }
-            
-            .astral-phone__indicators {
-                display: flex;
-                gap: var(--phone-spacing-xs);
-            }
-            
-            .astral-phone__close {
-                width: 100%;
-                padding: var(--phone-spacing-sm);
-                background: var(--phone-surface-3);
-                border: none;
-                border-radius: var(--phone-radius-full);
-                color: var(--phone-text);
-                font-size: 1.5rem;
-                font-weight: 300;
-                cursor: pointer;
-                transition: all 0.2s ease;
-            }
-            
-            .astral-phone__close:hover {
-                background: var(--phone-surface-4);
-                transform: scale(1.02);
-            }
-            
-            .astral-phone__body {
-                position: relative;
-                overflow: hidden;
-                background: var(--phone-surface-0);
-            }
-            
-            .astral-phone__home {
-                position: absolute;
-                inset: 0;
-                padding: var(--phone-spacing-lg);
-                overflow-y: auto;
-            }
-            
-            .astral-phone__app-grid {
-                display: grid;
-                grid-template-columns: repeat(auto-fill, minmax(80px, 1fr));
-                gap: var(--phone-spacing-lg);
-                padding: var(--phone-spacing-md) 0;
-            }
-            
-            .astral-phone__app-icon {
-                display: flex;
-                flex-direction: column;
-                align-items: center;
-                gap: var(--phone-spacing-xs);
-                background: transparent;
-                border: none;
-                cursor: pointer;
-                padding: var(--phone-spacing-sm);
-                border-radius: var(--phone-radius-sm);
-                transition: all 0.2s ease;
-            }
-            
-            .astral-phone__app-icon:hover {
-                background: var(--phone-surface-2);
-                transform: translateY(-2px);
-            }
-            
-            .astral-phone__app-icon-img {
-                width: 64px;
-                height: 64px;
-                background: var(--phone-surface-2);
-                border-radius: 50%;
-                display: flex;
-                align-items: center;
-                justify-content: center;
-                font-size: 2rem;
-                box-shadow: 0 4px 12px rgba(0, 0, 0, 0.3);
-            }
-            
-            .astral-phone__app-icon-label {
-                color: var(--phone-text);
-                font-size: clamp(0.7rem, 2vw, 0.8rem);
-                font-weight: 500;
-                text-align: center;
-                line-height: 1.2;
-            }
-            
-            .astral-phone__app-view {
-                position: absolute;
-                inset: 0;
-                display: none;
-                overflow-y: auto;
-            }
-            
-            .astral-phone__nav {
-                background: var(--phone-surface-2);
-                padding: var(--phone-spacing-md);
-                border-top: 1px solid var(--phone-surface-3);
-                display: flex;
-                justify-content: center;
-                gap: var(--phone-spacing-md);
-            }
-            
-            .astral-phone__nav-btn {
-                width: 56px;
-                height: 56px;
-                background: var(--phone-surface-3);
-                border: none;
-                border-radius: 50%;
-                color: var(--phone-text);
-                font-size: 1.5rem;
-                cursor: pointer;
-                transition: all 0.2s ease;
-                display: flex;
-                align-items: center;
-                justify-content: center;
-            }
-            
-            .astral-phone__nav-btn:hover {
-                background: var(--phone-accent-dim);
-                transform: scale(1.05);
-            }
-            
-            .astral-phone__nav-btn:active {
-                transform: scale(0.95);
-            }
-        `;
-        
-        document.head.appendChild(style);
+
+    _tick() {
+        if (!this.timeEl) return;
+        this.timeEl.textContent = new Date().toLocaleTimeString('ru-RU', {
+            hour: '2-digit',
+            minute: '2-digit',
+        });
+    }
+
+    /* ─────────────────────────── events from the model ─────────────────────────── */
+
+    async handleEvent(eventData) {
+        const { type, ...data } = eventData || {};
+
+        const routing = {
+            photo_taken: 'gallery',
+            message_received: 'messages',
+            content_posted: 'creator',
+            donation_received: 'creator',
+            subscriber_joined: 'creator',
+            spicy_posted: 'spicy',
+        };
+
+        const appId = routing[type];
+        if (!appId) return { success: false, error: `Unknown event type: ${type}` };
+
+        const app = this.apps.get(appId);
+        if (!app || typeof app.handleEvent !== 'function') {
+            return { success: false, error: `App "${appId}" cannot handle events` };
+        }
+
+        try {
+            const result = await app.handleEvent({ type, ...data });
+            this.refresh();
+            return result || { success: true };
+        } catch (err) {
+            console.error('[Astral Phone] Event handling failed:', err);
+            return { success: false, error: err.message };
+        }
+    }
+
+    /* ─────────────────────────── utils ─────────────────────────── */
+
+    _esc(str) {
+        return String(str ?? '')
+            .replace(/&/g, '&amp;')
+            .replace(/</g, '&lt;')
+            .replace(/>/g, '&gt;')
+            .replace(/"/g, '&quot;');
     }
 }
-
-export default PhoneCore;

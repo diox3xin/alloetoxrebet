@@ -1,150 +1,121 @@
 /**
- * Messages App — SMS/chat conversations
+ * Messages — SMS threads with the characters.
  */
+
+import { ICONS } from './phone-core.js';
 
 export class MessagesApp {
     constructor(context, storage, imageGen) {
         this.context = context;
         this.storage = storage;
         this.imageGen = imageGen;
-        
         this.id = 'messages';
         this.title = 'Messages';
-        this.icon = '💬';
+        this.icon = ICONS.messages;
     }
-    
-    /**
-     * Render messages list or conversation
-     */
+
     render(container, params = {}) {
-        if (params.conversationId) {
-            this.renderConversation(container, params.conversationId);
-        } else {
-            this.renderList(container);
-        }
-    }
-    
-    /**
-     * Render conversations list
-     */
-    renderList(container) {
-        const chatId = this.context.getCurrentChatId?.() || 'default';
-        const state = this.storage.getState(chatId);
+        const state = this.storage.getState();
         const messages = state.messages || [];
-        
+
         container.innerHTML = '';
-        
+
+        if (params.character) {
+            this._renderThread(container, messages, params.character);
+            return;
+        }
+
         if (messages.length === 0) {
             container.innerHTML = `
                 <div class="astral-empty-state">
-                    <div class="astral-empty-state-icon">💬</div>
-                    <div>No messages yet</div>
-                </div>
-            `;
+                    <div class="astral-empty-state-icon">${ICONS.messages}</div>
+                    <div>Нет переписки</div>
+                    <div style="margin-top:10px;opacity:.7">Сообщения появятся, когда персонаж напишет</div>
+                </div>`;
             return;
         }
-        
-        // Group messages by character
-        const grouped = {};
-        messages.forEach(msg => {
-            if (!grouped[msg.character]) {
-                grouped[msg.character] = [];
-            }
-            grouped[msg.character].push(msg);
-        });
-        
-        // Render list
-        Object.entries(grouped).forEach(([char, msgs]) => {
-            const lastMsg = msgs[msgs.length - 1];
+
+        const grouped = new Map();
+        for (const msg of messages) {
+            const key = msg.character || 'Неизвестный';
+            if (!grouped.has(key)) grouped.set(key, []);
+            grouped.get(key).push(msg);
+        }
+
+        const list = document.createElement('div');
+        list.className = 'astral-thread-list';
+
+        for (const [char, msgs] of grouped) {
+            const last = msgs[msgs.length - 1];
             const item = document.createElement('div');
             item.className = 'astral-msg-item';
             item.innerHTML = `
-                <div class="astral-msg-avatar">${char[0]}</div>
+                <div class="astral-msg-avatar">${this._esc((char[0] || '?').toUpperCase())}</div>
                 <div class="astral-msg-content">
-                    <div class="astral-msg-name">${char}</div>
-                    <div class="astral-msg-preview">${lastMsg.text || lastMsg.description}</div>
+                    <div class="astral-msg-name">${this._esc(char)}</div>
+                    <div class="astral-msg-preview">${this._esc(last.text)}</div>
                 </div>
-                <div class="astral-msg-time">${this.formatTime(lastMsg.timestamp)}</div>
+                <div class="astral-msg-time">${this._time(last.timestamp)}</div>
             `;
-            
             item.addEventListener('click', () => {
-                this.render(container, { conversationId: char });
+                const core = this._core();
+                core?.openApp('messages', { character: char });
             });
-            
-            container.appendChild(item);
-        });
+            list.appendChild(item);
+        }
+
+        container.appendChild(list);
     }
-    
-    /**
-     * Render single conversation
-     */
-    renderConversation(container, character) {
-        const chatId = this.context.getCurrentChatId?.() || 'default';
-        const state = this.storage.getState(chatId);
-        const messages = (state.messages || []).filter(m => m.character === character);
-        
-        container.innerHTML = '';
-        
-        const thread = document.createElement('div');
-        thread.style.cssText = 'display: flex; flex-direction: column; gap: 10px;';
-        
-        messages.forEach(msg => {
+
+    _renderThread(container, messages, character) {
+        const msgs = messages.filter((m) => m.character === character);
+        const wrap = document.createElement('div');
+        wrap.className = 'astral-thread';
+
+        if (msgs.length === 0) {
+            wrap.innerHTML = `<div class="astral-empty-state"><div>Пусто</div></div>`;
+        }
+
+        for (const msg of msgs) {
             const bubble = document.createElement('div');
-            bubble.className = msg.fromUser ? 'astral-msg-bubble-out' : 'astral-msg-bubble-in';
-            bubble.style.cssText = `
-                padding: 10px 13px;
-                border-radius: 14px;
-                max-width: 80%;
-                font-size: 12px;
-                line-height: 1.5;
-                ${msg.fromUser 
-                    ? 'align-self: flex-end; background: linear-gradient(150deg, rgba(229,175,197,.24), rgba(217,154,181,.28)); border: 1px solid rgba(229,175,197,.42); color: #fff;'
-                    : 'align-self: flex-start; background: linear-gradient(150deg, rgba(255,255,255,.09), rgba(255,255,255,.03)); border: 1px solid rgba(217,154,181,.28); color: #e8ddf8;'
-                }
-            `;
+            bubble.className = msg.fromUser ? 'astral-bubble astral-bubble--out' : 'astral-bubble astral-bubble--in';
             bubble.innerHTML = `
-                ${msg.text || msg.description}
-                <div style="margin-top: 4px; font-size: 8px; opacity: 0.5;">${this.formatTime(msg.timestamp)}</div>
+                <div class="astral-bubble-text">${this._esc(msg.text)}</div>
+                <div class="astral-bubble-time">${this._time(msg.timestamp, true)}</div>
             `;
-            thread.appendChild(bubble);
-        });
-        
-        container.appendChild(thread);
+            wrap.appendChild(bubble);
+        }
+
+        container.appendChild(wrap);
+        container.scrollTop = container.scrollHeight;
     }
-    
-    /**
-     * Handle incoming message event
-     */
+
     async handleEvent(eventData) {
-        const chatId = this.context.getCurrentChatId?.() || 'default';
-        const state = this.storage.getState(chatId);
-        
-        if (!state.messages) state.messages = [];
-        
+        const state = this.storage.getState();
         state.messages.push({
-            character: eventData.character,
-            text: eventData.description,
+            character: eventData.character || this.context.name2 || '',
+            text: eventData.description || '',
             timestamp: Date.now(),
-            fromUser: false
+            fromUser: false,
         });
-        
-        this.storage.setState(chatId, state);
-        
-        return { success: true, message: `Message from ${eventData.character} added` };
+        this.storage.save();
+        return { success: true, message: 'Сообщение добавлено' };
     }
-    
-    /**
-     * Format timestamp
-     */
-    formatTime(ts) {
+
+    _core() {
+        return window.__astralPhoneCore || null;
+    }
+
+    _time(ts, short = false) {
         const d = new Date(ts);
-        const now = new Date();
-        const today = now.toDateString() === d.toDateString();
-        
-        if (today) {
+        const today = new Date().toDateString() === d.toDateString();
+        if (short || today) {
             return d.toLocaleTimeString('ru-RU', { hour: '2-digit', minute: '2-digit' });
         }
-        
         return d.toLocaleDateString('ru-RU', { day: 'numeric', month: 'short' });
+    }
+
+    _esc(str) {
+        return String(str ?? '').replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
     }
 }

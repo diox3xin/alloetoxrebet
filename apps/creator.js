@@ -1,444 +1,394 @@
 /**
- * Creator Studio — content monetization platform (OnlyFans alternative)
- * Tabs: Profile, Feed, Stats, Messages from fans
+ * Creator Studio — paid content: profile, feed, analytics, fan messages.
+ * Images for posts are generated through the Haruspics bridge.
  */
+
+import { ICONS } from './phone-core.js';
+
+const TABS = [
+    { id: 'profile', label: 'Профиль' },
+    { id: 'feed', label: 'Лента' },
+    { id: 'stats', label: 'Статы' },
+    { id: 'fans', label: 'Фаны' },
+];
 
 export class CreatorApp {
     constructor(context, storage, imageGen) {
         this.context = context;
         this.storage = storage;
         this.imageGen = imageGen;
-        
         this.id = 'creator';
         this.title = 'Creator Studio';
-        this.icon = '💎';
+        this.icon = ICONS.creator;
+        this._tab = 'profile';
+        this._busy = new Set();
     }
-    
-    /**
-     * Render Creator Studio tabs
-     */
+
     render(container, params = {}) {
-        const tab = params.tab || 'profile';
-        
+        if (params.tab) this._tab = params.tab;
+
+        const state = this.storage.getState();
+        const creator = state.creator || {};
+
         container.innerHTML = '';
-        
-        // Tab navigation
-        const tabs = document.createElement('div');
-        tabs.style.cssText = `
-            display: flex;
-            gap: 8px;
-            margin-bottom: 16px;
-            border-bottom: 1px solid rgba(217,154,181,.14);
-            padding-bottom: 8px;
-        `;
-        
-        ['profile', 'feed', 'stats', 'messages'].forEach(t => {
-            const btn = document.createElement('button');
-            btn.textContent = t.toUpperCase();
-            btn.style.cssText = `
-                flex: 1;
-                padding: 8px 12px;
-                border: 1px solid ${tab === t ? 'var(--phone-accent)' : 'rgba(217,154,181,.2)'};
-                background: ${tab === t ? 'rgba(217,154,181,.12)' : 'transparent'};
-                color: ${tab === t ? 'var(--phone-accent-light)' : 'var(--phone-text-dim)'};
-                border-radius: 8px;
-                cursor: pointer;
-                font-size: 9px;
-                letter-spacing: 0.1em;
-                transition: 0.15s;
-            `;
-            
-            btn.addEventListener('click', () => {
-                this.render(container, { tab: t });
-            });
-            
-            tabs.appendChild(btn);
-        });
-        
-        container.appendChild(tabs);
-        
-        // Tab content
-        const content = document.createElement('div');
-        
-        if (tab === 'profile') {
-            this.renderProfile(content);
-        } else if (tab === 'feed') {
-            this.renderFeed(content);
-        } else if (tab === 'stats') {
-            this.renderStats(content);
-        } else if (tab === 'messages') {
-            this.renderMessages(content);
-        }
-        
-        container.appendChild(content);
+        container.appendChild(this._buildTabs());
+
+        const body = document.createElement('div');
+        body.className = 'astral-creator-body';
+
+        if (this._tab === 'profile') this._renderProfile(body, creator);
+        else if (this._tab === 'feed') this._renderFeed(body, creator);
+        else if (this._tab === 'stats') this._renderStats(body, creator);
+        else this._renderFans(body, creator);
+
+        container.appendChild(body);
     }
-    
-    /**
-     * Profile tab — subscribers, revenue, create button
-     */
-    renderProfile(container) {
-        const chatId = this.context.getCurrentChatId?.() || 'default';
-        const state = this.storage.getState(chatId);
-        const creator = state.creator || { posts: [], subscribers: 0, revenue: 0 };
-        
-        container.innerHTML = `
-            <div style="text-align: center; padding: 20px 0;">
-                <div style="width: 80px; height: 80px; margin: 0 auto 16px; border-radius: 50%;
-                            background: radial-gradient(circle at 30% 28%, rgba(229,175,197,.45), rgba(217,154,181,.2));
-                            border: 2px solid var(--phone-accent); display: grid; place-items: center; font-size: 32px;">
-                    💎
-                </div>
-                <div style="font-size: 15px; font-weight: 500; margin-bottom: 8px;">
-                    ${this.context.name2 || 'Character'}
-                </div>
-                <div style="font-size: 11px; color: var(--phone-text-dim); margin-bottom: 20px;">
-                    @creator
-                </div>
-                
-                <div style="display: grid; grid-template-columns: repeat(3, 1fr); gap: 16px; margin-bottom: 24px; text-align: center;">
-                    <div>
-                        <div style="font-size: 18px; font-weight: 500; color: var(--phone-accent-light);">
-                            ${creator.subscribers || 0}
-                        </div>
-                        <div style="font-size: 9px; color: var(--phone-text-dim); text-transform: uppercase; letter-spacing: 0.1em;">
-                            Subscribers
-                        </div>
+
+    _buildTabs() {
+        const bar = document.createElement('div');
+        bar.className = 'astral-tabs';
+        for (const tab of TABS) {
+            const btn = document.createElement('button');
+            btn.className = 'astral-tab' + (tab.id === this._tab ? ' astral-tab--on' : '');
+            btn.textContent = tab.label;
+            btn.addEventListener('click', () => {
+                this._tab = tab.id;
+                this.render(document.querySelector('.astral-phone-body'));
+            });
+            bar.appendChild(btn);
+        }
+        return bar;
+    }
+
+    /* ─────────────────────────── profile ─────────────────────────── */
+
+    _renderProfile(body, creator) {
+        const name = this.context.name2 || 'Персонаж';
+        const posts = creator.posts || [];
+
+        body.innerHTML = `
+            <div class="astral-profile">
+                <div class="astral-profile-ava">${this._esc((name[0] || '?').toUpperCase())}</div>
+                <div class="astral-profile-name">${this._esc(name)}</div>
+                <div class="astral-profile-handle">@${this._slug(name)}</div>
+
+                <div class="astral-stats-row">
+                    <div class="astral-stat">
+                        <div class="astral-stat-value">${this._n(creator.subscribers || 0)}</div>
+                        <div class="astral-stat-label">Подписчики</div>
                     </div>
-                    <div>
-                        <div style="font-size: 18px; font-weight: 500; color: var(--phone-accent-light);">
-                            ${creator.posts?.length || 0}
-                        </div>
-                        <div style="font-size: 9px; color: var(--phone-text-dim); text-transform: uppercase; letter-spacing: 0.1em;">
-                            Posts
-                        </div>
+                    <div class="astral-stat">
+                        <div class="astral-stat-value">${posts.length}</div>
+                        <div class="astral-stat-label">Посты</div>
                     </div>
-                    <div>
-                        <div style="font-size: 18px; font-weight: 500; color: var(--phone-accent-light);">
-                            $${creator.revenue || 0}
-                        </div>
-                        <div style="font-size: 9px; color: var(--phone-text-dim); text-transform: uppercase; letter-spacing: 0.1em;">
-                            Revenue
-                        </div>
+                    <div class="astral-stat">
+                        <div class="astral-stat-value">$${this._n(creator.revenue || 0)}</div>
+                        <div class="astral-stat-label">Доход</div>
                     </div>
                 </div>
-                
-                <button class="astral-btn-primary" id="creator-new-post">
-                    ➕ Create New Post
+
+                <button class="astral-btn astral-btn-primary astral-btn-wide" id="astral-new-post">
+                    Создать пост
                 </button>
             </div>
         `;
-        
-        container.querySelector('#creator-new-post').addEventListener('click', () => {
-            this.showCreateDialog();
-        });
+
+        body.querySelector('#astral-new-post').addEventListener('click', () => this._openComposer());
     }
-    
-    /**
-     * Feed tab — published posts
-     */
-    renderFeed(container) {
-        const chatId = this.context.getCurrentChatId?.() || 'default';
-        const state = this.storage.getState(chatId);
-        const posts = state.creator?.posts || [];
-        
+
+    /* ─────────────────────────── feed ─────────────────────────── */
+
+    _renderFeed(body, creator) {
+        const posts = creator.posts || [];
+
         if (posts.length === 0) {
-            container.innerHTML = `
+            body.innerHTML = `
                 <div class="astral-empty-state">
-                    <div class="astral-empty-state-icon">💎</div>
-                    <div>No posts yet</div>
-                    <div style="margin-top: 14px;">Create your first post to start earning</div>
-                </div>
-            `;
+                    <div class="astral-empty-state-icon">${ICONS.creator}</div>
+                    <div>Постов пока нет</div>
+                    <div style="margin-top:10px;opacity:.7">Создай первый — и начнёшь зарабатывать</div>
+                </div>`;
             return;
         }
-        
+
         const feed = document.createElement('div');
-        feed.style.cssText = 'display: flex; flex-direction: column; gap: 16px;';
-        
+        feed.className = 'astral-card-feed';
+
         posts.forEach((post, idx) => {
             const card = document.createElement('div');
-            card.style.cssText = `
-                border-radius: 12px;
-                overflow: hidden;
-                background: var(--phone-card);
-                border: 1px solid rgba(217,154,181,.18);
-            `;
-            
-            const image = post.imageUrl
-                ? `<img src="${post.imageUrl}" style="width: 100%; aspect-ratio: 1; object-fit: cover;" />`
-                : `<div style="width: 100%; aspect-ratio: 1; display: grid; place-items: center; background: rgba(13,11,16,.6);">
-                     <button class="astral-btn" data-post-idx="${idx}">Generate Image</button>
+            card.className = 'astral-card';
+            const busy = this._busy.has(idx);
+
+            const media = post.imageUrl
+                ? `<img class="astral-card-media" src="${post.imageUrl}" alt="" loading="lazy">`
+                : `<div class="astral-card-media astral-card-media--empty">
+                        <div class="astral-card-empty-inner">
+                            <div class="astral-card-empty-icon">${ICONS.creator}</div>
+                            <button class="astral-btn" data-gen="${idx}" ${busy ? 'disabled' : ''}>
+                                ${busy ? 'Генерация…' : 'Создать фото'}
+                            </button>
+                        </div>
                    </div>`;
-            
+
             card.innerHTML = `
-                ${image}
-                <div style="padding: 12px;">
-                    <div style="font-size: 11px; margin-bottom: 8px;">${post.caption || post.description}</div>
-                    <div style="font-size: 9px; color: var(--phone-text-dim); display: flex; gap: 12px;">
-                        <span>❤️ ${post.likes || 0}</span>
-                        <span>💬 ${post.comments || 0}</span>
-                        <span>${this.formatTime(post.timestamp)}</span>
+                ${media}
+                <div class="astral-card-body">
+                    <div class="astral-card-title">${this._esc(post.caption || post.description)}</div>
+                    <div class="astral-card-meta">
+                        <span>❤ ${this._n(post.likes || 0)}</span>
+                        <span>💬 ${this._n(post.comments || 0)}</span>
+                        <span>${this._ago(post.timestamp)}</span>
                     </div>
                 </div>
             `;
-            
+
+            const btn = card.querySelector(`[data-gen="${idx}"]`);
+            if (btn && !busy) {
+                btn.addEventListener('click', async (e) => {
+                    e.stopPropagation();
+                    await this._generate(idx);
+                });
+            }
+
             feed.appendChild(card);
         });
-        
-        container.appendChild(feed);
-        
-        // Attach generate handlers
-        container.querySelectorAll('[data-post-idx]').forEach(btn => {
-            btn.addEventListener('click', async (e) => {
-                e.stopPropagation();
-                const idx = parseInt(btn.dataset.postIdx);
-                await this.generatePostImage(idx);
-                this.renderFeed(container);
-            });
-        });
+
+        body.appendChild(feed);
     }
-    
-    /**
-     * Stats tab — analytics
-     */
-    renderStats(container) {
-        const chatId = this.context.getCurrentChatId?.() || 'default';
-        const state = this.storage.getState(chatId);
-        const creator = state.creator || {};
+
+    /* ─────────────────────────── stats ─────────────────────────── */
+
+    _renderStats(body, creator) {
         const posts = creator.posts || [];
-        
-        const totalLikes = posts.reduce((sum, p) => sum + (p.likes || 0), 0);
-        const avgLikes = posts.length > 0 ? Math.floor(totalLikes / posts.length) : 0;
-        
-        container.innerHTML = `
-            <div style="padding: 16px 0;">
-                <div style="font-size: 12px; text-transform: uppercase; letter-spacing: 0.12em; 
-                            opacity: 0.5; margin-bottom: 16px;">
-                    Performance
+        const likes = posts.reduce((s, p) => s + (p.likes || 0), 0);
+        const avg = posts.length ? Math.round(likes / posts.length) : 0;
+        const top = posts.length ? posts.reduce((a, b) => ((b.likes || 0) > (a.likes || 0) ? b : a)) : null;
+
+        body.innerHTML = `
+            <div class="astral-stat-cards">
+                <div class="astral-stat-card">
+                    <div class="astral-stat-card-label">Всего заработано</div>
+                    <div class="astral-stat-card-value">$${this._n(creator.revenue || 0)}</div>
                 </div>
-                
-                <div style="display: grid; gap: 14px;">
-                    <div style="padding: 14px; background: var(--phone-card); border-radius: 10px; 
-                                border: 1px solid rgba(217,154,181,.16);">
-                        <div style="font-size: 9px; text-transform: uppercase; opacity: 0.5; margin-bottom: 6px;">
-                            Total Earnings
-                        </div>
-                        <div style="font-size: 22px; color: var(--phone-accent-light);">
-                            $${creator.revenue || 0}
-                        </div>
-                    </div>
-                    
-                    <div style="padding: 14px; background: var(--phone-card); border-radius: 10px;
-                                border: 1px solid rgba(217,154,181,.16);">
-                        <div style="font-size: 9px; text-transform: uppercase; opacity: 0.5; margin-bottom: 6px;">
-                            Engagement Rate
-                        </div>
-                        <div style="font-size: 22px; color: var(--phone-accent-light);">
-                            ${avgLikes} likes/post
-                        </div>
-                    </div>
-                    
-                    <div style="padding: 14px; background: var(--phone-card); border-radius: 10px;
-                                border: 1px solid rgba(217,154,181,.16);">
-                        <div style="font-size: 9px; text-transform: uppercase; opacity: 0.5; margin-bottom: 6px;">
-                            Top Post
-                        </div>
-                        <div style="font-size: 14px; color: var(--phone-accent-light);">
-                            ${posts.length > 0 
-                                ? posts.reduce((max, p) => (p.likes || 0) > (max.likes || 0) ? p : max, posts[0])?.caption || 'N/A'
-                                : 'N/A'}
-                        </div>
+                <div class="astral-stat-card">
+                    <div class="astral-stat-card-label">Лайков на пост</div>
+                    <div class="astral-stat-card-value">${this._n(avg)}</div>
+                </div>
+                <div class="astral-stat-card">
+                    <div class="astral-stat-card-label">Всего лайков</div>
+                    <div class="astral-stat-card-value">${this._n(likes)}</div>
+                </div>
+                <div class="astral-stat-card">
+                    <div class="astral-stat-card-label">Лучший пост</div>
+                    <div class="astral-stat-card-value astral-stat-card-value--sm">
+                        ${top ? this._esc((top.caption || top.description || '').slice(0, 40)) : '—'}
                     </div>
                 </div>
             </div>
         `;
     }
-    
-    /**
-     * Messages tab — fan messages
-     */
-    renderMessages(container) {
-        container.innerHTML = `
-            <div class="astral-empty-state">
-                <div class="astral-empty-state-icon">💬</div>
-                <div>No fan messages yet</div>
-                <div style="margin-top: 14px;">Subscribers will send you messages here</div>
-            </div>
-        `;
+
+    /* ─────────────────────────── fans ─────────────────────────── */
+
+    _renderFans(body, creator) {
+        const fans = creator.fans || [];
+
+        if (fans.length === 0) {
+            body.innerHTML = `
+                <div class="astral-empty-state">
+                    <div class="astral-empty-state-icon">${ICONS.creator}</div>
+                    <div>Фанов пока нет</div>
+                    <div style="margin-top:10px;opacity:.7">Донаты и подписки появятся здесь</div>
+                </div>`;
+            return;
+        }
+
+        const list = document.createElement('div');
+        list.className = 'astral-fan-list';
+
+        for (const fan of fans) {
+            const row = document.createElement('div');
+            row.className = 'astral-fan-row';
+            row.innerHTML = `
+                <div class="astral-msg-avatar">${this._esc((fan.name || '?')[0].toUpperCase())}</div>
+                <div class="astral-msg-content">
+                    <div class="astral-msg-name">${this._esc(fan.name || 'Аноним')}</div>
+                    <div class="astral-msg-preview">${this._esc(fan.note || (fan.amount ? `$${fan.amount}` : 'подписался'))}</div>
+                </div>
+                <div class="astral-msg-time">${this._ago(fan.timestamp)}</div>
+            `;
+            list.appendChild(row);
+        }
+
+        body.appendChild(list);
     }
-    
-    /**
-     * Show create post dialog
-     */
-    showCreateDialog() {
+
+    /* ─────────────────────────── composer ─────────────────────────── */
+
+    _openComposer() {
         const overlay = document.createElement('div');
-        overlay.style.cssText = `
-            position: fixed;
-            inset: 0;
-            z-index: 100000;
-            background: rgba(13,11,16,.9);
-            backdrop-filter: blur(8px);
-            display: flex;
-            align-items: center;
-            justify-content: center;
-            padding: 20px;
-        `;
-        
-        const dialog = document.createElement('div');
-        dialog.style.cssText = `
-            width: 320px;
-            background: var(--phone-card);
-            border: 1px solid rgba(217,154,181,.3);
-            border-radius: 16px;
-            padding: 20px;
-        `;
-        
-        dialog.innerHTML = `
-            <div style="font-size: 14px; font-weight: 500; margin-bottom: 16px;">Create New Post</div>
-            <textarea id="creator-caption" 
-                      placeholder="Describe the content you want to create..." 
-                      style="width: 100%; min-height: 100px; padding: 12px; 
-                             background: var(--phone-bg); border: 1px solid rgba(217,154,181,.2); 
-                             border-radius: 8px; color: var(--phone-text); font-family: inherit; 
-                             font-size: 12px; resize: vertical; margin-bottom: 16px;"></textarea>
-            <div style="display: flex; gap: 10px;">
-                <button class="astral-btn" id="creator-cancel">Cancel</button>
-                <button class="astral-btn-primary" id="creator-publish" style="flex: 1;">Publish & Generate</button>
+        overlay.className = 'astral-modal';
+        overlay.innerHTML = `
+            <div class="astral-modal-card">
+                <div class="astral-modal-title">Новый пост</div>
+                <textarea class="astral-textarea" id="astral-post-text"
+                    placeholder="Опиши, что на фото — поза, одежда, место, свет. Чем конкретнее, тем лучше выйдет картинка."></textarea>
+                <div class="astral-modal-actions">
+                    <button class="astral-btn" id="astral-post-cancel">Отмена</button>
+                    <button class="astral-btn astral-btn-primary" id="astral-post-go">Опубликовать</button>
+                </div>
             </div>
         `;
-        
-        overlay.appendChild(dialog);
-        document.body.appendChild(overlay);
-        
-        dialog.querySelector('#creator-cancel').addEventListener('click', () => {
-            overlay.remove();
+
+        document.querySelector('.astral-phone').appendChild(overlay);
+
+        const close = () => overlay.remove();
+        overlay.querySelector('#astral-post-cancel').addEventListener('click', close);
+        overlay.addEventListener('click', (e) => {
+            if (e.target === overlay) close();
         });
-        
-        dialog.querySelector('#creator-publish').addEventListener('click', async () => {
-            const caption = dialog.querySelector('#creator-caption').value.trim();
-            if (!caption) return;
-            
-            await this.createPost(caption);
-            overlay.remove();
+
+        overlay.querySelector('#astral-post-go').addEventListener('click', async () => {
+            const text = overlay.querySelector('#astral-post-text').value.trim();
+            if (!text) return;
+            close();
+            await this._createPost(text);
         });
+
+        overlay.querySelector('#astral-post-text').focus();
     }
-    
-    /**
-     * Create new post and optionally generate image
-     */
-    async createPost(caption) {
-        const chatId = this.context.getCurrentChatId?.() || 'default';
-        const state = this.storage.getState(chatId);
-        
-        if (!state.creator) state.creator = { posts: [], subscribers: 0, revenue: 0 };
-        
-        const post = {
+
+    async _createPost(caption) {
+        const state = this.storage.getState();
+        if (!state.creator) state.creator = { posts: [], subscribers: 0, revenue: 0, fans: [] };
+
+        state.creator.posts.unshift({
             caption,
             description: caption,
             timestamp: Date.now(),
             imageUrl: null,
-            likes: Math.floor(Math.random() * 50) + 5,
-            comments: Math.floor(Math.random() * 20) + 1
-        };
-        
-        state.creator.posts.unshift(post);  // prepend
-        
-        // Simulate revenue increase
-        state.creator.revenue = (state.creator.revenue || 0) + Math.floor(Math.random() * 50) + 20;
-        
-        this.storage.setState(chatId, state);
-        
-        // Try to generate image immediately if haruspics available
-        if (this.imageGen.isAvailable()) {
-            await this.generatePostImage(0);
-        }
-        
-        // Re-render
-        const container = document.querySelector('.astral-phone-body');
-        if (container) {
-            this.render(container, { tab: 'feed' });
-        }
+            likes: this._rand(5, 60),
+            comments: this._rand(0, 14),
+        });
+
+        state.creator.revenue = (state.creator.revenue || 0) + this._rand(12, 70);
+        this.storage.save();
+
+        this._tab = 'feed';
+        this.render(document.querySelector('.astral-phone-body'));
+
+        if (this.imageGen.isAvailable()) await this._generate(0, true);
+
+        this.render(document.querySelector('.astral-phone-body'));
     }
-    
-    /**
-     * Generate image for a post
-     */
-    async generatePostImage(index) {
+
+    async _generate(index, silent = false) {
         if (!this.imageGen.isAvailable()) {
-            alert('Haruspics not installed.');
+            this._toast('Haruspics не установлен', 'error');
             return;
         }
-        
-        const chatId = this.context.getCurrentChatId?.() || 'default';
-        const state = this.storage.getState(chatId);
-        const post = state.creator?.posts?.[index];
-        
-        if (!post) return;
-        
+        if (this._busy.has(index)) return;
+
+        this._busy.add(index);
+        this._toast('Генерирую фото…', 'info');
+
         try {
-            const char = this.context.name2 || 'Character';
-            const prompt = `${char} — ${post.description}`;
-            
-            const imageUrl = await this.imageGen.generate(prompt, {
-                character: char,
+            const state = this.storage.getState();
+            const post = state.creator?.posts?.[index];
+            if (!post) return;
+
+            const prompt = [this.context.name2 || 'Персонаж', post.description].filter(Boolean).join(' — ');
+            const url = await this.imageGen.generate(prompt, {
+                character: this.context.name2,
                 type: 'creator_post',
-                nsfw: true
+                nsfw: true,
             });
-            
-            post.imageUrl = imageUrl;
-            state.creator.posts[index] = post;
-            
-            this.storage.setState(chatId, state);
+
+            state.creator.posts[index].imageUrl = url;
+            this.storage.save();
+            this._toast('Готово', 'success');
         } catch (err) {
-            console.error('[Creator] Generation failed:', err);
-            alert(`Image generation failed: ${err.message}`);
+            console.error('[Creator] generation failed:', err);
+            this._toast(`Не получилось: ${err.message}`, 'error');
+        } finally {
+            this._busy.delete(index);
+            if (!silent) this.render(document.querySelector('.astral-phone-body'));
         }
     }
-    
-    /**
-     * Handle events (content_posted, donation_received, subscriber_joined)
-     */
+
+    /* ─────────────────────────── events ─────────────────────────── */
+
     async handleEvent(eventData) {
-        const chatId = this.context.getCurrentChatId?.() || 'default';
-        const state = this.storage.getState(chatId);
-        
-        if (!state.creator) state.creator = { posts: [], subscribers: 0, revenue: 0 };
-        
+        const state = this.storage.getState();
+        if (!state.creator) state.creator = { posts: [], subscribers: 0, revenue: 0, fans: [] };
+
+        const meta = eventData.metadata || {};
+
         if (eventData.type === 'content_posted') {
             state.creator.posts.unshift({
                 caption: eventData.description,
                 description: eventData.description,
                 timestamp: Date.now(),
                 imageUrl: null,
-                likes: Math.floor(Math.random() * 50) + 5,
-                comments: Math.floor(Math.random() * 20) + 1
+                likes: this._rand(5, 60),
+                comments: this._rand(0, 14),
             });
         } else if (eventData.type === 'donation_received') {
-            const amount = eventData.metadata?.amount || 50;
+            const amount = Number(meta.amount) || 25;
             state.creator.revenue = (state.creator.revenue || 0) + amount;
+            state.creator.fans.unshift({
+                name: meta.fan || 'Аноним',
+                amount,
+                note: `$${amount}`,
+                timestamp: Date.now(),
+            });
+            state.creator.fans = state.creator.fans.slice(0, 40);
         } else if (eventData.type === 'subscriber_joined') {
-            state.creator.subscribers = (state.creator.subscribers || 0) + 1;
+            const count = Number(meta.count) || 1;
+            state.creator.subscribers = (state.creator.subscribers || 0) + count;
+            state.creator.fans.unshift({
+                name: meta.fan || 'Новый подписчик',
+                note: 'подписался',
+                timestamp: Date.now(),
+            });
+            state.creator.fans = state.creator.fans.slice(0, 40);
         }
-        
-        this.storage.setState(chatId, state);
-        
-        return { success: true, message: `Creator event processed` };
+
+        this.storage.save();
+        return { success: true, message: 'Событие Creator Studio обработано' };
     }
-    
-    /**
-     * Format timestamp
-     */
-    formatTime(ts) {
-        const d = new Date(ts);
-        const now = Date.now();
-        const diff = now - ts;
-        
-        if (diff < 3600000) {
-            return `${Math.floor(diff / 60000)}m ago`;
-        } else if (diff < 86400000) {
-            return `${Math.floor(diff / 3600000)}h ago`;
-        } else {
-            return `${Math.floor(diff / 86400000)}d ago`;
-        }
+
+    /* ─────────────────────────── utils ─────────────────────────── */
+
+    _rand(min, max) {
+        return Math.floor(Math.random() * (max - min + 1)) + min;
+    }
+
+    _n(num) {
+        if (!num) return '0';
+        if (num >= 1e6) return (num / 1e6).toFixed(1) + 'M';
+        if (num >= 1e3) return (num / 1e3).toFixed(1) + 'K';
+        return String(num);
+    }
+
+    _ago(ts) {
+        const diff = Date.now() - ts;
+        if (diff < 36e5) return `${Math.floor(diff / 6e4)} мин`;
+        if (diff < 864e5) return `${Math.floor(diff / 36e5)} ч`;
+        return `${Math.floor(diff / 864e5)} дн`;
+    }
+
+    _slug(name) {
+        const slug = String(name).toLowerCase().replace(/\s+/g, '_').replace(/[^\p{L}\p{N}_]/gu, '');
+        return slug || 'creator';
+    }
+
+    _toast(text, kind = 'info') {
+        if (window.toastr) (toastr[kind] || toastr.info)(text);
+        else console.log(`[Creator] ${text}`);
+    }
+
+    _esc(str) {
+        return String(str ?? '').replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
     }
 }

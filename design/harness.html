@@ -1,0 +1,107 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<title>Astral Phone — стенд</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Jost:wght@300;400;500&family=Unbounded:wght@300;400&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="../style.css">
+<style>
+  body { margin:0; min-height:100vh; background:#06050a; display:grid; place-items:center;
+         background-image: radial-gradient(900px 500px at 20% 0%, rgba(217,154,181,.08), transparent 60%); }
+  #astral-phone-overlay { position: static; display: flex; }
+  #astral-phone-overlay.active { display: flex; }
+</style>
+</head>
+<body>
+<script type="module">
+/* Минимальный стаб SillyTavern, чтобы прогнать реальные модули расширения */
+const chat_metadata = {};
+window.SillyTavern = {
+  getContext: () => ({
+    chat_metadata,
+    name2: 'Лиза Воронова',
+    characters: [{ name: 'Лиза Воронова' }],
+    characterId: 0,
+    chat: [],
+    updateChatMetadata: () => {},
+    getCurrentChatId: () => 'demo',
+    getRequestHeaders: () => ({ 'Content-Type': 'application/json' }),
+    eventSource: { on: () => {}, emit: () => {}, makeLast: () => {} },
+    event_types: {},
+    extension_prompt_types: { IN_CHAT: 1 },
+    messageFormatting: (t) => t,
+    setExtensionPrompt: () => {},
+    registerFunctionTool: () => {},
+    registerSlashCommand: () => {},
+  }),
+};
+window.jQuery = (fn) => fn && fn();
+
+const { PhoneCore } = await import('../apps/phone-core.js');
+const { PhoneStorage } = await import('../apps/storage.js');
+const { MessagesApp } = await import('../apps/messages.js');
+const { GalleryApp } = await import('../apps/gallery.js');
+const { SpicyApp } = await import('../apps/spicy.js');
+const { CreatorApp } = await import('../apps/creator.js');
+
+/* Заглушка генератора: возвращает градиентную картинку-плейсхолдер */
+class StubImageGen {
+  isAvailable() { return true; }
+  async generate(prompt) {
+    const c = document.createElement('canvas');
+    c.width = 512; c.height = 512;
+    const g = c.getContext('2d');
+    const grad = g.createLinearGradient(0, 0, 512, 512);
+    grad.addColorStop(0, '#2a1a26'); grad.addColorStop(1, '#4a2536');
+    g.fillStyle = grad; g.fillRect(0, 0, 512, 512);
+    g.fillStyle = 'rgba(217,154,181,.85)';
+    g.font = '22px sans-serif';
+    const words = String(prompt).split(' ');
+    let line = '', y = 200;
+    for (const w of words) {
+      if ((line + w).length > 24) { g.fillText(line, 40, y); y += 34; line = ''; }
+      line += w + ' ';
+    }
+    g.fillText(line, 40, y);
+    return c.toDataURL('image/png');
+  }
+}
+
+const ctx = window.SillyTavern.getContext();
+const storage = new PhoneStorage(ctx);
+const img = new StubImageGen();
+
+/* Наполняем демо-данными через настоящие обработчики событий */
+await storage.updateState('demo', {
+  messages: [
+    { character: 'Лиза Воронова', text: 'Ты не спишь?', timestamp: Date.now() - 360000 },
+    { character: 'Лиза Воронова', text: 'У меня руки дрожат с трёх ночи.', timestamp: Date.now() - 300000 },
+    { character: 'Лиза Воронова', text: 'Не надо. Просто говори со мной.', timestamp: Date.now() - 120000 },
+  ],
+  gallery: [
+    { character: 'Лиза Воронова', description: 'селфи в тёмной ванной, мокрые волосы, свет от телефона снизу', timestamp: Date.now() - 7200000, imageUrl: null },
+    { character: 'Лиза Воронова', description: 'окно, дождь, сигарета, силуэт', timestamp: Date.now() - 3600000, imageUrl: null },
+  ],
+  spicy: [
+    { character: 'Лиза Воронова', title: 'night routine', description: 'она в чёрном кружеве у зеркала, тёплый свет', timestamp: Date.now() - 86400000, thumbnailUrl: null, views: 12480, likes: 1342 },
+  ],
+  creator: {
+    posts: [{ caption: 'первый пост, не судите строго', description: 'она в шёлковом халате на подоконнике, утренний свет', timestamp: Date.now() - 43200000, imageUrl: null, likes: 87, comments: 12 }],
+    subscribers: 128, revenue: 940, fans: [],
+  },
+});
+
+const core = new PhoneCore(ctx, storage, img);
+core.registerApp('messages', new MessagesApp(ctx, storage, img));
+core.registerApp('gallery', new GalleryApp(ctx, storage, img));
+core.registerApp('spicy', new SpicyApp(ctx, storage, img));
+core.registerApp('creator', new CreatorApp(ctx, storage, img));
+core.open();
+
+window.__core = core;
+window.__astralPhoneCore = core;
+window.__storage = storage;
+</script>
+</body>
+</html>

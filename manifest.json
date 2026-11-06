@@ -3,7 +3,7 @@
   "loading_order": 120,
   "requires": [],
   "optional": ["third-party/haruspics-naistera"],
-  "js": "index.js",
+  "js": "astral-phone.js",
   "css": "style.css",
   "author": "diox3xin",
   "version": "1.0.0",

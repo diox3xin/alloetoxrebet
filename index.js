@@ -1,184 +1,267 @@
 /**
- * Astral Phone — main entry point
- * Registers function tools, injects UI button, initializes apps
+ * Astral Phone — SillyTavern extension entry point.
+ *
+ * Wires the phone shell into ST, registers the function tool the model calls,
+ * and provides a hidden-tag fallback for models without tool support.
  */
 
 import { PhoneCore } from './apps/phone-core.js';
+import { PhoneStorage } from './apps/storage.js';
+import { ImageGenerator } from './apps/image-gen.js';
 import { MessagesApp } from './apps/messages.js';
 import { GalleryApp } from './apps/gallery.js';
 import { SpicyApp } from './apps/spicy.js';
 import { CreatorApp } from './apps/creator.js';
-import { ImageGenerator } from './apps/image-gen.js';
-import { PhoneStorage } from './apps/storage.js';
 
 const MODULE_NAME = 'astral-phone';
+const EVENT_TAG_RE = /<phone-event\b([^>]*?)\/?>/gi;
+const ATTR_RE = /(\w+)\s*=\s*"([^"]*)"/g;
 
-let phoneCore = null;
+let core = null;
 let storage = null;
 let imageGen = null;
+let initialized = false;
 
-/**
- * Hook called during ST's blocking loader phase
- */
-window.onActivate = function() {
-    console.log('[Astral Phone] Activating...');
-};
+/* ────────────────────────────── prompt block ────────────────────────────── */
 
-/**
- * Main initialization after ST is fully loaded
- */
-async function initAstralPhone() {
+const PROMPT_BLOCK = `[Astral Phone — интерфейс телефона персонажа]
+
+У персонажа есть смартфон. Приложения: Messages (переписка), Gallery (фото), Spicy Hub (анонимная лента), Creator Studio (платный контент с подписчиками и доходом).
+
+Когда в сцене происходит то, что персонаж заснял бы, отправил или опубликовал — вызывай инструмент phone_event. Не описывай телефон в тексте ответа, просто вызывай инструмент.
+
+Типы событий:
+- photo_taken — персонаж сфотографировал что-то или сделал селфи. description = что именно на фото, конкретно и визуально (внешность, одежда, поза, место, свет) — это пойдёт в промпт генерации картинки.
+- message_received — персонаж написал тебе сообщение. description = текст сообщения.
+- spicy_posted — персонаж выложил откровенный ролик в Spicy Hub. description = название и суть ролика плюс визуальное описание кадра для превью.
+- content_posted — персонаж выложил пост в Creator Studio. description = подпись к посту плюс визуальное описание кадра.
+- donation_received — фанат задонатил. metadata.amount = сумма в долларах.
+- subscriber_joined — новый подписчик. metadata.count = сколько.
+
+Если инструменты недоступны, вместо вызова напиши тег, он будет вырезан из сообщения:
+<phone-event type="photo_taken" character="Имя" description="описание" />
+
+description пиши как промпт для художника: без мета-комментариев, без слов «фото» и «картинка».`;
+
+/* ────────────────────────────── init ────────────────────────────── */
+
+function init() {
+    if (initialized) return;
     const context = SillyTavern.getContext();
-    
-    // Initialize storage
+
     storage = new PhoneStorage(context);
-    
-    // Initialize image generator (haruspics bridge)
     imageGen = new ImageGenerator(context);
-    
-    // Initialize phone core
-    phoneCore = new PhoneCore(context, storage, imageGen);
-    
-    // Register apps
-    phoneCore.registerApp('messages', new MessagesApp(context, storage, imageGen));
-    phoneCore.registerApp('gallery', new GalleryApp(context, storage, imageGen));
-    phoneCore.registerApp('spicy', new SpicyApp(context, storage, imageGen));
-    phoneCore.registerApp('creator', new CreatorApp(context, storage, imageGen));
-    
-    // Inject phone button into ST header
-    injectPhoneButton(context);
-    
-    // Register function tools for model communication
-    registerFunctionTools(context);
-    
-    // Register slash commands (fallback / debug)
+
+    core = new PhoneCore(context, storage, imageGen);
+    core.registerApp('messages', new MessagesApp(context, storage, imageGen));
+    core.registerApp('gallery', new GalleryApp(context, storage, imageGen));
+    core.registerApp('spicy', new SpicyApp(context, storage, imageGen));
+    core.registerApp('creator', new CreatorApp(context, storage, imageGen));
+
+    window.__astralPhoneCore = core;
+    injectLauncher();
+    registerFunctionTool(context);
     registerSlashCommands(context);
-    
-    console.log('[Astral Phone] Initialized');
+    registerEventTagFallback(context);
+    injectPromptBlock(context);
+
+    initialized = true;
+    console.log('[Astral Phone] ready');
 }
 
-/**
- * Inject phone button into ST chat header
- */
-function injectPhoneButton(context) {
-    const { eventSource, event_types } = context;
-    
-    // Wait for chat to be ready
-    eventSource.on(event_types.APP_INITIALIZED, () => {
-        // Find the header buttons container (varies by ST version)
-        const headerSelectors = [
-            '#extensionsMenu',
-            '.mes_buttons',
-            '#top-bar .menu_buttons'
-        ];
-        
-        let container = null;
-        for (const sel of headerSelectors) {
-            container = document.querySelector(sel);
-            if (container) break;
-        }
-        
-        if (!container) {
-            console.warn('[Astral Phone] Could not find header to inject button');
-            return;
-        }
-        
-        const btn = document.createElement('div');
-        btn.id = 'astral-phone-btn';
-        btn.className = 'menu_button';
-        btn.innerHTML = '📱';
-        btn.title = 'Open Phone';
-        btn.style.cssText = 'cursor: pointer; font-size: 18px;';
-        
-        btn.addEventListener('click', () => {
-            phoneCore.open();
-        });
-        
-        container.appendChild(btn);
-    });
+/* ────────────────────────────── launcher button ────────────────────────────── */
+
+function injectLauncher() {
+    if (document.getElementById('astral-phone-launcher')) return;
+
+    const btn = document.createElement('div');
+    btn.id = 'astral-phone-launcher';
+    btn.title = 'Открыть телефон';
+    btn.innerHTML = '<span>📱</span>';
+    btn.addEventListener('click', () => core.toggle());
+    document.body.appendChild(btn);
+
+    const menu = document.getElementById('extensionsMenu');
+    if (menu) {
+        const item = document.createElement('div');
+        item.className = 'list-group-item flex-container flexGap5 interactable';
+        item.tabIndex = 0;
+        item.innerHTML = '<div class="fa-solid fa-mobile-screen extensionsMenuExtensionButton"></div><span>Astral Phone</span>';
+        item.addEventListener('click', () => core.toggle());
+        menu.appendChild(item);
+    }
 }
 
-/**
- * Register function tools for model communication
- */
-function registerFunctionTools(context) {
-    const { registerFunctionTool } = context;
-    
-    // Main event dispatcher
-    registerFunctionTool({
+/* ────────────────────────────── function tool ────────────────────────────── */
+
+function registerFunctionTool(context) {
+    if (typeof context.registerFunctionTool !== 'function') {
+        console.warn('[Astral Phone] registerFunctionTool unavailable — using tag fallback only');
+        return;
+    }
+
+    context.registerFunctionTool({
         name: 'phone_event',
         displayName: 'Phone Event',
-        description: 'Send event to character\'s phone (photo taken, message received, content posted, etc)',
+        description:
+            'Записать событие в смартфон персонажа: фото, сообщение, пост в Spicy Hub или Creator Studio, донат, подписка. ' +
+            'description всегда должен быть визуальным описанием, пригодным как промпт для генерации изображения.',
         parameters: {
             $schema: 'http://json-schema.org/draft-04/schema#',
             type: 'object',
             properties: {
                 type: {
                     type: 'string',
-                    enum: ['photo_taken', 'message_received', 'content_posted', 'donation_received', 'subscriber_joined'],
-                    description: 'Event type'
+                    enum: [
+                        'photo_taken',
+                        'message_received',
+                        'spicy_posted',
+                        'content_posted',
+                        'donation_received',
+                        'subscriber_joined',
+                    ],
+                    description: 'Тип события',
                 },
-                character: {
-                    type: 'string',
-                    description: 'Character name'
-                },
+                character: { type: 'string', description: 'Имя персонажа' },
                 description: {
                     type: 'string',
-                    description: 'Brief description for image generation prompt or message content'
+                    description: 'Текст сообщения либо визуальное описание кадра',
                 },
                 metadata: {
                     type: 'object',
-                    description: 'Additional event data (e.g. amount for donation, platform for content_posted)'
-                }
+                    description: 'Доп. данные: amount для доната, count для подписки, title для ролика',
+                    properties: {
+                        amount: { type: 'number' },
+                        count: { type: 'number' },
+                        title: { type: 'string' },
+                    },
+                },
             },
-            required: ['type', 'character', 'description']
+            required: ['type', 'description'],
         },
         action: async (args) => {
             try {
-                const result = await phoneCore.handleEvent(args);
+                const result = await core.handleEvent(args);
                 return JSON.stringify(result);
             } catch (err) {
-                console.error('[Astral Phone] Function tool error:', err);
-                return JSON.stringify({ success: false, error: err.message });
+                console.error('[Astral Phone] tool action failed:', err);
+                return JSON.stringify({ success: false, error: String(err?.message || err) });
             }
+        },
+    });
+}
+
+/* ────────────────────────────── tag fallback ────────────────────────────── */
+
+function parseAttrs(str) {
+    const out = {};
+    let m;
+    ATTR_RE.lastIndex = 0;
+    while ((m = ATTR_RE.exec(str))) out[m[1]] = m[2];
+    return out;
+}
+
+function registerEventTagFallback(context) {
+    const { eventSource, event_types } = context;
+
+    eventSource.on(event_types.MESSAGE_RECEIVED, (messageId) => {
+        try {
+            const message = context.chat?.[messageId];
+            if (!message || message.is_user) return;
+
+            const text = message.mes || '';
+            if (!text.includes('<phone-event')) return;
+
+            EVENT_TAG_RE.lastIndex = 0;
+            let match;
+            while ((match = EVENT_TAG_RE.exec(text))) {
+                const attrs = parseAttrs(match[1]);
+                if (!attrs.type) continue;
+                core.handleEvent({
+                    type: attrs.type,
+                    character: attrs.character || context.name2 || '',
+                    description: attrs.description || '',
+                });
+            }
+
+            message.mes = text.replace(EVENT_TAG_RE, '').trim();
+            const el = document.querySelector(`#chat .mes[mesid="${messageId}"] .mes_text`);
+            if (el) {
+                el.innerHTML = context.messageFormatting(
+                    message.mes,
+                    message.name,
+                    message.is_system,
+                    message.is_user,
+                    messageId,
+                );
+            }
+        } catch (err) {
+            console.warn('[Astral Phone] tag fallback error:', err);
         }
     });
 }
 
-/**
- * Register slash commands (fallback path)
- */
-function registerSlashCommands(context) {
-    const { registerSlashCommand } = context;
-    
-    registerSlashCommand('phone', (args) => {
-        if (!args || !args.trim()) {
-            phoneCore.open();
-            return '';
-        }
-        
-        const [action, ...rest] = args.trim().split(/\s+/);
-        
-        if (action === 'open') {
-            phoneCore.open();
-        } else if (action === 'close') {
-            phoneCore.close();
-        } else if (action === 'event') {
-            // /phone event {"type":"photo_taken","character":"Lisa","description":"..."}
-            try {
-                const eventData = JSON.parse(rest.join(' '));
-                phoneCore.handleEvent(eventData);
-            } catch (err) {
-                console.error('[Astral Phone] Invalid event JSON:', err);
-            }
-        }
-        
-        return '';
-    }, [], 'Open phone or send phone event');
+/* ────────────────────────────── prompt injection ────────────────────────────── */
+
+function injectPromptBlock(context) {
+    try {
+        context.setExtensionPrompt(
+            MODULE_NAME,
+            PROMPT_BLOCK,
+            context.extension_prompt_types?.IN_CHAT ?? 1,
+            1,
+            false,
+        );
+    } catch (err) {
+        console.warn('[Astral Phone] prompt injection failed:', err);
+    }
 }
 
-// Initialize when ST is ready
+/* ────────────────────────────── slash commands ────────────────────────────── */
+
+function registerSlashCommands(context) {
+    if (typeof context.registerSlashCommand !== 'function') return;
+
+    context.registerSlashCommand(
+        'phone',
+        async (args) => {
+            const arg = String(args || '').trim();
+
+            if (!arg || arg === 'open') {
+                core.open();
+                return '';
+            }
+            if (arg === 'close') {
+                core.close();
+                return '';
+            }
+            if (arg === 'reset') {
+                storage.reset();
+                if (window.toastr) toastr.success('Телефон очищен');
+                return '';
+            }
+            if (arg.startsWith('event ')) {
+                try {
+                    const data = JSON.parse(arg.slice(6));
+                    const res = await core.handleEvent(data);
+                    return JSON.stringify(res);
+                } catch (err) {
+                    if (window.toastr) toastr.error(`Неверный JSON: ${err.message}`);
+                    return '';
+                }
+            }
+            return '';
+        },
+        [],
+        'Открыть телефон персонажа. /phone open | close | reset | event {"type":"photo_taken",...}',
+        true,
+        true,
+    );
+}
+
+/* ────────────────────────────── boot ────────────────────────────── */
+
 jQuery(async () => {
     const context = SillyTavern.getContext();
-    context.eventSource.on(context.event_types.APP_INITIALIZED, initAstralPhone);
+    context.eventSource.on(context.event_types.APP_INITIALIZED, init);
 });
