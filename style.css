@@ -1177,9 +1177,22 @@
 
 
 
+/* Tablet */
 @media (max-width: 1000px) {
   #astral-phone-launcher { right: 12px; bottom: 132px; width: 48px; height: 48px; }
   #astral-phone-overlay { padding: 0; }
+
+/* Mobile */
+@media (max-width: 768px) {
+  #astral-phone-launcher {
+    right: 12px;
+    bottom: auto;
+    top: 12px;
+    width: 48px;
+    height: 48px;
+    z-index: 10000;
+  }
+}
   .astral-phone {
     width: 100vw;
     height: 100vh;
