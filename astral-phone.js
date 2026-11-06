@@ -2018,12 +2018,12 @@ REPLY (text only):`;
                     <div>\u041F\u043E\u043A\u0430 \u043F\u0443\u0441\u0442\u043E</div>
                     <div style="margin-top:10px;opacity:.7">\u0424\u043E\u0442\u043E \u043F\u043E\u044F\u0432\u044F\u0442\u0441\u044F, \u043A\u043E\u0433\u0434\u0430 \u043F\u0435\u0440\u0441\u043E\u043D\u0430\u0436 \u0447\u0442\u043E-\u043D\u0438\u0431\u0443\u0434\u044C \u0441\u043D\u0438\u043C\u0435\u0442</div>
                 </div>`;
-        return;
+      } else {
+        const grid = document.createElement("div");
+        grid.className = "astral-gallery-grid";
+        photos.forEach((photo, idx) => this._renderTile(grid, photo, idx));
+        container.appendChild(grid);
       }
-      const grid = document.createElement("div");
-      grid.className = "astral-gallery-grid";
-      photos.forEach((photo, idx) => this._renderTile(grid, photo, idx));
-      container.appendChild(grid);
       container.appendChild(this._buildActions(photos));
     }
     _renderTile(grid, photo, idx) {
@@ -2061,6 +2061,17 @@ REPLY (text only):`;
     _buildActions(photos) {
       const bar = document.createElement("div");
       bar.className = "astral-action-bar";
+      const takeBtn = document.createElement("button");
+      takeBtn.className = "astral-btn astral-btn-wide";
+      takeBtn.textContent = "\u{1F4F8} \u0421\u0434\u0435\u043B\u0430\u0442\u044C \u0441\u043D\u0438\u043C\u043E\u043A";
+      takeBtn.addEventListener("click", async () => {
+        takeBtn.disabled = true;
+        takeBtn.textContent = "\u0421\u043D\u0438\u043C\u0430\u044E\u2026";
+        await this._takePhoto();
+        takeBtn.disabled = false;
+        takeBtn.textContent = "\u{1F4F8} \u0421\u0434\u0435\u043B\u0430\u0442\u044C \u0441\u043D\u0438\u043C\u043E\u043A";
+      });
+      bar.appendChild(takeBtn);
       const pending = photos.filter((p) => !p.imageUrl).length;
       const label = pending > 1 ? `\u0421\u043E\u0437\u0434\u0430\u0442\u044C \u0432\u0441\u0435 \u0444\u043E\u0442\u043E (${pending})` : "\u0421\u043E\u0437\u0434\u0430\u0442\u044C \u0444\u043E\u0442\u043E";
       const btn = document.createElement("button");
@@ -2077,6 +2088,50 @@ REPLY (text only):`;
       });
       bar.appendChild(btn);
       return bar;
+    }
+    /** Generate a photo description as if the character took a selfie/photo right now. */
+    async _takePhoto() {
+      try {
+        const ctx = this.context || globalThis.SillyTavern?.getContext?.() || {};
+        const genFn = ctx.generateQuietPrompt;
+        if (typeof genFn !== "function") {
+          this._toast("generateQuietPrompt \u043D\u0435\u0434\u043E\u0441\u0442\u0443\u043F\u0435\u043D", "error");
+          return;
+        }
+        const charName = ctx.name2 || "\u043F\u0435\u0440\u0441\u043E\u043D\u0430\u0436";
+        const messages = (this.storage.getState()?.messages || []).slice(-4).map((m) => `${m.from === "me" ? "\u0422\u044B" : m.character || "\u041A\u043E\u043D\u0442\u0430\u043A\u0442"}: ${m.text}`).join("\n");
+        const prompt = `[TAKE_SELFIE] You are ${charName}.
+
+You just took a photo/selfie. Describe what you see in the photo as if you're looking at it \u2014 what's the mood, the setting, your expression, the light, what's happening around you. Be casual and natural, like a real photo caption or internal thought.
+
+Context of what's happening:
+${messages || "(no messages)"}
+
+Write a SHORT photo description (1-2 sentences), like Instagram caption or photo note. In character.
+
+DESCRIPTION:`;
+        const description = await genFn(prompt, false, false);
+        const text = String(description || "").trim().slice(0, 200);
+        if (!text) {
+          this._toast("\u041D\u0435 \u0443\u0434\u0430\u043B\u043E\u0441\u044C \u0441\u043D\u044F\u0442\u044C \u0444\u043E\u0442\u043E", "error");
+          return;
+        }
+        const state = this.storage.getState();
+        if (!Array.isArray(state.gallery)) state.gallery = [];
+        state.gallery.push({
+          id: `photo_${Date.now()}_${Math.random().toString(36).slice(2, 7)}`,
+          description: text,
+          imageUrl: null,
+          timestamp: Date.now(),
+          source: "selfie"
+        });
+        this.storage.save();
+        this._toast("\u0421\u043D\u0438\u043C\u043E\u043A \u0434\u043E\u0431\u0430\u0432\u043B\u0435\u043D \u0432 \u0433\u0430\u043B\u0435\u0440\u0435\u044E");
+        this.render(document.querySelector(".astral-phone-body"));
+      } catch (err) {
+        console.error("[Astral Phone] takePhoto failed:", err);
+        this._toast(`\u041E\u0448\u0438\u0431\u043A\u0430: ${err.message}`, "error");
+      }
     }
     async _generate(index, silent = false) {
       if (!this.imageGen.isAvailable()) {
@@ -3425,6 +3480,7 @@ description \u043F\u0438\u0448\u0438 \u043A\u0430\u043A \u043F\u0440\u043E\u043C
       ["chat switch", registerChatSwitchHandler],
       ["contact seeder", registerContactSeeder],
       ["activity counter", registerActivityCounter],
+      ["slash command", registerSlashCommand],
       ["prompt block", injectPromptBlock]
     ]) {
       try {
@@ -3443,19 +3499,60 @@ description \u043F\u0438\u0448\u0438 \u043A\u0430\u043A \u043F\u0440\u043E\u043C
     btn.id = "astral-phone-launcher";
     btn.title = "\u041E\u0442\u043A\u0440\u044B\u0442\u044C \u0442\u0435\u043B\u0435\u0444\u043E\u043D";
     btn.innerHTML = "<span>\u{1F4F1}</span>";
-    btn.addEventListener("click", () => core.toggle());
+    const saved = localStorage.getItem("astral_phone_launcher_pos");
+    const pos = saved ? JSON.parse(saved) : { x: window.innerWidth - 90, y: window.innerHeight - 150 };
+    btn.style.left = pos.x + "px";
+    btn.style.top = pos.y + "px";
+    btn.style.right = "auto";
+    btn.style.bottom = "auto";
+    let isDragging = false;
+    let dragOffsetX = 0;
+    let dragOffsetY = 0;
+    btn.addEventListener("click", () => {
+      if (!isDragging) core.toggle();
+    });
+    btn.addEventListener("mousedown", (e) => {
+      isDragging = false;
+      dragOffsetX = e.clientX - btn.offsetLeft;
+      dragOffsetY = e.clientY - btn.offsetTop;
+    });
+    document.addEventListener("mousemove", (e) => {
+      if (e.buttons === 0) return;
+      isDragging = true;
+      const x = Math.max(0, Math.min(e.clientX - dragOffsetX, window.innerWidth - 54));
+      const y = Math.max(0, Math.min(e.clientY - dragOffsetY, window.innerHeight - 54));
+      btn.style.left = x + "px";
+      btn.style.top = y + "px";
+      localStorage.setItem("astral_phone_launcher_pos", JSON.stringify({ x, y }));
+    });
+    btn.addEventListener("touchstart", (e) => {
+      isDragging = false;
+      const touch = e.touches[0];
+      dragOffsetX = touch.clientX - btn.offsetLeft;
+      dragOffsetY = touch.clientY - btn.offsetTop;
+    });
+    document.addEventListener("touchmove", (e) => {
+      if (!e.touches.length) return;
+      isDragging = true;
+      const touch = e.touches[0];
+      const x = Math.max(0, Math.min(touch.clientX - dragOffsetX, window.innerWidth - 54));
+      const y = Math.max(0, Math.min(touch.clientY - dragOffsetY, window.innerHeight - 54));
+      btn.style.left = x + "px";
+      btn.style.top = y + "px";
+      localStorage.setItem("astral_phone_launcher_pos", JSON.stringify({ x, y }));
+    }, { passive: true });
     document.body.appendChild(btn);
-    const menu = document.getElementById("extensionsMenu");
-    if (menu) {
-      const item = document.createElement("div");
-      item.className = "list-group-item flex-container flexGap5 interactable";
-      item.tabIndex = 0;
-      item.innerHTML = '<div class="fa-solid fa-mobile-screen extensionsMenuExtensionButton"></div><span>Astral Phone</span>';
-      item.addEventListener("click", () => core.toggle());
-      menu.appendChild(item);
-    }
   }
   __name(injectLauncher, "injectLauncher");
+  var menu = document.getElementById("extensionsMenu");
+  if (menu) {
+    const item = document.createElement("div");
+    item.className = "list-group-item flex-container flexGap5 interactable";
+    item.tabIndex = 0;
+    item.innerHTML = '<div class="fa-solid fa-mobile-screen extensionsMenuExtensionButton"></div><span>Astral Phone</span>';
+    item.addEventListener("click", () => core.toggle());
+    menu.appendChild(item);
+  }
   function registerFunctionTool(context) {
     if (typeof context.registerFunctionTool !== "function") {
       console.warn("[Astral Phone] registerFunctionTool unavailable \u2014 using tag fallback only");
@@ -3555,6 +3652,26 @@ description \u043F\u0438\u0448\u0438 \u043A\u0430\u043A \u043F\u0440\u043E\u043C
     });
   }
   __name(registerEventTagFallback, "registerEventTagFallback");
+  function registerSlashCommand(context) {
+    const { SlashCommandParser } = context;
+    if (!SlashCommandParser) return;
+    SlashCommandParser.addCommand(
+      "astral",
+      () => {
+        try {
+          core?.toggle?.();
+          return "\u0422\u0435\u043B\u0435\u0444\u043E\u043D \u043E\u0442\u043A\u0440\u044B\u0442";
+        } catch (err) {
+          return `\u041E\u0448\u0438\u0431\u043A\u0430: ${err.message}`;
+        }
+      },
+      [],
+      "\u041E\u0442\u043A\u0440\u044B\u0442\u044C Astral Phone",
+      true,
+      true
+    );
+  }
+  __name(registerSlashCommand, "registerSlashCommand");
   function registerChatSwitchHandler(context) {
     const { eventSource, event_types } = context;
     if (!eventSource || !event_types) return;

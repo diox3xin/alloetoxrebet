@@ -177,15 +177,15 @@ function injectLauncher() {
     document.body.appendChild(btn);
 }
 
+// Register menu item
 const menu = document.getElementById('extensionsMenu');
-    if (menu) {
-        const item = document.createElement('div');
-        item.className = 'list-group-item flex-container flexGap5 interactable';
-        item.tabIndex = 0;
-        item.innerHTML = '<div class="fa-solid fa-mobile-screen extensionsMenuExtensionButton"></div><span>Astral Phone</span>';
-        item.addEventListener('click', () => core.toggle());
-        menu.appendChild(item);
-    }
+if (menu) {
+    const item = document.createElement('div');
+    item.className = 'list-group-item flex-container flexGap5 interactable';
+    item.tabIndex = 0;
+    item.innerHTML = '<div class="fa-solid fa-mobile-screen extensionsMenuExtensionButton"></div><span>Astral Phone</span>';
+    item.addEventListener('click', () => core.toggle());
+    menu.appendChild(item);
 }
 
 /* ────────────────────────────── function tool ────────────────────────────── */
