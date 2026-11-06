@@ -673,7 +673,7 @@
 
   // apps/character-book.js
   var MODULE = "[AstralCharBook]";
-  var SETTINGS_KEY = "astral_phone";
+  var SETTINGS_KEY = "astral-phone";
   function loadCharacters() {
     try {
       const bag = globalThis.extension_settings;
@@ -685,7 +685,7 @@
         aliases: String(row.aliases || "").trim(),
         appearance: String(row.appearance || "").trim(),
         enabled: row.enabled !== false
-      })).filter((row) => row.name && row.appearance);
+      }));
     } catch (err) {
       console.warn(`${MODULE} load failed:`, err?.message || err);
       return [];
@@ -695,7 +695,7 @@
   function saveCharacters(list) {
     try {
       const ctx = globalThis.SillyTavern?.getContext?.();
-      const bag = globalThis.extension_settings || ctx?.extensionSettings;
+      const bag = ctx?.extensionSettings || globalThis.extension_settings;
       if (!bag) throw new Error("extension_settings \u043D\u0435\u0434\u043E\u0441\u0442\u0443\u043F\u0435\u043D");
       if (!bag[SETTINGS_KEY]) bag[SETTINGS_KEY] = {};
       bag[SETTINGS_KEY].characters = (list || []).map((row) => ({
@@ -704,11 +704,8 @@
         appearance: row.appearance || "",
         enabled: row.enabled !== false
       }));
-      if (typeof ctx?.saveSettingsDebounced === "function") {
-        ctx.saveSettingsDebounced();
-      } else if (typeof globalThis.saveSettingsDebounced === "function") {
-        globalThis.saveSettingsDebounced();
-      }
+      const persist = ctx?.saveSettingsDebounced || globalThis.saveSettingsDebounced || ctx?.saveSettings;
+      if (typeof persist === "function") persist();
       return true;
     } catch (err) {
       console.warn(`${MODULE} save failed:`, err?.message || err);
@@ -747,6 +744,7 @@
     const names = [];
     for (const row of list) {
       if (!row.enabled) continue;
+      if (!row.name || !row.appearance) continue;
       const hit = keysOf(row).some((key) => mentions(text, key));
       if (!hit) continue;
       if (!appearance.includes(row.appearance)) {
@@ -798,6 +796,14 @@
     `;
   }
   __name(renderCharacterBookHTML, "renderCharacterBookHTML");
+  function reRender(root, onChange) {
+    const host = root.querySelector(".astral-charbook");
+    if (!host) return;
+    host.outerHTML = renderCharacterBookHTML();
+    bindCharacterBook(root, onChange);
+    onChange?.(loadCharacters());
+  }
+  __name(reRender, "reRender");
   function bindCharacterBook(root, onChange) {
     const book = root?.querySelector(".astral-charbook");
     if (!book) return;
@@ -817,25 +823,21 @@
     book.querySelectorAll(".astral-charbook-name, .astral-charbook-aliases, .astral-charbook-appearance").forEach((el) => el.addEventListener("input", commit));
     book.querySelectorAll(".astral-charbook-enabled").forEach((el) => el.addEventListener("change", commit));
     book.querySelectorAll(".astral-charbook-remove").forEach((btn) => {
-      btn.addEventListener("click", () => {
+      btn.addEventListener("click", (e) => {
+        e.preventDefault();
         const i = Number(btn.dataset.i);
         const list = loadCharacters();
         list.splice(i, 1);
         saveCharacters(list);
-        const host = root.querySelector(".astral-charbook");
-        if (host) host.outerHTML = renderCharacterBookHTML();
-        bindCharacterBook(root, onChange);
-        onChange?.(loadCharacters());
+        reRender(root, onChange);
       });
     });
-    book.querySelector(".astral-charbook-add")?.addEventListener("click", () => {
+    book.querySelector(".astral-charbook-add")?.addEventListener("click", (e) => {
+      e.preventDefault();
       const list = loadCharacters();
       list.push({ name: "", aliases: "", appearance: "", enabled: true });
       saveCharacters(list);
-      const host = root.querySelector(".astral-charbook");
-      if (host) host.outerHTML = renderCharacterBookHTML();
-      bindCharacterBook(root, onChange);
-      onChange?.(loadCharacters());
+      reRender(root, onChange);
       const rows = root.querySelectorAll(".astral-charbook-row");
       rows[rows.length - 1]?.querySelector(".astral-charbook-name")?.focus();
     });

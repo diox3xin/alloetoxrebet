@@ -13,7 +13,12 @@
 const MODULE = '[AstralCharBook]';
 
 /** Ключ в extension_settings. */
-export const SETTINGS_KEY = 'astral_phone';
+/**
+ * Ключ в extension_settings. Должен совпадать с MODULE_NAME в index.js
+ * ('astral-phone') — иначе справочник пишется в один объект настроек,
+ * а панель читает другой, и кнопки выглядят нерабочими.
+ */
+export const SETTINGS_KEY = 'astral-phone';
 
 /* ─────────────────────────── хранилище ─────────────────────────── */
 
@@ -36,8 +41,7 @@ export function loadCharacters() {
                 aliases: String(row.aliases || '').trim(),
                 appearance: String(row.appearance || '').trim(),
                 enabled: row.enabled !== false,
-            }))
-            .filter(row => row.name && row.appearance);
+            }));
     } catch (err) {
         console.warn(`${MODULE} load failed:`, err?.message || err);
         return [];
@@ -48,7 +52,9 @@ export function loadCharacters() {
 export function saveCharacters(list) {
     try {
         const ctx = globalThis.SillyTavern?.getContext?.();
-        const bag = globalThis.extension_settings || ctx?.extensionSettings;
+        // ctx.extensionSettings — тот же объект, что и глобальный extension_settings,
+        // но берём его первым: глобал отсутствует в некоторых сборках.
+        const bag = ctx?.extensionSettings || globalThis.extension_settings;
         if (!bag) throw new Error('extension_settings недоступен');
 
         if (!bag[SETTINGS_KEY]) bag[SETTINGS_KEY] = {};
@@ -60,11 +66,10 @@ export function saveCharacters(list) {
         }));
 
         // Персистим через штатный механизм ST
-        if (typeof ctx?.saveSettingsDebounced === 'function') {
-            ctx.saveSettingsDebounced();
-        } else if (typeof globalThis.saveSettingsDebounced === 'function') {
-            globalThis.saveSettingsDebounced();
-        }
+        const persist = ctx?.saveSettingsDebounced
+            || globalThis.saveSettingsDebounced
+            || ctx?.saveSettings;
+        if (typeof persist === 'function') persist();
         return true;
     } catch (err) {
         console.warn(`${MODULE} save failed:`, err?.message || err);
@@ -125,6 +130,7 @@ export function matchCharacters(prompt) {
 
     for (const row of list) {
         if (!row.enabled) continue;
+        if (!row.name || !row.appearance) continue;   // незаполненная запись
         const hit = keysOf(row).some(key => mentions(text, key));
         if (!hit) continue;
         if (!appearance.includes(row.appearance)) {
@@ -203,6 +209,15 @@ export function renderCharacterBookHTML() {
     `;
 }
 
+/** Перерисовка справочника с перепривязкой обработчиков. */
+function reRender(root, onChange) {
+    const host = root.querySelector('.astral-charbook');
+    if (!host) return;
+    host.outerHTML = renderCharacterBookHTML();
+    bindCharacterBook(root, onChange);
+    onChange?.(loadCharacters());
+}
+
 /**
  * Навешивает обработчики на отрендеренный справочник.
  * @param {HTMLElement} root контейнер, внутри которого лежит .astral-charbook
@@ -233,28 +248,24 @@ export function bindCharacterBook(root, onChange) {
         .forEach(el => el.addEventListener('change', commit));
 
     book.querySelectorAll('.astral-charbook-remove').forEach(btn => {
-        btn.addEventListener('click', () => {
+        btn.addEventListener('click', (e) => {
+            e.preventDefault();
             const i = Number(btn.dataset.i);
             const list = loadCharacters();
             list.splice(i, 1);
             saveCharacters(list);
-
-            const host = root.querySelector('.astral-charbook');
-            if (host) host.outerHTML = renderCharacterBookHTML();
-            bindCharacterBook(root, onChange);
-            onChange?.(loadCharacters());
+            reRender(root, onChange);
         });
     });
 
-    book.querySelector('.astral-charbook-add')?.addEventListener('click', () => {
+    book.querySelector('.astral-charbook-add')?.addEventListener('click', (e) => {
+        e.preventDefault();
+
         const list = loadCharacters();
         list.push({ name: '', aliases: '', appearance: '', enabled: true });
         saveCharacters(list);
 
-        const host = root.querySelector('.astral-charbook');
-        if (host) host.outerHTML = renderCharacterBookHTML();
-        bindCharacterBook(root, onChange);
-        onChange?.(loadCharacters());
+        reRender(root, onChange);
 
         // фокус в новое имя
         const rows = root.querySelectorAll('.astral-charbook-row');
