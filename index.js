@@ -117,10 +117,77 @@ function injectLauncher() {
 
     const btn = document.createElement('div');
     btn.id = 'astral-phone-launcher';
-    btn.title = 'Открыть телефон';
+    btn.title = 'Открыть телефон (перетащи для движения)';
     btn.innerHTML = '<span>📱</span>';
-    btn.addEventListener('click', () => core.toggle());
+    
+    // Click to toggle
+    btn.addEventListener('click', (e) => {
+        if (!e.target._dragged) core.toggle();
+    });
+
+    // ── draggable ──
+    let isDragging = false;
+    let startX = 0, startY = 0;
+    let offsetX = 0, offsetY = 0;
+
+    btn.addEventListener('mousedown', (e) => {
+        isDragging = true;
+        e.target._dragged = false;
+        startX = e.clientX - btn.offsetLeft;
+        startY = e.clientY - btn.offsetTop;
+        btn.style.cursor = 'grabbing';
+    });
+
+    document.addEventListener('mousemove', (e) => {
+        if (!isDragging) return;
+        e.target._dragged = true;
+        offsetX = e.clientX - startX;
+        offsetY = e.clientY - startY;
+
+        // Clamp to viewport
+        offsetX = Math.max(0, Math.min(offsetX, window.innerWidth - btn.offsetWidth));
+        offsetY = Math.max(0, Math.min(offsetY, window.innerHeight - btn.offsetHeight));
+
+        btn.style.left = offsetX + 'px';
+        btn.style.right = 'auto';
+        btn.style.top = offsetY + 'px';
+        btn.style.bottom = 'auto';
+    });
+
+    document.addEventListener('mouseup', () => {
+        isDragging = false;
+        btn.style.cursor = 'grab';
+    });
+
+    // Touch support
+    btn.addEventListener('touchstart', (e) => {
+        isDragging = true;
+        const touch = e.touches[0];
+        startX = touch.clientX - btn.offsetLeft;
+        startY = touch.clientY - btn.offsetTop;
+    });
+
+    document.addEventListener('touchmove', (e) => {
+        if (!isDragging) return;
+        const touch = e.touches[0];
+        offsetX = touch.clientX - startX;
+        offsetY = touch.clientY - startY;
+
+        offsetX = Math.max(0, Math.min(offsetX, window.innerWidth - btn.offsetWidth));
+        offsetY = Math.max(0, Math.min(offsetY, window.innerHeight - btn.offsetHeight));
+
+        btn.style.left = offsetX + 'px';
+        btn.style.right = 'auto';
+        btn.style.top = offsetY + 'px';
+        btn.style.bottom = 'auto';
+    });
+
+    document.addEventListener('touchend', () => {
+        isDragging = false;
+    });
+
     document.body.appendChild(btn);
+}
 
     const menu = document.getElementById('extensionsMenu');
     if (menu) {

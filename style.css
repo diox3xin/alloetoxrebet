@@ -1177,31 +1177,16 @@
 
 
 
-/* Tablet */
+/* Tablet & Mobile */
 @media (max-width: 1000px) {
-  #astral-phone-launcher { right: 12px; bottom: 132px; width: 48px; height: 48px; }
-  #astral-phone-overlay { padding: 0; }
-
-/* Mobile */
-@media (max-width: 768px) {
-  #astral-phone-launcher {
-    right: 12px;
-    bottom: auto;
-    top: 12px;
-    width: 48px;
-    height: 48px;
-    z-index: 10000;
-  }
-}
+  #astral-phone-launcher { right: 12px; bottom: 132px; width: 48px; height: 48px; cursor: grab; }
+  #astral-phone-launcher:active { cursor: grabbing; }
+  #astral-phone-overlay { padding: 8px; }
   .astral-phone {
-    width: 100vw;
-    height: 100vh;
-    height: 100dvh;
-    border-radius: 0;
-    border: none;
+    max-width: 90vw;
+    max-height: 90vh;
+    border-radius: 24px;
   }
-  .astral-phone-notch { display: none; }
-  .astral-phone-statusbar { padding-top: 10px; }
 }
 
 /* ── creator: post actions, comments, composer ────────────── */
