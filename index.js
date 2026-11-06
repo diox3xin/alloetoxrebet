@@ -113,89 +113,70 @@ function init() {
 /* ────────────────────────────── launcher button ────────────────────────────── */
 
 function injectLauncher() {
-    console.log('[Astral Phone] injectLauncher called');
-    if (document.getElementById('astral-phone-launcher')) {
-        console.log('[Astral Phone] launcher already exists');
-        return;
-    }
+    if (document.getElementById('astral-phone-launcher')) return;
 
     const btn = document.createElement('div');
     btn.id = 'astral-phone-launcher';
-    btn.title = 'Открыть телефон (перетащи для движения)';
+    btn.title = 'Открыть телефон';
     btn.innerHTML = '<span>📱</span>';
-    console.log('[Astral Phone] launcher created:', btn);
     
-    // Click to toggle
-    btn.addEventListener('click', (e) => {
-        if (!e.target._dragged) core.toggle();
+    // Load saved position or use defaults
+    const saved = localStorage.getItem('astral_phone_launcher_pos');
+    const pos = saved ? JSON.parse(saved) : { x: window.innerWidth - 90, y: window.innerHeight - 150 };
+    btn.style.left = pos.x + 'px';
+    btn.style.top = pos.y + 'px';
+    btn.style.right = 'auto';
+    btn.style.bottom = 'auto';
+
+    let isDragging = false;
+    let dragOffsetX = 0;
+    let dragOffsetY = 0;
+
+    // Single click = toggle phone
+    btn.addEventListener('click', () => {
+        if (!isDragging) core.toggle();
     });
 
-    // ── draggable ──
-    let isDragging = false;
-    let startX = 0, startY = 0;
-    let offsetX = 0, offsetY = 0;
-
+    // Mouse drag
     btn.addEventListener('mousedown', (e) => {
-        isDragging = true;
-        e.target._dragged = false;
-        startX = e.clientX - btn.offsetLeft;
-        startY = e.clientY - btn.offsetTop;
-        btn.style.cursor = 'grabbing';
+        isDragging = false;
+        dragOffsetX = e.clientX - btn.offsetLeft;
+        dragOffsetY = e.clientY - btn.offsetTop;
     });
 
     document.addEventListener('mousemove', (e) => {
-        if (!isDragging) return;
-        e.target._dragged = true;
-        offsetX = e.clientX - startX;
-        offsetY = e.clientY - startY;
-
-        // Clamp to viewport
-        offsetX = Math.max(0, Math.min(offsetX, window.innerWidth - btn.offsetWidth));
-        offsetY = Math.max(0, Math.min(offsetY, window.innerHeight - btn.offsetHeight));
-
-        btn.style.left = offsetX + 'px';
-        btn.style.right = 'auto';
-        btn.style.top = offsetY + 'px';
-        btn.style.bottom = 'auto';
-    });
-
-    document.addEventListener('mouseup', () => {
-        isDragging = false;
-        btn.style.cursor = 'grab';
-    });
-
-    // Touch support
-    btn.addEventListener('touchstart', (e) => {
+        if (e.buttons === 0) return; // not dragging
         isDragging = true;
+        const x = Math.max(0, Math.min(e.clientX - dragOffsetX, window.innerWidth - 54));
+        const y = Math.max(0, Math.min(e.clientY - dragOffsetY, window.innerHeight - 54));
+        btn.style.left = x + 'px';
+        btn.style.top = y + 'px';
+        localStorage.setItem('astral_phone_launcher_pos', JSON.stringify({ x, y }));
+    });
+
+    // Touch drag
+    btn.addEventListener('touchstart', (e) => {
+        isDragging = false;
         const touch = e.touches[0];
-        startX = touch.clientX - btn.offsetLeft;
-        startY = touch.clientY - btn.offsetTop;
+        dragOffsetX = touch.clientX - btn.offsetLeft;
+        dragOffsetY = touch.clientY - btn.offsetTop;
     });
 
     document.addEventListener('touchmove', (e) => {
-        if (!isDragging) return;
+        if (!e.touches.length) return;
+        isDragging = true;
         const touch = e.touches[0];
-        offsetX = touch.clientX - startX;
-        offsetY = touch.clientY - startY;
-
-        offsetX = Math.max(0, Math.min(offsetX, window.innerWidth - btn.offsetWidth));
-        offsetY = Math.max(0, Math.min(offsetY, window.innerHeight - btn.offsetHeight));
-
-        btn.style.left = offsetX + 'px';
-        btn.style.right = 'auto';
-        btn.style.top = offsetY + 'px';
-        btn.style.bottom = 'auto';
-    });
-
-    document.addEventListener('touchend', () => {
-        isDragging = false;
-    });
+        const x = Math.max(0, Math.min(touch.clientX - dragOffsetX, window.innerWidth - 54));
+        const y = Math.max(0, Math.min(touch.clientY - dragOffsetY, window.innerHeight - 54));
+        btn.style.left = x + 'px';
+        btn.style.top = y + 'px';
+        localStorage.setItem('astral_phone_launcher_pos', JSON.stringify({ x, y }));
+    }, { passive: true });
 
     document.body.appendChild(btn);
-    console.log('[Astral Phone] launcher appended to body, position:', btn.getBoundingClientRect());
 }
 
-    const menu = document.getElementById('extensionsMenu');
+const menu = document.getElementById('extensionsMenu');
     if (menu) {
         const item = document.createElement('div');
         item.className = 'list-group-item flex-container flexGap5 interactable';
