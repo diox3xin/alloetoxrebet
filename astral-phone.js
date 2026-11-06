@@ -2064,6 +2064,37 @@ ${prompt2}
     { id: "stats", label: "\u0421\u0442\u0430\u0442\u044B" },
     { id: "fans", label: "\u0424\u0430\u043D\u044B" }
   ];
+  var FAN_NAMES = [
+    "shadow_kitten",
+    "velvet_noir",
+    "midnight_owl",
+    "lunarpixie",
+    "crash_and_burn",
+    "sugarstatic",
+    "emptyrooms",
+    "ghost_of_you",
+    "poison_ivy",
+    "static_bloom",
+    "neon_widow",
+    "dollparts",
+    "cinematic",
+    "wires_and_bones",
+    "soft_error"
+  ];
+  var COMMENT_TEXTS = [
+    "\u042D\u0442\u043E \u043F\u0440\u043E\u0441\u0442\u043E \u043D\u0435\u0440\u0435\u0430\u043B\u044C\u043D\u043E \u{1F5A4}",
+    "\u0421\u043E\u0445\u0440\u0430\u043D\u0438\u043B \u0441\u0435\u0431\u0435, \u0431\u0443\u0434\u0443 \u0441\u043C\u043E\u0442\u0440\u0435\u0442\u044C \u043D\u043E\u0447\u044C\u044E",
+    "\u041A\u0430\u043A \u0442\u044B \u044D\u0442\u043E \u0434\u0435\u043B\u0430\u0435\u0448\u044C?",
+    "\u0425\u043E\u0447\u0443 \u0435\u0449\u0451",
+    "\u0421\u0432\u0435\u0442 \u0438\u0434\u0435\u0430\u043B\u044C\u043D\u044B\u0439",
+    "\u0412\u0437\u0433\u043B\u044F\u0434 \u0443\u0431\u0438\u0432\u0430\u0435\u0442",
+    "\u041B\u0443\u0447\u0448\u0438\u0439 \u043F\u043E\u0441\u0442 \u0437\u0430 \u043D\u0435\u0434\u0435\u043B\u044E",
+    "\u041D\u0435 \u043C\u043E\u0433\u0443 \u043F\u0435\u0440\u0435\u0441\u0442\u0430\u0442\u044C \u043B\u0438\u0441\u0442\u0430\u0442\u044C",
+    "\u0427\u0442\u043E \u0437\u0430 \u043E\u0431\u044A\u0435\u043A\u0442\u0438\u0432?",
+    "\u0410\u0442\u043C\u043E\u0441\u0444\u0435\u0440\u0430 \u2014 10/10",
+    "\u0421\u043B\u0438\u0448\u043A\u043E\u043C \u043A\u0440\u0430\u0441\u0438\u0432\u043E \u0434\u043B\u044F \u044D\u0442\u043E\u0433\u043E \u043C\u0438\u0440\u0430",
+    "\u0416\u0434\u0443 \u043F\u0440\u043E\u0434\u043E\u043B\u0436\u0435\u043D\u0438\u044F"
+  ];
   var CreatorApp = class {
     static {
       __name(this, "CreatorApp");
@@ -2154,38 +2185,79 @@ ${prompt2}
       const feed = document.createElement("div");
       feed.className = "astral-card-feed";
       posts.forEach((post, idx) => {
-        const card = document.createElement("div");
-        card.className = "astral-card";
-        const busy = this._busy.has(idx);
-        const media = post.imageUrl ? `<img class="astral-card-media" src="${post.imageUrl}" alt="" loading="lazy">` : `<div class="astral-card-media astral-card-media--empty">
-                        <div class="astral-card-empty-inner">
-                            <div class="astral-card-empty-icon">${ICONS.creator}</div>
-                            <button class="astral-btn" data-gen="${idx}" ${busy ? "disabled" : ""}>
-                                ${busy ? "\u0413\u0435\u043D\u0435\u0440\u0430\u0446\u0438\u044F\u2026" : "\u0421\u043E\u0437\u0434\u0430\u0442\u044C \u0444\u043E\u0442\u043E"}
-                            </button>
-                        </div>
-                   </div>`;
-        card.innerHTML = `
-                ${media}
-                <div class="astral-card-body">
-                    <div class="astral-card-title">${this._esc(post.caption || post.description)}</div>
-                    <div class="astral-card-meta">
-                        <span>\u2764 ${this._n(post.likes || 0)}</span>
-                        <span>\u{1F4AC} ${this._n(post.comments || 0)}</span>
-                        <span>${this._ago(post.timestamp)}</span>
-                    </div>
-                </div>
-            `;
-        const btn = card.querySelector(`[data-gen="${idx}"]`);
-        if (btn && !busy) {
-          btn.addEventListener("click", async (e) => {
-            e.stopPropagation();
-            await this._generate(idx);
-          });
-        }
-        feed.appendChild(card);
+        feed.appendChild(this._buildCard(post, idx));
       });
       body.appendChild(feed);
+    }
+    _buildCard(post, idx) {
+      const card = document.createElement("div");
+      card.className = "astral-card astral-card--creator";
+      const busy = this._busy.has(idx);
+      const comments = Array.isArray(post.comments) ? post.comments : [];
+      const media = post.imageUrl ? `<img class="astral-card-media" src="${this._esc(post.imageUrl)}" alt="" loading="lazy">` : `<div class="astral-card-media astral-card-media--empty">
+                    <div class="astral-card-empty-inner">
+                        <div class="astral-card-empty-icon">${ICONS.creator}</div>
+                        <button class="astral-btn" data-gen="${idx}" ${busy ? "disabled" : ""}>
+                            ${busy ? "\u0413\u0435\u043D\u0435\u0440\u0430\u0446\u0438\u044F\u2026" : "\u0421\u043E\u0437\u0434\u0430\u0442\u044C \u0444\u043E\u0442\u043E"}
+                        </button>
+                    </div>
+               </div>`;
+      card.innerHTML = `
+            ${media}
+            <div class="astral-card-body">
+                <div class="astral-card-title">${this._esc(post.caption || "")}</div>
+                <div class="astral-card-meta">
+                    <span>\u2764 ${this._n(post.likes || 0)}</span>
+                    <button class="astral-card-meta-btn" data-comments="${idx}">
+                        \u{1F4AC} ${this._n(comments.length)}
+                    </button>
+                    <span class="astral-card-meta-time">${this._ago(post.timestamp)}</span>
+                    <button class="astral-card-menu" data-menu="${idx}" title="\u0414\u0435\u0439\u0441\u0442\u0432\u0438\u044F">\u22EF</button>
+                </div>
+            </div>
+        `;
+      const img = card.querySelector(".astral-card-media");
+      if (img && post.imageUrl) {
+        const apply = /* @__PURE__ */ __name((w, h) => {
+          if (!w || !h) return;
+          img.style.aspectRatio = `${w} / ${h}`;
+          img.classList.remove("astral-card-media--portrait", "astral-card-media--landscape", "astral-card-media--square");
+          const ratio = w / h;
+          const kind = ratio > 1.15 ? "landscape" : ratio < 0.87 ? "portrait" : "square";
+          img.classList.add(`astral-card-media--${kind}`);
+          card.dataset.orientation = kind;
+          this._rememberSize(idx, w, h);
+        }, "apply");
+        if (post.imageW && post.imageH) {
+          apply(post.imageW, post.imageH);
+        } else if (img.complete && img.naturalWidth) {
+          apply(img.naturalWidth, img.naturalHeight);
+        } else {
+          img.addEventListener("load", () => apply(img.naturalWidth, img.naturalHeight), { once: true });
+        }
+      }
+      const genBtn = card.querySelector(`[data-gen="${idx}"]`);
+      if (genBtn && !busy) {
+        genBtn.addEventListener("click", async (e) => {
+          e.stopPropagation();
+          await this._generate(idx);
+        });
+      }
+      card.querySelector(`[data-comments="${idx}"]`)?.addEventListener("click", () => this._openComments(idx));
+      card.querySelector(`[data-menu="${idx}"]`)?.addEventListener("click", (e) => {
+        e.stopPropagation();
+        this._openPostMenu(idx);
+      });
+      return card;
+    }
+    /** Persist measured dimensions so the card doesn't reflow on every render. */
+    _rememberSize(idx, w, h) {
+      const state = this.storage.getState();
+      const post = state.creator?.posts?.[idx];
+      if (!post || post.imageW === w && post.imageH === h) return;
+      post.imageW = w;
+      post.imageH = h;
+      this.storage.save();
     }
     /* ─────────────────────────── stats ─────────────────────────── */
     _renderStats(body, creator) {
@@ -2193,6 +2265,7 @@ ${prompt2}
       const likes = posts.reduce((s, p) => s + (p.likes || 0), 0);
       const avg = posts.length ? Math.round(likes / posts.length) : 0;
       const top = posts.length ? posts.reduce((a, b) => (b.likes || 0) > (a.likes || 0) ? b : a) : null;
+      const comments = posts.reduce((s, p) => s + (Array.isArray(p.comments) ? p.comments.length : 0), 0);
       body.innerHTML = `
             <div class="astral-stat-cards">
                 <div class="astral-stat-card">
@@ -2208,9 +2281,13 @@ ${prompt2}
                     <div class="astral-stat-card-value">${this._n(likes)}</div>
                 </div>
                 <div class="astral-stat-card">
+                    <div class="astral-stat-card-label">\u041A\u043E\u043C\u043C\u0435\u043D\u0442\u0430\u0440\u0438\u0435\u0432</div>
+                    <div class="astral-stat-card-value">${this._n(comments)}</div>
+                </div>
+                <div class="astral-stat-card astral-stat-card--wide">
                     <div class="astral-stat-card-label">\u041B\u0443\u0447\u0448\u0438\u0439 \u043F\u043E\u0441\u0442</div>
                     <div class="astral-stat-card-value astral-stat-card-value--sm">
-                        ${top ? this._esc((top.caption || top.description || "").slice(0, 40)) : "\u2014"}
+                        ${top ? this._esc((top.caption || "").slice(0, 48) || "\u2014") : "\u2014"}
                     </div>
                 </div>
             </div>
@@ -2246,17 +2323,32 @@ ${prompt2}
       body.appendChild(list);
     }
     /* ─────────────────────────── composer ─────────────────────────── */
-    _openComposer() {
+    /**
+     * @param {number|null} editIndex  Index of the post being edited, or null to create.
+     */
+    _openComposer(editIndex = null) {
+      const state = this.storage.getState();
+      const post = editIndex === null ? null : state.creator?.posts?.[editIndex];
+      if (editIndex !== null && !post) return;
       const overlay = document.createElement("div");
       overlay.className = "astral-modal";
       overlay.innerHTML = `
-            <div class="astral-modal-card">
-                <div class="astral-modal-title">\u041D\u043E\u0432\u044B\u0439 \u043F\u043E\u0441\u0442</div>
+            <div class="astral-modal-card astral-modal-card--composer">
+                <div class="astral-modal-title">${post ? "\u0420\u0435\u0434\u0430\u043A\u0442\u0438\u0440\u043E\u0432\u0430\u0442\u044C \u043F\u043E\u0441\u0442" : "\u041D\u043E\u0432\u044B\u0439 \u043F\u043E\u0441\u0442"}</div>
+
+                <label class="astral-field-label" for="astral-post-caption">\u041F\u043E\u0434\u043F\u0438\u0441\u044C</label>
+                <textarea class="astral-textarea astral-textarea--short" id="astral-post-caption"
+                    placeholder="\u0422\u0435\u043A\u0441\u0442 \u043F\u043E\u0434 \u043F\u043E\u0441\u0442\u043E\u043C \u2014 \u0447\u0442\u043E \u0443\u0433\u043E\u0434\u043D\u043E, \u044D\u0442\u043E \u043F\u0440\u043E\u0441\u0442\u043E \u043F\u043E\u0434\u043F\u0438\u0441\u044C.">${this._esc(post?.caption || "")}</textarea>
+
+                <label class="astral-field-label" for="astral-post-text">\u041F\u0440\u043E\u043C\u043F\u0442 \u0434\u043B\u044F \u0444\u043E\u0442\u043E</label>
                 <textarea class="astral-textarea" id="astral-post-text"
-                    placeholder="\u041E\u043F\u0438\u0448\u0438, \u0447\u0442\u043E \u043D\u0430 \u0444\u043E\u0442\u043E \u2014 \u043F\u043E\u0437\u0430, \u043E\u0434\u0435\u0436\u0434\u0430, \u043C\u0435\u0441\u0442\u043E, \u0441\u0432\u0435\u0442. \u0427\u0435\u043C \u043A\u043E\u043D\u043A\u0440\u0435\u0442\u043D\u0435\u0435, \u0442\u0435\u043C \u043B\u0443\u0447\u0448\u0435 \u0432\u044B\u0439\u0434\u0435\u0442 \u043A\u0430\u0440\u0442\u0438\u043D\u043A\u0430."></textarea>
+                    placeholder="\u0427\u0442\u043E \u043D\u0430 \u0444\u043E\u0442\u043E \u2014 \u043F\u043E\u0437\u0430, \u043E\u0434\u0435\u0436\u0434\u0430, \u043C\u0435\u0441\u0442\u043E, \u0441\u0432\u0435\u0442. \u041D\u0430 \u043F\u043E\u0434\u043F\u0438\u0441\u044C \u043D\u0435 \u0432\u043B\u0438\u044F\u0435\u0442.">${this._esc(post?.prompt || "")}</textarea>
+
                 <div class="astral-modal-actions">
                     <button class="astral-btn" id="astral-post-cancel">\u041E\u0442\u043C\u0435\u043D\u0430</button>
-                    <button class="astral-btn astral-btn-primary" id="astral-post-go">\u041E\u043F\u0443\u0431\u043B\u0438\u043A\u043E\u0432\u0430\u0442\u044C</button>
+                    <button class="astral-btn astral-btn-primary" id="astral-post-go">
+                        ${post ? "\u0421\u043E\u0445\u0440\u0430\u043D\u0438\u0442\u044C" : "\u041E\u043F\u0443\u0431\u043B\u0438\u043A\u043E\u0432\u0430\u0442\u044C"}
+                    </button>
                 </div>
             </div>
         `;
@@ -2267,31 +2359,169 @@ ${prompt2}
         if (e.target === overlay) close();
       });
       overlay.querySelector("#astral-post-go").addEventListener("click", async () => {
-        const text = overlay.querySelector("#astral-post-text").value.trim();
-        if (!text) return;
+        const caption = overlay.querySelector("#astral-post-caption").value.trim();
+        const prompt2 = overlay.querySelector("#astral-post-text").value.trim();
+        if (!caption && !prompt2) return;
         close();
-        await this._createPost(text);
+        if (post) this._updatePost(editIndex, { caption, prompt: prompt2 });
+        else await this._createPost(caption, prompt2);
       });
-      overlay.querySelector("#astral-post-text").focus();
+      overlay.querySelector("#astral-post-caption").focus();
     }
-    async _createPost(caption) {
+    /* ─────────────────────────── create / update / delete ─────────────────────────── */
+    async _createPost(caption, prompt2) {
       const state = this.storage.getState();
       if (!state.creator) state.creator = { posts: [], subscribers: 0, revenue: 0, fans: [] };
+      if (!Array.isArray(state.creator.posts)) state.creator.posts = [];
       state.creator.posts.unshift({
+        id: this._uid(),
         caption,
-        description: caption,
+        prompt: prompt2,
         timestamp: Date.now(),
         imageUrl: null,
+        imageW: 0,
+        imageH: 0,
         likes: this._rand(5, 60),
-        comments: this._rand(0, 14)
+        comments: this._seedComments()
       });
       state.creator.revenue = (state.creator.revenue || 0) + this._rand(12, 70);
       this.storage.save();
       this._tab = "feed";
       this.render(document.querySelector(".astral-phone-body"));
-      if (this.imageGen.isAvailable()) await this._generate(0, true);
+      if (prompt2 && this.imageGen.isAvailable()) await this._generate(0, true);
       this.render(document.querySelector(".astral-phone-body"));
     }
+    _updatePost(index, patch) {
+      const state = this.storage.getState();
+      const post = state.creator?.posts?.[index];
+      if (!post) return;
+      Object.assign(post, patch);
+      this.storage.save();
+      this.render(document.querySelector(".astral-phone-body"));
+      this._toast("\u041F\u043E\u0441\u0442 \u043E\u0431\u043D\u043E\u0432\u043B\u0451\u043D", "success");
+    }
+    _deletePost(index) {
+      const state = this.storage.getState();
+      if (!Array.isArray(state.creator?.posts) || !state.creator.posts[index]) return;
+      state.creator.posts.splice(index, 1);
+      this.storage.save();
+      this.render(document.querySelector(".astral-phone-body"));
+      this._toast("\u041F\u043E\u0441\u0442 \u0443\u0434\u0430\u043B\u0451\u043D", "success");
+    }
+    /** Small action sheet for a post: edit, delete. */
+    _openPostMenu(index) {
+      const overlay = document.createElement("div");
+      overlay.className = "astral-modal";
+      overlay.innerHTML = `
+            <div class="astral-modal-card astral-modal-card--sheet">
+                <button class="astral-sheet-btn" data-act="edit">\u0420\u0435\u0434\u0430\u043A\u0442\u0438\u0440\u043E\u0432\u0430\u0442\u044C</button>
+                <button class="astral-sheet-btn astral-sheet-btn--danger" data-act="delete">\u0423\u0434\u0430\u043B\u0438\u0442\u044C</button>
+                <button class="astral-sheet-btn astral-sheet-btn--cancel" data-act="cancel">\u041E\u0442\u043C\u0435\u043D\u0430</button>
+            </div>
+        `;
+      document.querySelector(".astral-phone").appendChild(overlay);
+      const close = /* @__PURE__ */ __name(() => overlay.remove(), "close");
+      overlay.addEventListener("click", (e) => {
+        if (e.target === overlay) close();
+      });
+      overlay.querySelector('[data-act="cancel"]').addEventListener("click", close);
+      overlay.querySelector('[data-act="edit"]').addEventListener("click", () => {
+        close();
+        this._openComposer(index);
+      });
+      overlay.querySelector('[data-act="delete"]').addEventListener("click", () => {
+        close();
+        this._confirmDelete(index);
+      });
+    }
+    _confirmDelete(index) {
+      const state = this.storage.getState();
+      const post = state.creator?.posts?.[index];
+      const preview = (post?.caption || "").slice(0, 60) || "\u0431\u0435\u0437 \u043F\u043E\u0434\u043F\u0438\u0441\u0438";
+      const overlay = document.createElement("div");
+      overlay.className = "astral-modal";
+      overlay.innerHTML = `
+            <div class="astral-modal-card astral-modal-card--sheet">
+                <div class="astral-confirm-text">\u0423\u0434\u0430\u043B\u0438\u0442\u044C \u043F\u043E\u0441\u0442 \xAB${this._esc(preview)}\xBB? \u042D\u0442\u043E \u043D\u0435\u043E\u0431\u0440\u0430\u0442\u0438\u043C\u043E.</div>
+                <button class="astral-sheet-btn astral-sheet-btn--danger" data-act="yes">\u0423\u0434\u0430\u043B\u0438\u0442\u044C</button>
+                <button class="astral-sheet-btn astral-sheet-btn--cancel" data-act="no">\u041E\u0442\u043C\u0435\u043D\u0430</button>
+            </div>
+        `;
+      document.querySelector(".astral-phone").appendChild(overlay);
+      const close = /* @__PURE__ */ __name(() => overlay.remove(), "close");
+      overlay.addEventListener("click", (e) => {
+        if (e.target === overlay) close();
+      });
+      overlay.querySelector('[data-act="no"]').addEventListener("click", close);
+      overlay.querySelector('[data-act="yes"]').addEventListener("click", () => {
+        close();
+        this._deletePost(index);
+      });
+    }
+    /* ─────────────────────────── comments ─────────────────────────── */
+    _openComments(index) {
+      const state = this.storage.getState();
+      const post = state.creator?.posts?.[index];
+      if (!post) return;
+      const comments = Array.isArray(post.comments) ? post.comments : [];
+      const overlay = document.createElement("div");
+      overlay.className = "astral-modal";
+      overlay.innerHTML = `
+            <div class="astral-modal-card astral-modal-card--comments">
+                <div class="astral-modal-title">\u041A\u043E\u043C\u043C\u0435\u043D\u0442\u0430\u0440\u0438\u0438 (${comments.length})</div>
+                <div class="astral-comment-list" id="astral-comment-list"></div>
+                <div class="astral-modal-actions">
+                    <button class="astral-btn" id="astral-comments-close">\u0417\u0430\u043A\u0440\u044B\u0442\u044C</button>
+                </div>
+            </div>
+        `;
+      document.querySelector(".astral-phone").appendChild(overlay);
+      const list = overlay.querySelector("#astral-comment-list");
+      if (comments.length === 0) {
+        list.innerHTML = `<div class="astral-comment-empty">\u041A\u043E\u043C\u043C\u0435\u043D\u0442\u0430\u0440\u0438\u0435\u0432 \u043F\u043E\u043A\u0430 \u043D\u0435\u0442</div>`;
+      } else {
+        for (const c of comments) {
+          const row = document.createElement("div");
+          row.className = "astral-comment";
+          row.innerHTML = `
+                    <div class="astral-comment-ava">${this._esc((c.author || "?")[0].toUpperCase())}</div>
+                    <div class="astral-comment-main">
+                        <div class="astral-comment-head">
+                            <span class="astral-comment-author">${this._esc(c.author || "\u0410\u043D\u043E\u043D\u0438\u043C")}</span>
+                            <span class="astral-comment-time">${this._ago(c.timestamp)}</span>
+                        </div>
+                        <div class="astral-comment-text">${this._esc(c.text || "")}</div>
+                    </div>
+                `;
+          list.appendChild(row);
+        }
+      }
+      const close = /* @__PURE__ */ __name(() => overlay.remove(), "close");
+      overlay.addEventListener("click", (e) => {
+        if (e.target === overlay) close();
+      });
+      overlay.querySelector("#astral-comments-close").addEventListener("click", close);
+    }
+    /** Fan comments seeded onto a fresh post. */
+    _seedComments() {
+      const count = this._rand(1, 4);
+      const used = /* @__PURE__ */ new Set();
+      const out = [];
+      for (let i = 0; i < count; i++) {
+        let author = this._pick(FAN_NAMES);
+        let guard = 0;
+        while (used.has(author) && guard++ < 12) author = this._pick(FAN_NAMES);
+        used.add(author);
+        out.push({
+          id: this._uid(),
+          author,
+          text: this._pick(COMMENT_TEXTS),
+          timestamp: Date.now() - this._rand(1, 90) * 6e4
+        });
+      }
+      return out.sort((a, b) => b.timestamp - a.timestamp);
+    }
+    /* ─────────────────────────── generation ─────────────────────────── */
     async _generate(index, silent = false) {
       if (!this.imageGen.isAvailable()) {
         this._toast("Haruspics \u043D\u0435 \u0443\u0441\u0442\u0430\u043D\u043E\u0432\u043B\u0435\u043D", "error");
@@ -2304,13 +2534,16 @@ ${prompt2}
         const state = this.storage.getState();
         const post = state.creator?.posts?.[index];
         if (!post) return;
-        const prompt2 = [this.context.name2 || "\u041F\u0435\u0440\u0441\u043E\u043D\u0430\u0436", post.description].filter(Boolean).join(" \u2014 ");
+        const scene = String(post.prompt || "").trim();
+        const prompt2 = [this.context.name2 || "\u041F\u0435\u0440\u0441\u043E\u043D\u0430\u0436", scene].filter(Boolean).join(" \u2014 ");
         const url = await this.imageGen.generate(prompt2, {
           character: this.context.name2,
           type: "creator_post",
           nsfw: true
         });
-        state.creator.posts[index].imageUrl = url;
+        post.imageUrl = url;
+        post.imageW = 0;
+        post.imageH = 0;
         this.storage.save();
         this._toast("\u0413\u043E\u0442\u043E\u0432\u043E", "success");
       } catch (err) {
@@ -2325,16 +2558,31 @@ ${prompt2}
     async handleEvent(eventData) {
       const state = this.storage.getState();
       if (!state.creator) state.creator = { posts: [], subscribers: 0, revenue: 0, fans: [] };
+      if (!Array.isArray(state.creator.posts)) state.creator.posts = [];
       const meta = eventData.metadata || {};
       if (eventData.type === "content_posted") {
         state.creator.posts.unshift({
-          caption: eventData.description,
-          description: eventData.description,
+          id: this._uid(),
+          caption: eventData.description || "",
+          prompt: meta.prompt || "",
           timestamp: Date.now(),
           imageUrl: null,
+          imageW: 0,
+          imageH: 0,
           likes: this._rand(5, 60),
-          comments: this._rand(0, 14)
+          comments: this._seedComments()
         });
+      } else if (eventData.type === "comment_received") {
+        const post = state.creator.posts[Number(meta.post) || 0];
+        if (post) {
+          if (!Array.isArray(post.comments)) post.comments = [];
+          post.comments.unshift({
+            id: this._uid(),
+            author: meta.fan || this._pick(FAN_NAMES),
+            text: eventData.description || this._pick(COMMENT_TEXTS),
+            timestamp: Date.now()
+          });
+        }
       } else if (eventData.type === "donation_received") {
         const amount = Number(meta.amount) || 25;
         state.creator.revenue = (state.creator.revenue || 0) + amount;
@@ -2359,6 +2607,12 @@ ${prompt2}
       return { success: true, message: "\u0421\u043E\u0431\u044B\u0442\u0438\u0435 Creator Studio \u043E\u0431\u0440\u0430\u0431\u043E\u0442\u0430\u043D\u043E" };
     }
     /* ─────────────────────────── utils ─────────────────────────── */
+    _pick(arr) {
+      return arr[Math.floor(Math.random() * arr.length)];
+    }
+    _uid() {
+      return `p${Date.now().toString(36)}${Math.random().toString(36).slice(2, 7)}`;
+    }
     _rand(min, max) {
       return Math.floor(Math.random() * (max - min + 1)) + min;
     }

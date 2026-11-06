@@ -1,6 +1,12 @@
 /**
  * Creator Studio — paid content: profile, feed, analytics, fan messages.
- * Images for posts are generated through the Haruspics bridge.
+ *
+ * Post model:
+ *   { id, caption, prompt, timestamp, imageUrl, imageW, imageH, likes, comments: [] }
+ *
+ * `caption` is plain text shown to the reader and never mixed into the image
+ * prompt; `prompt` is what the generator sees. Cards adapt to the image's real
+ * aspect ratio once it loads.
  */
 
 import { ICONS } from './phone-core.js';
@@ -10,6 +16,27 @@ const TABS = [
     { id: 'feed', label: 'Лента' },
     { id: 'stats', label: 'Статы' },
     { id: 'fans', label: 'Фаны' },
+];
+
+const FAN_NAMES = [
+    'shadow_kitten', 'velvet_noir', 'midnight_owl', 'lunarpixie', 'crash_and_burn',
+    'sugarstatic', 'emptyrooms', 'ghost_of_you', 'poison_ivy', 'static_bloom',
+    'neon_widow', 'dollparts', 'cinematic', 'wires_and_bones', 'soft_error',
+];
+
+const COMMENT_TEXTS = [
+    'Это просто нереально 🖤',
+    'Сохранил себе, буду смотреть ночью',
+    'Как ты это делаешь?',
+    'Хочу ещё',
+    'Свет идеальный',
+    'Взгляд убивает',
+    'Лучший пост за неделю',
+    'Не могу перестать листать',
+    'Что за объектив?',
+    'Атмосфера — 10/10',
+    'Слишком красиво для этого мира',
+    'Жду продолжения',
 ];
 
 export class CreatorApp {
@@ -115,45 +142,92 @@ export class CreatorApp {
         feed.className = 'astral-card-feed';
 
         posts.forEach((post, idx) => {
-            const card = document.createElement('div');
-            card.className = 'astral-card';
-            const busy = this._busy.has(idx);
-
-            const media = post.imageUrl
-                ? `<img class="astral-card-media" src="${post.imageUrl}" alt="" loading="lazy">`
-                : `<div class="astral-card-media astral-card-media--empty">
-                        <div class="astral-card-empty-inner">
-                            <div class="astral-card-empty-icon">${ICONS.creator}</div>
-                            <button class="astral-btn" data-gen="${idx}" ${busy ? 'disabled' : ''}>
-                                ${busy ? 'Генерация…' : 'Создать фото'}
-                            </button>
-                        </div>
-                   </div>`;
-
-            card.innerHTML = `
-                ${media}
-                <div class="astral-card-body">
-                    <div class="astral-card-title">${this._esc(post.caption || post.description)}</div>
-                    <div class="astral-card-meta">
-                        <span>❤ ${this._n(post.likes || 0)}</span>
-                        <span>💬 ${this._n(post.comments || 0)}</span>
-                        <span>${this._ago(post.timestamp)}</span>
-                    </div>
-                </div>
-            `;
-
-            const btn = card.querySelector(`[data-gen="${idx}"]`);
-            if (btn && !busy) {
-                btn.addEventListener('click', async (e) => {
-                    e.stopPropagation();
-                    await this._generate(idx);
-                });
-            }
-
-            feed.appendChild(card);
+            feed.appendChild(this._buildCard(post, idx));
         });
 
         body.appendChild(feed);
+    }
+
+    _buildCard(post, idx) {
+        const card = document.createElement('div');
+        card.className = 'astral-card astral-card--creator';
+        const busy = this._busy.has(idx);
+        const comments = Array.isArray(post.comments) ? post.comments : [];
+
+        const media = post.imageUrl
+            ? `<img class="astral-card-media" src="${this._esc(post.imageUrl)}" alt="" loading="lazy">`
+            : `<div class="astral-card-media astral-card-media--empty">
+                    <div class="astral-card-empty-inner">
+                        <div class="astral-card-empty-icon">${ICONS.creator}</div>
+                        <button class="astral-btn" data-gen="${idx}" ${busy ? 'disabled' : ''}>
+                            ${busy ? 'Генерация…' : 'Создать фото'}
+                        </button>
+                    </div>
+               </div>`;
+
+        card.innerHTML = `
+            ${media}
+            <div class="astral-card-body">
+                <div class="astral-card-title">${this._esc(post.caption || '')}</div>
+                <div class="astral-card-meta">
+                    <span>❤ ${this._n(post.likes || 0)}</span>
+                    <button class="astral-card-meta-btn" data-comments="${idx}">
+                        💬 ${this._n(comments.length)}
+                    </button>
+                    <span class="astral-card-meta-time">${this._ago(post.timestamp)}</span>
+                    <button class="astral-card-menu" data-menu="${idx}" title="Действия">⋯</button>
+                </div>
+            </div>
+        `;
+
+        // Adaptive media: fit the real aspect ratio once the image is decoded.
+        const img = card.querySelector('.astral-card-media');
+        if (img && post.imageUrl) {
+            const apply = (w, h) => {
+                if (!w || !h) return;
+                img.style.aspectRatio = `${w} / ${h}`;
+                img.classList.remove('astral-card-media--portrait', 'astral-card-media--landscape', 'astral-card-media--square');
+                const ratio = w / h;
+                const kind = ratio > 1.15 ? 'landscape' : (ratio < 0.87 ? 'portrait' : 'square');
+                img.classList.add(`astral-card-media--${kind}`);
+                card.dataset.orientation = kind;
+                this._rememberSize(idx, w, h);
+            };
+
+            if (post.imageW && post.imageH) {
+                apply(post.imageW, post.imageH);
+            } else if (img.complete && img.naturalWidth) {
+                apply(img.naturalWidth, img.naturalHeight);
+            } else {
+                img.addEventListener('load', () => apply(img.naturalWidth, img.naturalHeight), { once: true });
+            }
+        }
+
+        const genBtn = card.querySelector(`[data-gen="${idx}"]`);
+        if (genBtn && !busy) {
+            genBtn.addEventListener('click', async (e) => {
+                e.stopPropagation();
+                await this._generate(idx);
+            });
+        }
+
+        card.querySelector(`[data-comments="${idx}"]`)?.addEventListener('click', () => this._openComments(idx));
+        card.querySelector(`[data-menu="${idx}"]`)?.addEventListener('click', (e) => {
+            e.stopPropagation();
+            this._openPostMenu(idx);
+        });
+
+        return card;
+    }
+
+    /** Persist measured dimensions so the card doesn't reflow on every render. */
+    _rememberSize(idx, w, h) {
+        const state = this.storage.getState();
+        const post = state.creator?.posts?.[idx];
+        if (!post || (post.imageW === w && post.imageH === h)) return;
+        post.imageW = w;
+        post.imageH = h;
+        this.storage.save();
     }
 
     /* ─────────────────────────── stats ─────────────────────────── */
@@ -163,6 +237,7 @@ export class CreatorApp {
         const likes = posts.reduce((s, p) => s + (p.likes || 0), 0);
         const avg = posts.length ? Math.round(likes / posts.length) : 0;
         const top = posts.length ? posts.reduce((a, b) => ((b.likes || 0) > (a.likes || 0) ? b : a)) : null;
+        const comments = posts.reduce((s, p) => s + (Array.isArray(p.comments) ? p.comments.length : 0), 0);
 
         body.innerHTML = `
             <div class="astral-stat-cards">
@@ -179,9 +254,13 @@ export class CreatorApp {
                     <div class="astral-stat-card-value">${this._n(likes)}</div>
                 </div>
                 <div class="astral-stat-card">
+                    <div class="astral-stat-card-label">Комментариев</div>
+                    <div class="astral-stat-card-value">${this._n(comments)}</div>
+                </div>
+                <div class="astral-stat-card astral-stat-card--wide">
                     <div class="astral-stat-card-label">Лучший пост</div>
                     <div class="astral-stat-card-value astral-stat-card-value--sm">
-                        ${top ? this._esc((top.caption || top.description || '').slice(0, 40)) : '—'}
+                        ${top ? this._esc((top.caption || '').slice(0, 48) || '—') : '—'}
                     </div>
                 </div>
             </div>
@@ -225,17 +304,33 @@ export class CreatorApp {
 
     /* ─────────────────────────── composer ─────────────────────────── */
 
-    _openComposer() {
+    /**
+     * @param {number|null} editIndex  Index of the post being edited, or null to create.
+     */
+    _openComposer(editIndex = null) {
+        const state = this.storage.getState();
+        const post = editIndex === null ? null : state.creator?.posts?.[editIndex];
+        if (editIndex !== null && !post) return;
+
         const overlay = document.createElement('div');
         overlay.className = 'astral-modal';
         overlay.innerHTML = `
-            <div class="astral-modal-card">
-                <div class="astral-modal-title">Новый пост</div>
+            <div class="astral-modal-card astral-modal-card--composer">
+                <div class="astral-modal-title">${post ? 'Редактировать пост' : 'Новый пост'}</div>
+
+                <label class="astral-field-label" for="astral-post-caption">Подпись</label>
+                <textarea class="astral-textarea astral-textarea--short" id="astral-post-caption"
+                    placeholder="Текст под постом — что угодно, это просто подпись.">${this._esc(post?.caption || '')}</textarea>
+
+                <label class="astral-field-label" for="astral-post-text">Промпт для фото</label>
                 <textarea class="astral-textarea" id="astral-post-text"
-                    placeholder="Опиши, что на фото — поза, одежда, место, свет. Чем конкретнее, тем лучше выйдет картинка."></textarea>
+                    placeholder="Что на фото — поза, одежда, место, свет. На подпись не влияет.">${this._esc(post?.prompt || '')}</textarea>
+
                 <div class="astral-modal-actions">
                     <button class="astral-btn" id="astral-post-cancel">Отмена</button>
-                    <button class="astral-btn astral-btn-primary" id="astral-post-go">Опубликовать</button>
+                    <button class="astral-btn astral-btn-primary" id="astral-post-go">
+                        ${post ? 'Сохранить' : 'Опубликовать'}
+                    </button>
                 </div>
             </div>
         `;
@@ -249,26 +344,36 @@ export class CreatorApp {
         });
 
         overlay.querySelector('#astral-post-go').addEventListener('click', async () => {
-            const text = overlay.querySelector('#astral-post-text').value.trim();
-            if (!text) return;
+            const caption = overlay.querySelector('#astral-post-caption').value.trim();
+            const prompt = overlay.querySelector('#astral-post-text').value.trim();
+            if (!caption && !prompt) return;
+
             close();
-            await this._createPost(text);
+
+            if (post) this._updatePost(editIndex, { caption, prompt });
+            else await this._createPost(caption, prompt);
         });
 
-        overlay.querySelector('#astral-post-text').focus();
+        overlay.querySelector('#astral-post-caption').focus();
     }
 
-    async _createPost(caption) {
+    /* ─────────────────────────── create / update / delete ─────────────────────────── */
+
+    async _createPost(caption, prompt) {
         const state = this.storage.getState();
         if (!state.creator) state.creator = { posts: [], subscribers: 0, revenue: 0, fans: [] };
+        if (!Array.isArray(state.creator.posts)) state.creator.posts = [];
 
         state.creator.posts.unshift({
+            id: this._uid(),
             caption,
-            description: caption,
+            prompt,
             timestamp: Date.now(),
             imageUrl: null,
+            imageW: 0,
+            imageH: 0,
             likes: this._rand(5, 60),
-            comments: this._rand(0, 14),
+            comments: this._seedComments(),
         });
 
         state.creator.revenue = (state.creator.revenue || 0) + this._rand(12, 70);
@@ -277,10 +382,168 @@ export class CreatorApp {
         this._tab = 'feed';
         this.render(document.querySelector('.astral-phone-body'));
 
-        if (this.imageGen.isAvailable()) await this._generate(0, true);
+        if (prompt && this.imageGen.isAvailable()) await this._generate(0, true);
 
         this.render(document.querySelector('.astral-phone-body'));
     }
+
+    _updatePost(index, patch) {
+        const state = this.storage.getState();
+        const post = state.creator?.posts?.[index];
+        if (!post) return;
+
+        Object.assign(post, patch);
+        this.storage.save();
+
+        this.render(document.querySelector('.astral-phone-body'));
+        this._toast('Пост обновлён', 'success');
+    }
+
+    _deletePost(index) {
+        const state = this.storage.getState();
+        if (!Array.isArray(state.creator?.posts) || !state.creator.posts[index]) return;
+
+        state.creator.posts.splice(index, 1);
+        this.storage.save();
+
+        this.render(document.querySelector('.astral-phone-body'));
+        this._toast('Пост удалён', 'success');
+    }
+
+    /** Small action sheet for a post: edit, delete. */
+    _openPostMenu(index) {
+        const overlay = document.createElement('div');
+        overlay.className = 'astral-modal';
+        overlay.innerHTML = `
+            <div class="astral-modal-card astral-modal-card--sheet">
+                <button class="astral-sheet-btn" data-act="edit">Редактировать</button>
+                <button class="astral-sheet-btn astral-sheet-btn--danger" data-act="delete">Удалить</button>
+                <button class="astral-sheet-btn astral-sheet-btn--cancel" data-act="cancel">Отмена</button>
+            </div>
+        `;
+
+        document.querySelector('.astral-phone').appendChild(overlay);
+
+        const close = () => overlay.remove();
+        overlay.addEventListener('click', (e) => {
+            if (e.target === overlay) close();
+        });
+
+        overlay.querySelector('[data-act="cancel"]').addEventListener('click', close);
+        overlay.querySelector('[data-act="edit"]').addEventListener('click', () => {
+            close();
+            this._openComposer(index);
+        });
+        overlay.querySelector('[data-act="delete"]').addEventListener('click', () => {
+            close();
+            this._confirmDelete(index);
+        });
+    }
+
+    _confirmDelete(index) {
+        const state = this.storage.getState();
+        const post = state.creator?.posts?.[index];
+        const preview = (post?.caption || '').slice(0, 60) || 'без подписи';
+
+        const overlay = document.createElement('div');
+        overlay.className = 'astral-modal';
+        overlay.innerHTML = `
+            <div class="astral-modal-card astral-modal-card--sheet">
+                <div class="astral-confirm-text">Удалить пост «${this._esc(preview)}»? Это необратимо.</div>
+                <button class="astral-sheet-btn astral-sheet-btn--danger" data-act="yes">Удалить</button>
+                <button class="astral-sheet-btn astral-sheet-btn--cancel" data-act="no">Отмена</button>
+            </div>
+        `;
+
+        document.querySelector('.astral-phone').appendChild(overlay);
+
+        const close = () => overlay.remove();
+        overlay.addEventListener('click', (e) => {
+            if (e.target === overlay) close();
+        });
+
+        overlay.querySelector('[data-act="no"]').addEventListener('click', close);
+        overlay.querySelector('[data-act="yes"]').addEventListener('click', () => {
+            close();
+            this._deletePost(index);
+        });
+    }
+
+    /* ─────────────────────────── comments ─────────────────────────── */
+
+    _openComments(index) {
+        const state = this.storage.getState();
+        const post = state.creator?.posts?.[index];
+        if (!post) return;
+
+        const comments = Array.isArray(post.comments) ? post.comments : [];
+
+        const overlay = document.createElement('div');
+        overlay.className = 'astral-modal';
+        overlay.innerHTML = `
+            <div class="astral-modal-card astral-modal-card--comments">
+                <div class="astral-modal-title">Комментарии (${comments.length})</div>
+                <div class="astral-comment-list" id="astral-comment-list"></div>
+                <div class="astral-modal-actions">
+                    <button class="astral-btn" id="astral-comments-close">Закрыть</button>
+                </div>
+            </div>
+        `;
+
+        document.querySelector('.astral-phone').appendChild(overlay);
+
+        const list = overlay.querySelector('#astral-comment-list');
+        if (comments.length === 0) {
+            list.innerHTML = `<div class="astral-comment-empty">Комментариев пока нет</div>`;
+        } else {
+            for (const c of comments) {
+                const row = document.createElement('div');
+                row.className = 'astral-comment';
+                row.innerHTML = `
+                    <div class="astral-comment-ava">${this._esc((c.author || '?')[0].toUpperCase())}</div>
+                    <div class="astral-comment-main">
+                        <div class="astral-comment-head">
+                            <span class="astral-comment-author">${this._esc(c.author || 'Аноним')}</span>
+                            <span class="astral-comment-time">${this._ago(c.timestamp)}</span>
+                        </div>
+                        <div class="astral-comment-text">${this._esc(c.text || '')}</div>
+                    </div>
+                `;
+                list.appendChild(row);
+            }
+        }
+
+        const close = () => overlay.remove();
+        overlay.addEventListener('click', (e) => {
+            if (e.target === overlay) close();
+        });
+        overlay.querySelector('#astral-comments-close').addEventListener('click', close);
+    }
+
+    /** Fan comments seeded onto a fresh post. */
+    _seedComments() {
+        const count = this._rand(1, 4);
+        const used = new Set();
+        const out = [];
+
+        for (let i = 0; i < count; i++) {
+            let author = this._pick(FAN_NAMES);
+            let guard = 0;
+            while (used.has(author) && guard++ < 12) author = this._pick(FAN_NAMES);
+            used.add(author);
+
+            out.push({
+                id: this._uid(),
+                author,
+                text: this._pick(COMMENT_TEXTS),
+                timestamp: Date.now() - this._rand(1, 90) * 60000,
+            });
+        }
+
+        return out.sort((a, b) => b.timestamp - a.timestamp);
+    }
+
+    /* ─────────────────────────── generation ─────────────────────────── */
 
     async _generate(index, silent = false) {
         if (!this.imageGen.isAvailable()) {
@@ -297,14 +560,19 @@ export class CreatorApp {
             const post = state.creator?.posts?.[index];
             if (!post) return;
 
-            const prompt = [this.context.name2 || 'Персонаж', post.description].filter(Boolean).join(' — ');
+            // Only the prompt reaches the generator — the caption stays plain text.
+            const scene = String(post.prompt || '').trim();
+            const prompt = [this.context.name2 || 'Персонаж', scene].filter(Boolean).join(' — ');
+
             const url = await this.imageGen.generate(prompt, {
                 character: this.context.name2,
                 type: 'creator_post',
                 nsfw: true,
             });
 
-            state.creator.posts[index].imageUrl = url;
+            post.imageUrl = url;
+            post.imageW = 0;
+            post.imageH = 0;
             this.storage.save();
             this._toast('Готово', 'success');
         } catch (err) {
@@ -321,18 +589,33 @@ export class CreatorApp {
     async handleEvent(eventData) {
         const state = this.storage.getState();
         if (!state.creator) state.creator = { posts: [], subscribers: 0, revenue: 0, fans: [] };
+        if (!Array.isArray(state.creator.posts)) state.creator.posts = [];
 
         const meta = eventData.metadata || {};
 
         if (eventData.type === 'content_posted') {
             state.creator.posts.unshift({
-                caption: eventData.description,
-                description: eventData.description,
+                id: this._uid(),
+                caption: eventData.description || '',
+                prompt: meta.prompt || '',
                 timestamp: Date.now(),
                 imageUrl: null,
+                imageW: 0,
+                imageH: 0,
                 likes: this._rand(5, 60),
-                comments: this._rand(0, 14),
+                comments: this._seedComments(),
             });
+        } else if (eventData.type === 'comment_received') {
+            const post = state.creator.posts[Number(meta.post) || 0];
+            if (post) {
+                if (!Array.isArray(post.comments)) post.comments = [];
+                post.comments.unshift({
+                    id: this._uid(),
+                    author: meta.fan || this._pick(FAN_NAMES),
+                    text: eventData.description || this._pick(COMMENT_TEXTS),
+                    timestamp: Date.now(),
+                });
+            }
         } else if (eventData.type === 'donation_received') {
             const amount = Number(meta.amount) || 25;
             state.creator.revenue = (state.creator.revenue || 0) + amount;
@@ -359,6 +642,14 @@ export class CreatorApp {
     }
 
     /* ─────────────────────────── utils ─────────────────────────── */
+
+    _pick(arr) {
+        return arr[Math.floor(Math.random() * arr.length)];
+    }
+
+    _uid() {
+        return `p${Date.now().toString(36)}${Math.random().toString(36).slice(2, 7)}`;
+    }
 
     _rand(min, max) {
         return Math.floor(Math.random() * (max - min + 1)) + min;
