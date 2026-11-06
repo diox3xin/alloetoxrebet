@@ -29,15 +29,14 @@ export class GalleryApp {
                     <div>Пока пусто</div>
                     <div style="margin-top:10px;opacity:.7">Фото появятся, когда персонаж что-нибудь снимет</div>
                 </div>`;
-            return;
+        } else {
+            const grid = document.createElement('div');
+            grid.className = 'astral-gallery-grid';
+            photos.forEach((photo, idx) => this._renderTile(grid, photo, idx));
+            container.appendChild(grid);
         }
 
-        const grid = document.createElement('div');
-        grid.className = 'astral-gallery-grid';
-
-        photos.forEach((photo, idx) => this._renderTile(grid, photo, idx));
-
-        container.appendChild(grid);
+        // Always show action buttons (Take Photo + Generate)
         container.appendChild(this._buildActions(photos));
     }
 
