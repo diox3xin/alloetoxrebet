@@ -353,24 +353,43 @@ export class GalleryApp {
         viewer.className = 'astral-viewer';
         viewer.innerHTML = `
             <div class="astral-viewer-container">
+                <button class="astral-viewer-close" title="Закрыть">✕</button>
                 <img src="${photo.imageUrl}" alt="">
                 <div class="astral-viewer-caption">${this._esc(photo.description)}</div>
-                <button class="astral-viewer-delete" title="Delete photo">
+                <button class="astral-viewer-delete" title="Удалить фото">
                     <svg viewBox="0 0 24 24" width="20" height="20" stroke="currentColor" fill="none" stroke-width="2">
                         <path d="M3 6h18M8 6V4a2 2 0 012-2h4a2 2 0 012 2v2m3 0v14a2 2 0 01-2 2H7a2 2 0 01-2-2V6h14zM10 11v6M14 11v6"/>
                     </svg>
                 </button>
             </div>
         `;
-        
-        const deleteBtn = viewer.querySelector('.astral-viewer-delete');
-        deleteBtn.addEventListener('click', (e) => {
+
+        const close = () => viewer.remove();
+
+        viewer.querySelector('.astral-viewer-close').addEventListener('click', (e) => {
             e.stopPropagation();
-            this._deletePhoto(photo);
-            viewer.remove();
+            close();
         });
 
-        viewer.addEventListener('click', () => viewer.remove());
+        viewer.querySelector('.astral-viewer-delete').addEventListener('click', (e) => {
+            e.stopPropagation();
+            this._deletePhoto(photo);
+            close();
+        });
+
+        // Закрытие — только клик по пустому фону. Клик по картинке или подписи
+        // не должен закрывать: пользователь листает и читает.
+        viewer.addEventListener('click', (e) => {
+            if (e.target === viewer) close();
+        });
+
+        // Esc тоже закрывает
+        const onKey = (e) => {
+            if (e.key === 'Escape') { close(); document.removeEventListener('keydown', onKey); }
+        };
+        document.addEventListener('keydown', onKey);
+        viewer.addEventListener('astro:removed', () => document.removeEventListener('keydown', onKey));
+
         document.querySelector('.astral-phone').appendChild(viewer);
     }
 

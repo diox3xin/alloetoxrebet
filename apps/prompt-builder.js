@@ -496,14 +496,29 @@ export function resolveUserName(ctx) {
  * Промпт для модели: строгий JSON, только сценозависимые теги.
  * Всё, что уже есть в Haruspics, помечается как «не описывать».
  */
-export function buildAsk({ mode, charName, userName, sceneText, knownAppearance, customInstruction }) {
+export function buildAsk({ mode, charName, userName, sceneText, knownCharacters, customInstruction }) {
     const who = mode === 'selfie'
         ? `"${charName}" AND "${userName}" (both in frame)`
         : `"${charName}" (alone in frame, "${userName}" holds the camera and is NOT visible)`;
 
-    const appearanceRule = knownAppearance
-        ? `Appearance (hair, eyes, build, skin) is provided separately — do NOT include it.`
-        : `No appearance data exists — fill hair, eyes, build, skin, outfit from the scene or the character card.`;
+    const locked = Array.isArray(knownCharacters) ? knownCharacters.filter(c => c?.name && c?.appearance) : [];
+
+    // Залоченные персонажи: внешность задана пользователем и подставляется кодом.
+    // Модель не должна её придумывать — иначе в промпт попадут противоречивые
+    // описания и сгенерируется чужое лицо.
+    let appearanceRule;
+    if (locked.length) {
+        const list = locked.map(c => `  - "${c.name}": ${c.appearance}`).join('\n');
+        appearanceRule = `LOCKED APPEARANCE — these characters already have a fixed appearance.
+You MUST leave hair, eyes, build and skin EMPTY ("") for them. Do not describe, guess,
+paraphrase or contradict the appearance below. It is inserted into the prompt
+automatically, word for word:
+${list}
+
+For any character NOT in that list, fill hair, eyes, build and skin from the scene.`;
+    } else {
+        appearanceRule = `No fixed appearance exists for anyone — fill hair, eyes, build and skin from the scene.`;
+    }
 
     const custom = customInstruction
         ? `\nUSER'S EXTRA GUIDANCE (follow it, but still answer as JSON):\n${customInstruction}\n`
@@ -667,9 +682,11 @@ export function assemble(structured, haruspics, opts) {
 
         tags.push(ref);
 
-        // внешность: Haruspics побеждает сцену
+        // Внешность. Для персонажей из справочника берём ТОЛЬКО текст
+        // пользователя, дословно; поля модели (hair/eyes/build/skin) при этом
+        // полностью игнорируются — так выдуманная внешность не просочится.
         const known = (h.chars || []).find(x => x.name === ref);
-        const knownAppearance = cleanTags(known?.appearance || '');
+        const knownAppearance = known?.appearance ? String(known.appearance).trim() : '';
         if (knownAppearance) {
             tags.push(knownAppearance);
         } else {
@@ -696,6 +713,17 @@ export function assemble(structured, haruspics, opts) {
     }
 
     let prompt = [base.filter(Boolean).join(', '), ...charBlocks.filter(Boolean)].join(' | ');
+
+    // Страховка: даже если модель проигнорировала инструкцию и что-то описала,
+    // её описание уже не попало в блок (там внешность из книги). Но она могла
+    // вписать внешность в свободные поля — проверяем, что ключевые слова
+    // пользователя реально присутствуют, и предупреждаем, если нет.
+    for (const lockedChar of (h.chars || [])) {
+        if (!lockedChar.appearance) continue;
+        if (!prompt.includes(lockedChar.appearance)) {
+            prompt = `${lockedChar.appearance}, ${prompt}`;
+        }
+    }
 
     // Триггер по имени: любые персонажи справочника, упомянутые в промпте,
     // получают свою внешность. Работает и для тех, кого модель не описала
@@ -724,14 +752,12 @@ export async function buildPhotoPrompt({ imageGen, ctx, askModel, sceneText, mod
     const userName = resolveUserName(ctx);
     const haruspics = collectHaruspics(imageGen, ctx);
 
-    const knownAppearance = (haruspics.chars || []).some(x => x.name === charName && x.appearance);
-
     const ask = buildAsk({
         mode,
         charName,
         userName,
         sceneText,
-        knownAppearance,
+        knownCharacters: haruspics.chars || [],
         customInstruction,
     });
 

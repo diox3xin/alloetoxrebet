@@ -573,46 +573,84 @@
   position: absolute;
   inset: 0;
   z-index: 70;
+  display: block;
+  overflow-y: auto;
+  overflow-x: hidden;
+  -webkit-overflow-scrolling: touch;
+  overscroll-behavior: contain;
+  padding: 20px 16px 28px;
+  background: rgba(6,5,9,.96);
+  backdrop-filter: blur(10px);
+  animation: astral-fade .18s ease;
+}
+
+/* прокрутка вниз — к подписи и кнопке удаления */
+.astral-viewer-container {
   display: flex;
   flex-direction: column;
   align-items: center;
-  justify-content: center;
   gap: 14px;
-  padding: 24px;
-  background: rgba(6,5,9,.95);
-  backdrop-filter: blur(10px);
-  cursor: zoom-out;
-  animation: astral-fade .18s ease;
+  min-height: 100%;
+  width: 100%;
+  padding-bottom: 8px;
 }
+
+/* картинка целиком, без обрезки: ограничение по высоте вьюпорта
+   оставляет место подписи, но не режет само изображение */
 .astral-viewer img {
+  display: block;
+  width: auto;
+  height: auto;
   max-width: 100%;
-  max-height: 74%;
+  max-height: none;
   border-radius: 14px;
   border: 1px solid rgba(217,154,181,.25);
   object-fit: contain;
+  flex: 0 0 auto;
 }
+
 .astral-viewer-caption {
   font-size: 11px;
-  line-height: 1.55;
+  line-height: 1.6;
   color: var(--phone-muted);
   text-align: center;
-  max-width: 90%;
+  max-width: 96%;
+  word-break: break-word;
+  flex: 0 0 auto;
+  padding: 0 4px 6px;
 }
 
 /* ── delete button ──────────────────────────────────────────── */
-.astral-viewer-container {
-  position: relative;
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  gap: 12px;
-  width: 100%;
+.astral-viewer-container { position: relative; }
+
+.astral-viewer-close {
+  position: fixed;
+  top: 14px;
+  right: 14px;
+  width: 38px;
+  height: 38px;
+  border-radius: 50%;
+  border: 1px solid rgba(217,154,181,.3);
+  background: rgba(23,17,22,.85);
+  color: var(--phone-text);
+  font-size: 15px;
+  display: grid;
+  place-items: center;
+  cursor: pointer;
+  z-index: 80;
+  transition: .15s;
+  backdrop-filter: blur(8px);
 }
+.astral-viewer-close:hover {
+  background: rgba(217,154,181,.25);
+  border-color: var(--phone-accent-light);
+}
+.astral-viewer-close:active { transform: scale(.92); }
 
 .astral-viewer-delete {
   position: absolute;
-  top: 12px;
-  right: 12px;
+  top: 10px;
+  right: 10px;
   width: 44px;
   height: 44px;
   border-radius: 50%;

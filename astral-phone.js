@@ -2452,9 +2452,22 @@ REPLY (text only):`;
     return pick;
   }
   __name(resolveUserName, "resolveUserName");
-  function buildAsk({ mode, charName, userName, sceneText, knownAppearance, customInstruction }) {
+  function buildAsk({ mode, charName, userName, sceneText, knownCharacters, customInstruction }) {
     const who = mode === "selfie" ? `"${charName}" AND "${userName}" (both in frame)` : `"${charName}" (alone in frame, "${userName}" holds the camera and is NOT visible)`;
-    const appearanceRule = knownAppearance ? `Appearance (hair, eyes, build, skin) is provided separately \u2014 do NOT include it.` : `No appearance data exists \u2014 fill hair, eyes, build, skin, outfit from the scene or the character card.`;
+    const locked = Array.isArray(knownCharacters) ? knownCharacters.filter((c) => c?.name && c?.appearance) : [];
+    let appearanceRule;
+    if (locked.length) {
+      const list = locked.map((c) => `  - "${c.name}": ${c.appearance}`).join("\n");
+      appearanceRule = `LOCKED APPEARANCE \u2014 these characters already have a fixed appearance.
+You MUST leave hair, eyes, build and skin EMPTY ("") for them. Do not describe, guess,
+paraphrase or contradict the appearance below. It is inserted into the prompt
+automatically, word for word:
+${list}
+
+For any character NOT in that list, fill hair, eyes, build and skin from the scene.`;
+    } else {
+      appearanceRule = `No fixed appearance exists for anyone \u2014 fill hair, eyes, build and skin from the scene.`;
+    }
     const custom = customInstruction ? `
 USER'S EXTRA GUIDANCE (follow it, but still answer as JSON):
 ${customInstruction}
@@ -2560,7 +2573,7 @@ RULES:
       if (pos) tags.push(pos);
       tags.push(ref);
       const known = (h.chars || []).find((x) => x.name === ref);
-      const knownAppearance = cleanTags(known?.appearance || "");
+      const knownAppearance = known?.appearance ? String(known.appearance).trim() : "";
       if (knownAppearance) {
         tags.push(knownAppearance);
       } else {
@@ -2581,6 +2594,12 @@ RULES:
       charBlocks.push(tags.filter(Boolean).join(", "));
     }
     let prompt = [base.filter(Boolean).join(", "), ...charBlocks.filter(Boolean)].join(" | ");
+    for (const lockedChar of h.chars || []) {
+      if (!lockedChar.appearance) continue;
+      if (!prompt.includes(lockedChar.appearance)) {
+        prompt = `${lockedChar.appearance}, ${prompt}`;
+      }
+    }
     try {
       const { appearance } = matchCharacters(prompt);
       const missing = appearance.filter((a) => !prompt.toLowerCase().includes(a.toLowerCase()));
@@ -2595,13 +2614,12 @@ RULES:
     const charName = resolveCharName(ctx);
     const userName = resolveUserName(ctx);
     const haruspics = collectHaruspics(imageGen2, ctx);
-    const knownAppearance = (haruspics.chars || []).some((x) => x.name === charName && x.appearance);
     const ask = buildAsk({
       mode,
       charName,
       userName,
       sceneText,
-      knownAppearance,
+      knownCharacters: haruspics.chars || [],
       customInstruction
     });
     let structured = null;
@@ -2930,22 +2948,37 @@ ${ask}`,
       viewer.className = "astral-viewer";
       viewer.innerHTML = `
             <div class="astral-viewer-container">
+                <button class="astral-viewer-close" title="\u0417\u0430\u043A\u0440\u044B\u0442\u044C">\u2715</button>
                 <img src="${photo.imageUrl}" alt="">
                 <div class="astral-viewer-caption">${this._esc(photo.description)}</div>
-                <button class="astral-viewer-delete" title="Delete photo">
+                <button class="astral-viewer-delete" title="\u0423\u0434\u0430\u043B\u0438\u0442\u044C \u0444\u043E\u0442\u043E">
                     <svg viewBox="0 0 24 24" width="20" height="20" stroke="currentColor" fill="none" stroke-width="2">
                         <path d="M3 6h18M8 6V4a2 2 0 012-2h4a2 2 0 012 2v2m3 0v14a2 2 0 01-2 2H7a2 2 0 01-2-2V6h14zM10 11v6M14 11v6"/>
                     </svg>
                 </button>
             </div>
         `;
-      const deleteBtn = viewer.querySelector(".astral-viewer-delete");
-      deleteBtn.addEventListener("click", (e) => {
+      const close = /* @__PURE__ */ __name(() => viewer.remove(), "close");
+      viewer.querySelector(".astral-viewer-close").addEventListener("click", (e) => {
+        e.stopPropagation();
+        close();
+      });
+      viewer.querySelector(".astral-viewer-delete").addEventListener("click", (e) => {
         e.stopPropagation();
         this._deletePhoto(photo);
-        viewer.remove();
+        close();
       });
-      viewer.addEventListener("click", () => viewer.remove());
+      viewer.addEventListener("click", (e) => {
+        if (e.target === viewer) close();
+      });
+      const onKey = /* @__PURE__ */ __name((e) => {
+        if (e.key === "Escape") {
+          close();
+          document.removeEventListener("keydown", onKey);
+        }
+      }, "onKey");
+      document.addEventListener("keydown", onKey);
+      viewer.addEventListener("astro:removed", () => document.removeEventListener("keydown", onKey));
       document.querySelector(".astral-phone").appendChild(viewer);
     }
     _deletePhoto(photo) {
