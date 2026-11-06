@@ -1,4 +1,7 @@
-var AstralPhone = (() => {
+(() => {
+  var __defProp = Object.defineProperty;
+  var __name = (target, value) => __defProp(target, "name", { value, configurable: true });
+
   // apps/phone-core.js
   var ICONS = {
     home: `<svg viewBox="0 0 24 24"><path d="M12 3.2l1.9 4.6 4.9.4-3.7 3.2 1.1 4.8L12 13.7 7.8 16.2l1.1-4.8L5.2 8.2l4.9-.4z"/></svg>`,
@@ -8,6 +11,9 @@ var AstralPhone = (() => {
     creator: `<svg viewBox="0 0 24 24"><path d="M12 2.8l3.1 5.9 6.3 1-4.6 4.4 1.1 6.4-5.9-3.2-5.9 3.2 1.1-6.4L2.6 9.7l6.3-1z"/></svg>`
   };
   var PhoneCore = class {
+    static {
+      __name(this, "PhoneCore");
+    }
     constructor(context, storage2, imageGen2) {
       this.context = context;
       this.storage = storage2;
@@ -201,6 +207,9 @@ var AstralPhone = (() => {
 
   // apps/storage.js
   var PhoneStorage = class {
+    static {
+      __name(this, "PhoneStorage");
+    }
     constructor(context) {
       this.context = context;
       this.key = "astral_phone";
@@ -275,7 +284,7 @@ var AstralPhone = (() => {
   };
 
   // apps/image-gen.js
-  var MODULE_NAME = "inline_image_gen";
+  var HARUSPICS_MODULE_NAME = "inline_image_gen";
   var VALID_ASPECT_RATIOS = ["1:1", "2:3", "3:2", "3:4", "4:3", "4:5", "5:4", "9:16", "16:9", "21:9"];
   var VALID_IMAGE_SIZES = ["1K", "2K", "4K"];
   var NAISTERA_RATIOS = ["1:1", "2:3", "3:2", "3:4", "4:3", "4:5", "5:4", "9:16", "16:9", "21:9"];
@@ -333,26 +342,32 @@ var AstralPhone = (() => {
   function isGeminiModel(modelId) {
     return /nano-banana|gemini|flash-image|imagen/i.test(String(modelId || ""));
   }
+  __name(isGeminiModel, "isGeminiModel");
   function normalizeOpenAIBaseUrl(endpoint) {
     return (endpoint || "").trim().replace(/\/+$/, "").replace(/\/v1$/i, "");
   }
+  __name(normalizeOpenAIBaseUrl, "normalizeOpenAIBaseUrl");
   function buildOpenAIUrl(endpoint, path) {
     const cleanPath = String(path || "").replace(/^\/+/, "");
     return `${normalizeOpenAIBaseUrl(endpoint)}/v1/${cleanPath}`;
   }
+  __name(buildOpenAIUrl, "buildOpenAIUrl");
   function isRouterEndpoint(endpoint) {
     const lower = (endpoint || "").toLowerCase();
     return lower.includes("closerouter") || lower.includes("openrouter") || lower.includes("rout.my");
   }
+  __name(isRouterEndpoint, "isRouterEndpoint");
   function normalizeApiKey(apiKey) {
     return String(apiKey ?? "").trim().replace(/^['"]|['"]$/g, "").replace(/^Bearer\s+/i, "").replace(/\s+/g, "").trim();
   }
+  __name(normalizeApiKey, "normalizeApiKey");
   function buildAuthHeaders(apiKey, extra = {}) {
     return {
       ...extra,
       "Authorization": `Bearer ${normalizeApiKey(apiKey)}`
     };
   }
+  __name(buildAuthHeaders, "buildAuthHeaders");
   function buildGeminiRequestCandidates(baseUrl, model, apiKey) {
     const clean = String(baseUrl || "").replace(/\/$/, "");
     const lower = clean.toLowerCase();
@@ -364,7 +379,7 @@ var AstralPhone = (() => {
       }];
     }
     const candidates = [];
-    const pushCandidate = (url) => {
+    const pushCandidate = /* @__PURE__ */ __name((url) => {
       if (!candidates.some((candidate) => candidate.url === url)) {
         candidates.push({
           url,
@@ -374,7 +389,7 @@ var AstralPhone = (() => {
           }
         });
       }
-    };
+    }, "pushCandidate");
     if (/\/v1beta$/i.test(clean)) {
       pushCandidate(`${clean}/models/${model}:generateContent`);
       pushCandidate(`${clean.replace(/\/v1beta$/i, "")}/v1/models/${model}:generateContent`);
@@ -388,20 +403,25 @@ var AstralPhone = (() => {
     }
     return candidates;
   }
+  __name(buildGeminiRequestCandidates, "buildGeminiRequestCandidates");
   function normalizeNaisteraModel(model) {
     return String(model || "").trim();
   }
+  __name(normalizeNaisteraModel, "normalizeNaisteraModel");
   function isNaisteraNovelAIModel(model) {
     return /^novelai(?:-|$)/i.test(normalizeNaisteraModel(model));
   }
+  __name(isNaisteraNovelAIModel, "isNaisteraNovelAIModel");
   function normalizeNaisteraCharacterDescriptionsMode(value) {
     return ["none", "as-is", "character-prompt"].includes(value) ? value : "as-is";
   }
+  __name(normalizeNaisteraCharacterDescriptionsMode, "normalizeNaisteraCharacterDescriptionsMode");
   function normalizeNaisteraEndpoint(endpoint) {
     const value = String(endpoint || "").trim().replace(/\/+$/, "");
     if (!value) return "https://naistera.org";
     return value.replace(/\/api\/(?:generate|models)$/i, "");
   }
+  __name(normalizeNaisteraEndpoint, "normalizeNaisteraEndpoint");
   function formatNaisteraDescription(value) {
     if (!value) return "";
     if (typeof value === "string") return value;
@@ -413,6 +433,7 @@ var AstralPhone = (() => {
     }
     return String(value);
   }
+  __name(formatNaisteraDescription, "formatNaisteraDescription");
   function normalizeReturnedImage(value) {
     if (!value) return null;
     if (typeof value !== "string") return null;
@@ -429,6 +450,7 @@ var AstralPhone = (() => {
     }
     return null;
   }
+  __name(normalizeReturnedImage, "normalizeReturnedImage");
   function extractImageFromText(text) {
     if (!text || typeof text !== "string") return null;
     const dataUrl = text.match(/data:image\/[a-zA-Z0-9.+-]+;base64,[A-Za-z0-9+/=\r\n]+/);
@@ -439,9 +461,10 @@ var AstralPhone = (() => {
     if (plainImageUrl) return plainImageUrl[0];
     return null;
   }
+  __name(extractImageFromText, "extractImageFromText");
   function parseImageFromApiResponse(result) {
     const candidates = [];
-    const push = (value) => {
+    const push = /* @__PURE__ */ __name((value) => {
       if (value == null) return;
       if (typeof value === "string") candidates.push(value);
       else if (typeof value === "object") {
@@ -449,7 +472,7 @@ var AstralPhone = (() => {
         candidates.push(value.image_url?.url, value.image_url);
         if (value.data) candidates.push(value.data);
       }
-    };
+    }, "push");
     push(result?.url);
     push(result?.uri);
     push(result?.image);
@@ -478,9 +501,10 @@ var AstralPhone = (() => {
     }
     return null;
   }
+  __name(parseImageFromApiResponse, "parseImageFromApiResponse");
   function extractNaisteraDataUrl(result) {
     const candidates = [];
-    const push = (value) => {
+    const push = /* @__PURE__ */ __name((value) => {
       if (value == null) return;
       if (typeof value === "string") candidates.push(value);
       if (typeof value === "object") {
@@ -494,7 +518,7 @@ var AstralPhone = (() => {
           value.base64
         );
       }
-    };
+    }, "push");
     push(result?.data_url);
     push(result?.image);
     push(result?.url);
@@ -510,12 +534,13 @@ var AstralPhone = (() => {
     }
     return null;
   }
+  __name(extractNaisteraDataUrl, "extractNaisteraDataUrl");
   async function extractNovelAIPng(archive) {
     const bytes = new Uint8Array(archive);
     if (bytes.length < 22 || bytes.length > 60 * 1024 * 1024) throw new Error("NovelAI \u043D\u0435 \u0432\u0435\u0440\u043D\u0443\u043B ZIP \u0441 \u0438\u0437\u043E\u0431\u0440\u0430\u0436\u0435\u043D\u0438\u0435\u043C.");
     const view = new DataView(archive);
-    const uint16 = (offset2) => view.getUint16(offset2, true);
-    const uint32 = (offset2) => view.getUint32(offset2, true);
+    const uint16 = /* @__PURE__ */ __name((offset2) => view.getUint16(offset2, true), "uint16");
+    const uint32 = /* @__PURE__ */ __name((offset2) => view.getUint32(offset2, true), "uint32");
     let end = -1;
     for (let pos = bytes.length - 22; pos >= Math.max(0, bytes.length - 65557); pos--) {
       if (uint32(pos) === 101010256 && pos + 22 + uint16(pos + 20) === bytes.length) {
@@ -560,6 +585,7 @@ var AstralPhone = (() => {
     }
     throw new Error("NovelAI \u0432\u0435\u0440\u043D\u0443\u043B ZIP \u0431\u0435\u0437 PNG.");
   }
+  __name(extractNovelAIPng, "extractNovelAIPng");
   function arrayBufferToBase64(buffer) {
     const bytes = new Uint8Array(buffer);
     let binary = "";
@@ -569,7 +595,11 @@ var AstralPhone = (() => {
     }
     return btoa(binary);
   }
+  __name(arrayBufferToBase64, "arrayBufferToBase64");
   var ImageGenerator = class {
+    static {
+      __name(this, "ImageGenerator");
+    }
     /**
      * @param {object} context SillyTavern context (getContext()) — provides
      *   getRequestHeaders(), characters, characterId, extensionSettings.
@@ -595,13 +625,13 @@ var AstralPhone = (() => {
       try {
         const bag = globalThis.extension_settings;
         if (bag && typeof bag === "object") {
-          const s = bag[MODULE_NAME];
+          const s = bag[HARUSPICS_MODULE_NAME];
           if (s && typeof s === "object") return s;
         }
       } catch (_) {
       }
       try {
-        const s = this._ctx()?.extensionSettings?.[MODULE_NAME];
+        const s = this._ctx()?.extensionSettings?.[HARUSPICS_MODULE_NAME];
         if (s && typeof s === "object") return s;
       } catch (_) {
       }
@@ -1306,6 +1336,9 @@ ${prompt}
 
   // apps/messages.js
   var MessagesApp = class {
+    static {
+      __name(this, "MessagesApp");
+    }
     constructor(context, storage2, imageGen2) {
       this.context = context;
       this.storage = storage2;
@@ -1407,6 +1440,9 @@ ${prompt}
 
   // apps/gallery.js
   var GalleryApp = class {
+    static {
+      __name(this, "GalleryApp");
+    }
     constructor(context, storage2, imageGen2) {
       this.context = context;
       this.storage = storage2;
@@ -1566,6 +1602,9 @@ ${prompt}
   // apps/spicy.js
   var CATEGORIES = ["\u0412\u0441\u0435", "\u041D\u043E\u0432\u043E\u0435", "\u0422\u0440\u0435\u043D\u0434\u044B", "\u0421\u043C\u043E\u0442\u0440\u0435\u0442\u044C \u043F\u043E\u0437\u0436\u0435"];
   var SpicyApp = class {
+    static {
+      __name(this, "SpicyApp");
+    }
     constructor(context, storage2, imageGen2) {
       this.context = context;
       this.storage = storage2;
@@ -1734,6 +1773,9 @@ ${prompt}
     { id: "fans", label: "\u0424\u0430\u043D\u044B" }
   ];
   var CreatorApp = class {
+    static {
+      __name(this, "CreatorApp");
+    }
     constructor(context, storage2, imageGen2) {
       this.context = context;
       this.storage = storage2;
@@ -1927,7 +1969,7 @@ ${prompt}
             </div>
         `;
       document.querySelector(".astral-phone").appendChild(overlay);
-      const close = () => overlay.remove();
+      const close = /* @__PURE__ */ __name(() => overlay.remove(), "close");
       overlay.querySelector("#astral-post-cancel").addEventListener("click", close);
       overlay.addEventListener("click", (e) => {
         if (e.target === overlay) close();
@@ -2054,7 +2096,7 @@ ${prompt}
   };
 
   // index.js
-  var MODULE_NAME2 = "astral-phone";
+  var MODULE_NAME = "astral-phone";
   var EVENT_TAG_RE = /<phone-event\b([^>]*?)\/?>/gi;
   var ATTR_RE = /(\w+)\s*=\s*"([^"]*)"/g;
   var core = null;
@@ -2098,6 +2140,7 @@ description \u043F\u0438\u0448\u0438 \u043A\u0430\u043A \u043F\u0440\u043E\u043C
     initialized = true;
     console.log("[Astral Phone] ready");
   }
+  __name(init, "init");
   function injectLauncher() {
     if (document.getElementById("astral-phone-launcher")) return;
     const btn = document.createElement("div");
@@ -2116,6 +2159,7 @@ description \u043F\u0438\u0448\u0438 \u043A\u0430\u043A \u043F\u0440\u043E\u043C
       menu.appendChild(item);
     }
   }
+  __name(injectLauncher, "injectLauncher");
   function registerFunctionTool(context) {
     if (typeof context.registerFunctionTool !== "function") {
       console.warn("[Astral Phone] registerFunctionTool unavailable \u2014 using tag fallback only");
@@ -2158,7 +2202,7 @@ description \u043F\u0438\u0448\u0438 \u043A\u0430\u043A \u043F\u0440\u043E\u043C
         },
         required: ["type", "description"]
       },
-      action: async (args) => {
+      action: /* @__PURE__ */ __name(async (args) => {
         try {
           const result = await core.handleEvent(args);
           return JSON.stringify(result);
@@ -2166,9 +2210,10 @@ description \u043F\u0438\u0448\u0438 \u043A\u0430\u043A \u043F\u0440\u043E\u043C
           console.error("[Astral Phone] tool action failed:", err);
           return JSON.stringify({ success: false, error: String(err?.message || err) });
         }
-      }
+      }, "action")
     });
   }
+  __name(registerFunctionTool, "registerFunctionTool");
   function parseAttrs(str) {
     const out = {};
     let m;
@@ -2176,6 +2221,7 @@ description \u043F\u0438\u0448\u0438 \u043A\u0430\u043A \u043F\u0440\u043E\u043C
     while (m = ATTR_RE.exec(str)) out[m[1]] = m[2];
     return out;
   }
+  __name(parseAttrs, "parseAttrs");
   function registerEventTagFallback(context) {
     const { eventSource, event_types } = context;
     eventSource.on(event_types.MESSAGE_RECEIVED, (messageId) => {
@@ -2211,10 +2257,11 @@ description \u043F\u0438\u0448\u0438 \u043A\u0430\u043A \u043F\u0440\u043E\u043C
       }
     });
   }
+  __name(registerEventTagFallback, "registerEventTagFallback");
   function injectPromptBlock(context) {
     try {
       context.setExtensionPrompt(
-        MODULE_NAME2,
+        MODULE_NAME,
         PROMPT_BLOCK,
         context.extension_prompt_types?.IN_CHAT ?? 1,
         1,
@@ -2224,6 +2271,7 @@ description \u043F\u0438\u0448\u0438 \u043A\u0430\u043A \u043F\u0440\u043E\u043C
       console.warn("[Astral Phone] prompt injection failed:", err);
     }
   }
+  __name(injectPromptBlock, "injectPromptBlock");
   function registerSlashCommands(context) {
     if (typeof context.registerSlashCommand !== "function") return;
     context.registerSlashCommand(
@@ -2261,6 +2309,7 @@ description \u043F\u0438\u0448\u0438 \u043A\u0430\u043A \u043F\u0440\u043E\u043C
       true
     );
   }
+  __name(registerSlashCommands, "registerSlashCommands");
   jQuery(async () => {
     const context = SillyTavern.getContext();
     context.eventSource.on(context.event_types.APP_INITIALIZED, init);

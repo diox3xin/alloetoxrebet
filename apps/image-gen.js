@@ -40,7 +40,7 @@
  * notifications and the iigLog ring buffer. Logging goes to console instead.
  */
 
-const MODULE_NAME = 'inline_image_gen';
+const HARUSPICS_MODULE_NAME = 'inline_image_gen';
 
 const VALID_ASPECT_RATIOS = ['1:1', '2:3', '3:2', '3:4', '4:3', '4:5', '5:4', '9:16', '16:9', '21:9'];
 const VALID_IMAGE_SIZES = ['1K', '2K', '4K'];
@@ -401,12 +401,12 @@ export class ImageGenerator {
         try {
             const bag = globalThis.extension_settings;
             if (bag && typeof bag === 'object') {
-                const s = bag[MODULE_NAME];
+                const s = bag[HARUSPICS_MODULE_NAME];
                 if (s && typeof s === 'object') return s;
             }
         } catch (_) { /* ignore */ }
         try {
-            const s = this._ctx()?.extensionSettings?.[MODULE_NAME];
+            const s = this._ctx()?.extensionSettings?.[HARUSPICS_MODULE_NAME];
             if (s && typeof s === 'object') return s;
         } catch (_) { /* ignore */ }
         return null;

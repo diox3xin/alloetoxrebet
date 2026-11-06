@@ -11,6 +11,7 @@
     "url": "git+https://github.com/diox3xin/alloetoxrebet.git"
   },
   "keywords": [],
+  "sideEffects": true,
   "author": "",
   "license": "ISC",
   "bugs": {
