@@ -224,62 +224,63 @@ export class GalleryApp {
 
             const charName = ctx.name2 || 'Character';
             const userName = ctx.name1 || 'You';
-            const state = this.storage.getState();
             const prefs = this._loadCameraPrefs();
 
-            const messages = (state.messages || []).slice(-6)
-                .map(m => `${m.from === 'me' ? userName : (m.character || 'Contact')}: ${m.text}`)
-                .join('\n');
+            // ── scene context: real chat, not phone messages ──
+            const chat = Array.isArray(ctx.chat) ? ctx.chat : [];
+            const sceneLines = chat
+                .filter(m => m && !m.is_system && typeof m.mes === 'string')
+                .slice(-4)
+                .map(m => String(m.mes).replace(/<[^>]+>/g, ' ').replace(/\s+/g, ' ').trim().slice(0, 400))
+                .filter(Boolean);
+            const sceneText = sceneLines.join('\n---\n') || '(no scene yet)';
 
-            const lastCharMsg = (state.messages || []).filter(m => m.character === charName).slice(-1)[0];
-            const charOutfit = lastCharMsg?.outfit || 'wearing casual clothes';
-            const charAction = lastCharMsg?.action || 'standing nearby';
-
-            const allCharacters = [...new Set((state.messages || []).map(m => m.character).filter(Boolean))];
-            const otherChars = allCharacters.filter(c => c !== charName);
-            const otherNpcsDesc = otherChars.length
-                ? otherChars.map(c => `- ${c}, nearby`).join('\n')
-                : '';
-            const backgroundDesc = this._inferBackground(messages);
-
-            // Resolve actual mode
             const resolvedMode = mode === 'random'
                 ? (Math.random() < 0.5 ? 'photo' : 'selfie')
                 : mode;
 
-            const defaultPhotoInstr = `${charName}, ${charOutfit}, ${charAction}
-${otherNpcsDesc}
-Background: ${backgroundDesc}
+            const customInstr = resolvedMode === 'selfie'
+                ? prefs.selfieInstruction.trim()
+                : prefs.photoInstruction.trim();
 
-Photo should look like it was taken on a mobile phone camera — candid, natural moment.
+            const modeBlock = resolvedMode === 'selfie'
+                ? `MODE: SELFIE. ${userName} is holding the phone and taking a selfie together with ${charName}. Both are in frame.`
+                : `MODE: PHOTO. ${userName} is holding the phone and photographing ${charName}. ${userName} is NOT in the frame.`;
 
-Generate a short, natural photo description (1-2 sentences) as if you're looking at it in your phone gallery. Casual tone, like a real caption.`;
+            const instructionBlock = customInstr
+                ? `INSTRUCTION TO FOLLOW:\n${customInstr}`
+                : `Write a detailed NovelAI v5 prompt for a candid phone photo. Include subject appearance, outfit, pose, background, lighting and "shot on smartphone" technical note.`;
 
-            const defaultSelfieInstr = `${userName}, dressed casually, taking a selfie
-${charName}, ${charOutfit}, ${charAction}
-${otherNpcsDesc}
-Background: ${backgroundDesc}
+            const prompt = `[IMAGE PROMPT TASK]
 
-Selfie should look like it was taken on a mobile phone front camera — casual, intimate vibe.
+${modeBlock}
 
-Generate a short, natural selfie description (1-2 sentences) as if you're looking at it in your phone gallery. Casual tone, like a real caption.`;
+SCENE (the roleplay happening right now, may be in any language):
+${sceneText}
 
-            let baseInstr = resolvedMode === 'selfie'
-                ? (prefs.selfieInstruction.trim() || defaultSelfieInstr)
-                : (prefs.photoInstruction.trim() || defaultPhotoInstr);
+${instructionBlock}
 
-            const prompt = `Scene context:
-${messages || '(quiet moment)'}
-
-${baseInstr}
-
-DESCRIPTION:`;
+HARD RULES:
+- Output MUST be in ENGLISH. Never Russian, never any other language.
+- Output ONLY the image prompt itself. No preamble, no explanation, no quotes, no "Prompt:" prefix, no markdown.
+- Describe the visual scene concretely: who, what they wear, what they do, where they are, light, mood.
+- Keep it under 200 words.`;
 
             const description = await genFn(prompt, false, false);
-            const text = String(description || '').trim().slice(0, 300);
+            let text = String(description || '').trim();
+
+            // strip common model wrappers
+            text = text
+                .replace(/^```[a-z]*\n?/i, '')
+                .replace(/\n?```$/, '')
+                .replace(/^(prompt|image prompt|description)\s*:\s*/i, '')
+                .replace(/^["'«]|["'»]$/g, '')
+                .trim()
+                .slice(0, 600);
 
             if (!text) { this._toast('Failed to capture photo', 'error'); return; }
 
+            const state = this.storage.getState();
             if (!Array.isArray(state.gallery)) state.gallery = [];
             state.gallery.push({
                 id: `photo_${Date.now()}_${Math.random().toString(36).slice(2, 7)}`,
@@ -287,6 +288,7 @@ DESCRIPTION:`;
                 imageUrl: null,
                 timestamp: Date.now(),
                 source: resolvedMode,
+                character: charName,
             });
 
             this.storage.save();
