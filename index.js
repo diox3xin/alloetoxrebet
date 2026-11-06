@@ -113,12 +113,17 @@ function init() {
 /* ────────────────────────────── launcher button ────────────────────────────── */
 
 function injectLauncher() {
-    if (document.getElementById('astral-phone-launcher')) return;
+    console.log('[Astral Phone] injectLauncher called');
+    if (document.getElementById('astral-phone-launcher')) {
+        console.log('[Astral Phone] launcher already exists');
+        return;
+    }
 
     const btn = document.createElement('div');
     btn.id = 'astral-phone-launcher';
     btn.title = 'Открыть телефон (перетащи для движения)';
     btn.innerHTML = '<span>📱</span>';
+    console.log('[Astral Phone] launcher created:', btn);
     
     // Click to toggle
     btn.addEventListener('click', (e) => {
@@ -187,6 +192,7 @@ function injectLauncher() {
     });
 
     document.body.appendChild(btn);
+    console.log('[Astral Phone] launcher appended to body, position:', btn.getBoundingClientRect());
 }
 
     const menu = document.getElementById('extensionsMenu');
