@@ -39,7 +39,7 @@ const COMMENT_TEXTS = [
     'Жду продолжения',
 ];
 
-import { enhancePrompt, resolveStyle } from './prompt-llm.js';
+import { enhancePrompt, resolveStyle, ensureStyle } from './prompt-llm.js';
 
 export class CreatorApp {
     constructor(context, storage, imageGen) {
@@ -531,8 +531,10 @@ export class CreatorApp {
             enhanceBtn.textContent = 'Улучшаю…';
 
             try {
+                const style = resolveStyle(this.imageGen);
                 const improved = await enhancePrompt(draft, {
-                    character: this.context?.characters?.[this.context?.characterId]?.name || this.context?.name2 || '',
+                    character: this._charName(),
+                    style,
                 });
                 if (improved) {
                     promptField.value = improved;
@@ -779,8 +781,14 @@ export class CreatorApp {
 
             // Внешность из справочника подставляется автоматически (внутри
             // imageGen.generate), а стиль подтягиваем так же, как в галерее.
-            const prompt = [charName, scene].filter(Boolean).join(', ');
             const style = resolveStyle(this.imageGen) || String(post.style || '');
+
+            // Стиль дописываем в сам промпт: ненадёжно полагаться только на
+            // metadata.style, потому что часть провайдеров игнорирует его.
+            const base = [charName, scene].filter(Boolean).join(', ');
+            const prompt = ensureStyle(base, style);
+
+            console.log('[Creator] prompt:', prompt);
 
             const url = await this.imageGen.generate(prompt, {
                 character: charName,

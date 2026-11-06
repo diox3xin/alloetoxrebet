@@ -674,11 +674,97 @@
   // apps/character-book.js
   var MODULE = "[AstralCharBook]";
   var SETTINGS_KEY = "astral-phone";
+  function readBooks() {
+    try {
+      const ctx = globalThis.SillyTavern?.getContext?.();
+      const bag = ctx?.extensionSettings || globalThis.extension_settings;
+      const settings = bag?.[SETTINGS_KEY];
+      if (!settings || typeof settings !== "object") return { books: [], activeId: "" };
+      if (Array.isArray(settings.characterBooks)) {
+        const books = settings.characterBooks.filter((b) => b && typeof b === "object").map((b) => ({
+          id: String(b.id || ""),
+          name: String(b.name || "\u041F\u0440\u043E\u0444\u0438\u043B\u044C"),
+          characters: Array.isArray(b.characters) ? b.characters : []
+        }));
+        return { books, activeId: String(settings.characterBooksActiveId || books[0]?.id || "") };
+      }
+      if (Array.isArray(settings.characters) && settings.characters.length) {
+        const id = "default";
+        const books = [{ id, name: "Default", characters: settings.characters }];
+        settings.characterBooks = books;
+        settings.characterBooksActiveId = id;
+        return { books, activeId: id };
+      }
+      return { books: [], activeId: "" };
+    } catch (_) {
+      return { books: [], activeId: "" };
+    }
+  }
+  __name(readBooks, "readBooks");
+  function writeBooks(store) {
+    try {
+      const ctx = globalThis.SillyTavern?.getContext?.();
+      const bag = ctx?.extensionSettings || globalThis.extension_settings;
+      if (!bag) return false;
+      if (!bag[SETTINGS_KEY]) bag[SETTINGS_KEY] = {};
+      bag[SETTINGS_KEY].characterBooks = (store.books || []).map((b) => ({
+        id: b.id,
+        name: b.name,
+        characters: b.characters || []
+      }));
+      bag[SETTINGS_KEY].characterBooksActiveId = store.activeId || "";
+      const active = (store.books || []).find((b) => b.id === store.activeId) || store.books?.[0];
+      bag[SETTINGS_KEY].characters = active?.characters || [];
+      const persist = ctx?.saveSettingsDebounced || globalThis.saveSettingsDebounced;
+      if (typeof persist === "function") persist();
+      return true;
+    } catch (err) {
+      console.warn(`${MODULE} writeBooks failed:`, err?.message || err);
+      return false;
+    }
+  }
+  __name(writeBooks, "writeBooks");
+  function listBooks() {
+    return readBooks();
+  }
+  __name(listBooks, "listBooks");
+  function addBook(name) {
+    const store = readBooks();
+    const id = `b${Date.now().toString(36)}${Math.random().toString(36).slice(2, 5)}`;
+    store.books.push({ id, name: String(name || `\u041F\u0440\u043E\u0444\u0438\u043B\u044C ${store.books.length + 1}`), characters: [] });
+    store.activeId = id;
+    writeBooks(store);
+    return id;
+  }
+  __name(addBook, "addBook");
+  function activateBook(id) {
+    const store = readBooks();
+    if (!store.books.some((b) => b.id === id)) return false;
+    store.activeId = id;
+    return writeBooks(store);
+  }
+  __name(activateBook, "activateBook");
+  function renameBook(id, name) {
+    const store = readBooks();
+    const b = store.books.find((x) => x.id === id);
+    if (!b) return false;
+    b.name = String(name || b.name);
+    return writeBooks(store);
+  }
+  __name(renameBook, "renameBook");
+  function removeBook(id) {
+    const store = readBooks();
+    if (store.books.length <= 1) return false;
+    store.books = store.books.filter((b) => b.id !== id);
+    if (store.activeId === id) store.activeId = store.books[0]?.id || "";
+    return writeBooks(store);
+  }
+  __name(removeBook, "removeBook");
   function loadCharacters() {
     try {
-      const bag = globalThis.extension_settings;
-      const settings = bag?.[SETTINGS_KEY] || globalThis.SillyTavern?.getContext?.()?.extensionSettings?.[SETTINGS_KEY];
-      const list = settings?.characters;
+      const store = readBooks();
+      const active = store.books.find((b) => b.id === store.activeId) || store.books[0];
+      const list = active?.characters;
       if (!Array.isArray(list)) return [];
       return list.filter((row) => row && typeof row === "object").map((row) => ({
         name: String(row.name || "").trim(),
@@ -694,19 +780,20 @@
   __name(loadCharacters, "loadCharacters");
   function saveCharacters(list) {
     try {
-      const ctx = globalThis.SillyTavern?.getContext?.();
-      const bag = ctx?.extensionSettings || globalThis.extension_settings;
-      if (!bag) throw new Error("extension_settings \u043D\u0435\u0434\u043E\u0441\u0442\u0443\u043F\u0435\u043D");
-      if (!bag[SETTINGS_KEY]) bag[SETTINGS_KEY] = {};
-      bag[SETTINGS_KEY].characters = (list || []).map((row) => ({
-        name: row.name || "",
-        aliases: row.aliases || "",
-        appearance: row.appearance || "",
+      const store = readBooks();
+      if (!store.books.length) {
+        const id = "default";
+        store.books = [{ id, name: "Default", characters: [] }];
+        store.activeId = id;
+      }
+      const active = store.books.find((b) => b.id === store.activeId) || store.books[0];
+      active.characters = (list || []).map((row) => ({
+        name: String(row.name || ""),
+        aliases: String(row.aliases || ""),
+        appearance: String(row.appearance || ""),
         enabled: row.enabled !== false
       }));
-      const persist = ctx?.saveSettingsDebounced || globalThis.saveSettingsDebounced || ctx?.saveSettings;
-      if (typeof persist === "function") persist();
-      return true;
+      return writeBooks(store);
     } catch (err) {
       console.warn(`${MODULE} save failed:`, err?.message || err);
       return false;
@@ -736,8 +823,8 @@
     return text.toLowerCase().includes(n.toLowerCase());
   }
   __name(mentions, "mentions");
-  function matchCharacters(prompt) {
-    const text = String(prompt || "");
+  function matchCharacters(prompt2) {
+    const text = String(prompt2 || "");
     if (!text) return { appearance: [], names: [] };
     const list = loadCharacters();
     const appearance = [];
@@ -758,8 +845,8 @@
     return { appearance, names };
   }
   __name(matchCharacters, "matchCharacters");
-  function injectAppearance(prompt) {
-    const text = String(prompt || "").trim();
+  function injectAppearance(prompt2) {
+    const text = String(prompt2 || "").trim();
     if (!text) return text;
     const { appearance } = matchCharacters(text);
     if (!appearance.length) return text;
@@ -787,8 +874,20 @@
             </div>
         </div>
     `).join("");
+    const store = readBooks();
+    const options = store.books.map((b) => `<option value="${escAttr(b.id)}" ${b.id === store.activeId ? "selected" : ""}>${escText(b.name)}</option>`).join("");
+    const profilesBar = `
+        <div class="astral-book-profiles">
+            <select class="text_pole astral-book-select" title="\u041F\u0440\u043E\u0444\u0438\u043B\u044C \u0441\u043F\u0440\u0430\u0432\u043E\u0447\u043D\u0438\u043A\u0430">${options}</select>
+            <button class="menu_button astral-book-new" title="\u041D\u043E\u0432\u044B\u0439 \u043F\u0440\u043E\u0444\u0438\u043B\u044C">+</button>
+            <button class="menu_button astral-book-rename" title="\u041F\u0435\u0440\u0435\u0438\u043C\u0435\u043D\u043E\u0432\u0430\u0442\u044C">\u270E</button>
+            <button class="menu_button astral-book-del" title="\u0423\u0434\u0430\u043B\u0438\u0442\u044C \u043F\u0440\u043E\u0444\u0438\u043B\u044C" ${store.books.length <= 1 ? "disabled" : ""}>\u2715</button>
+        </div>
+        <small class="notes">\u041F\u0440\u043E\u0444\u0438\u043B\u044C \u2014 \u043E\u0442\u0434\u0435\u043B\u044C\u043D\u044B\u0439 \u043D\u0430\u0431\u043E\u0440 \u043F\u0435\u0440\u0441\u043E\u043D\u0430\u0436\u0435\u0439. \u041F\u0435\u0440\u0435\u043A\u043B\u044E\u0447\u0430\u0439\u0442\u0435 \u0435\u0433\u043E \u043F\u043E\u0434 \u0440\u0430\u0437\u043D\u044B\u0435 \u0447\u0430\u0442\u044B.</small>
+    `;
     return `
         <div class="astral-charbook">
+            ${profilesBar}
             <div class="astral-charbook-list">${rows || '<div class="astral-charbook-empty">\u041F\u043E\u043A\u0430 \u043F\u0443\u0441\u0442\u043E \u2014 \u0434\u043E\u0431\u0430\u0432\u044C\u0442\u0435 \u043F\u0435\u0440\u0432\u043E\u0433\u043E \u043F\u0435\u0440\u0441\u043E\u043D\u0430\u0436\u0430</div>'}</div>
             <button class="menu_button astral-charbook-add">+ \u0414\u043E\u0431\u0430\u0432\u0438\u0442\u044C \u043F\u0435\u0440\u0441\u043E\u043D\u0430\u0436\u0430</button>
             <small class="notes">\u0418\u043C\u044F \u0438\u0449\u0435\u0442\u0441\u044F \u0432 \u043F\u0440\u043E\u043C\u043F\u0442\u0435 (\u0438 \u0432 \u0430\u043B\u0438\u0430\u0441\u0430\u0445) \u0431\u0435\u0437 \u0443\u0447\u0451\u0442\u0430 \u0440\u0435\u0433\u0438\u0441\u0442\u0440\u0430. \u041D\u0430\u0439\u0434\u0435\u043D\u043D\u0430\u044F \u0432\u043D\u0435\u0448\u043D\u043E\u0441\u0442\u044C \u043F\u043E\u0434\u0441\u0442\u0430\u0432\u043B\u044F\u0435\u0442\u0441\u044F \u0432 \u043D\u0430\u0447\u0430\u043B\u043E \u043F\u0440\u043E\u043C\u043F\u0442\u0430 \u043F\u0440\u0438 \u0433\u0435\u043D\u0435\u0440\u0430\u0446\u0438\u0438 \u043B\u044E\u0431\u043E\u0433\u043E \u0438\u0437\u043E\u0431\u0440\u0430\u0436\u0435\u043D\u0438\u044F.</small>
@@ -832,6 +931,35 @@
         reRender(root, onChange);
       });
     });
+    book.querySelector(".astral-book-select")?.addEventListener("change", (e) => {
+      activateBook(e.target.value);
+      reRender(root, onChange);
+    });
+    book.querySelector(".astral-book-new")?.addEventListener("click", (e) => {
+      e.preventDefault();
+      const name = globalThis.prompt?.("\u041D\u0430\u0437\u0432\u0430\u043D\u0438\u0435 \u043F\u0440\u043E\u0444\u0438\u043B\u044F:", `\u041F\u0440\u043E\u0444\u0438\u043B\u044C ${listBooks().books.length + 1}`);
+      if (name === null) return;
+      addBook(String(name || "").trim());
+      reRender(root, onChange);
+    });
+    book.querySelector(".astral-book-rename")?.addEventListener("click", (e) => {
+      e.preventDefault();
+      const store = listBooks();
+      const active = store.books.find((b) => b.id === store.activeId);
+      if (!active) return;
+      const name = globalThis.prompt?.("\u041D\u043E\u0432\u043E\u0435 \u043D\u0430\u0437\u0432\u0430\u043D\u0438\u0435:", active.name);
+      if (name === null) return;
+      renameBook(active.id, String(name || "").trim());
+      reRender(root, onChange);
+    });
+    book.querySelector(".astral-book-del")?.addEventListener("click", (e) => {
+      e.preventDefault();
+      const store = listBooks();
+      if (store.books.length <= 1) return;
+      if (!globalThis.confirm?.("\u0423\u0434\u0430\u043B\u0438\u0442\u044C \u043F\u0440\u043E\u0444\u0438\u043B\u044C \u0441\u043E \u0432\u0441\u0435\u043C\u0438 \u043F\u0435\u0440\u0441\u043E\u043D\u0430\u0436\u0430\u043C\u0438?")) return;
+      removeBook(store.activeId);
+      reRender(root, onChange);
+    });
     book.querySelector(".astral-charbook-add")?.addEventListener("click", (e) => {
       e.preventDefault();
       const list = loadCharacters();
@@ -851,6 +979,404 @@
     return String(str ?? "").replace(/[&<>]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;" })[c]);
   }
   __name(escText, "escText");
+
+  // apps/prompt-builder.js
+  var MODULE2 = "[AstralPrompt]";
+  var QUALITY_TAGS = "masterpiece, best quality, very aesthetic, absurdres, highly detailed";
+  var DEFAULT_NEGATIVE = "lowres, bad anatomy, bad hands, text, watermark, logo, blurry, jpeg artifacts, worst quality, low quality, deformed, extra limbs, extra fingers, cropped, out of frame";
+  function deepWalk(root, visit, maxDepth = 5) {
+    const seen = /* @__PURE__ */ new WeakSet();
+    const walk = /* @__PURE__ */ __name((node, depth, path) => {
+      if (!node || typeof node !== "object" || depth > maxDepth) return;
+      if (seen.has(node)) return;
+      seen.add(node);
+      visit(node, depth, path);
+      for (const [k, v] of Object.entries(node)) {
+        if (v && typeof v === "object") walk(v, depth + 1, path ? `${path}.${k}` : k);
+      }
+    }, "walk");
+    walk(root, 0, "");
+  }
+  __name(deepWalk, "deepWalk");
+  var TEXT_KEYS = ["text", "prompt", "content", "value", "description"];
+  function firstText(obj, keys = TEXT_KEYS) {
+    if (!obj || typeof obj !== "object") return "";
+    for (const k of keys) {
+      const v = obj[k];
+      if (typeof v === "string" && v.trim()) return v.trim();
+    }
+    return "";
+  }
+  __name(firstText, "firstText");
+  function findStyle(raw) {
+    if (!raw) return "";
+    for (const k of ["style", "artStyle", "activeStyle", "stylePreset", "promptPrefix"]) {
+      const v = raw[k];
+      if (typeof v === "string" && v.trim()) return v.trim();
+    }
+    const presetArrays = [];
+    for (const [k, v] of Object.entries(raw)) {
+      if (!Array.isArray(v) || !/style|preset/i.test(k)) continue;
+      const items = v.filter((x) => x && typeof x === "object" && firstText(x));
+      if (items.length) presetArrays.push(items);
+    }
+    for (const k of Object.keys(raw)) {
+      if (!/^active.*(style|preset)/i.test(k)) continue;
+      const id = String(raw[k] || "").trim();
+      if (!id) continue;
+      for (const items of presetArrays) {
+        const hit = items.find((x) => String(x.id || x.key || x.name || "") === id);
+        const text = firstText(hit);
+        if (text) return text;
+      }
+    }
+    const all = presetArrays.flat();
+    const enabled = all.filter((x) => x.enabled === true || x.active === true || x.selected === true);
+    if (enabled.length === 1) return firstText(enabled[0]);
+    if (all.length === 1) return firstText(all[0]);
+    return "";
+  }
+  __name(findStyle, "findStyle");
+  function findLorebook(raw) {
+    const out = [];
+    const seen = /* @__PURE__ */ new WeakSet();
+    deepWalk(raw, (node) => {
+      if (!Array.isArray(node.refs) || seen.has(node)) return;
+      seen.add(node);
+      if (node.enabled === false) return;
+      for (const ref of node.refs) {
+        if (!ref || ref.enabled === false) continue;
+        const desc = firstText(ref);
+        if (!desc) continue;
+        const name = String(ref.name || "").trim();
+        out.push(name ? `${name}, ${desc}` : desc);
+      }
+    });
+    if (Array.isArray(raw?.additionalReferences)) {
+      for (const ref of raw.additionalReferences) {
+        if (!ref || ref.enabled === false) continue;
+        const desc = firstText(ref);
+        if (!desc) continue;
+        const name = String(ref.name || "").trim();
+        out.push(name ? `${name}, ${desc}` : desc);
+      }
+    }
+    return [...new Set(out)];
+  }
+  __name(findLorebook, "findLorebook");
+  function dumpSettingsShape(raw, maxLines = 140) {
+    const lines = [];
+    const seen = /* @__PURE__ */ new WeakSet();
+    const walk = /* @__PURE__ */ __name((node, depth, path) => {
+      if (!node || typeof node !== "object" || depth > 3 || lines.length >= maxLines) return;
+      if (seen.has(node)) return;
+      seen.add(node);
+      for (const [k, v] of Object.entries(node)) {
+        if (lines.length >= maxLines) return;
+        const p = path ? `${path}.${k}` : k;
+        if (Array.isArray(v)) {
+          const sample = v.find((x) => x && typeof x === "object");
+          lines.push(`${p}[] n=${v.length}${sample ? ` {${Object.keys(sample).slice(0, 8).join(",")}}` : ""}`);
+          if (sample) walk(sample, depth + 1, `${p}[0]`);
+        } else if (v && typeof v === "object") {
+          lines.push(`${p}{} {${Object.keys(v).slice(0, 10).join(",")}}`);
+          walk(v, depth + 1, p);
+        } else if (typeof v === "string" && v.trim()) {
+          lines.push(`${p} = "${v.slice(0, 40)}"`);
+        } else if (typeof v === "boolean" || typeof v === "number") {
+          lines.push(`${p} = ${v}`);
+        }
+      }
+    }, "walk");
+    walk(raw, 0, "");
+    return lines;
+  }
+  __name(dumpSettingsShape, "dumpSettingsShape");
+  function collectHaruspics(imageGen2, ctx) {
+    const empty = {
+      available: false,
+      style: "",
+      negative: "",
+      refInstruction: "",
+      chars: [],
+      lorebook: [],
+      sendCharAvatar: false,
+      sendUserAvatar: false
+    };
+    let raw = null;
+    try {
+      raw = imageGen2?._rawSettings?.() || null;
+    } catch (_) {
+    }
+    if (!raw) return empty;
+    const charName = resolveCharName(ctx);
+    const userName = resolveUserName(ctx);
+    const avatarHint = String(ctx?.characters?.[ctx?.characterId]?.avatar || "").trim();
+    let userAvatar = "";
+    try {
+      userAvatar = String(globalThis.SillyTavern?.getContext?.()?.user_avatar || "").trim();
+    } catch (_) {
+    }
+    if (!userAvatar) {
+      try {
+        userAvatar = String(raw.userAvatarFile || "").trim();
+      } catch (_) {
+      }
+    }
+    const out = { ...empty, available: true };
+    out.style = findStyle(raw);
+    try {
+      const items = Array.isArray(raw.negativeGalleryItems) ? raw.negativeGalleryItems : [];
+      if (items.length) {
+        const activeId = String(raw.activeNegativeId || "").trim();
+        const active = items.find((i) => i.id === activeId) || items.find((i) => i.enabled === true || i.active === true);
+        out.negative = firstText(active) || "";
+      }
+    } catch (_) {
+    }
+    if (raw.refInstructionEnabled !== false) {
+      out.refInstruction = String(raw.refInstruction || "").trim();
+    }
+    try {
+      const book = loadCharacters();
+      const pick = /* @__PURE__ */ __name((name) => {
+        const wanted = String(name || "").trim().toLowerCase();
+        if (!wanted) return null;
+        return book.find((row) => row.enabled && (row.name.toLowerCase() === wanted || row.aliases.toLowerCase().split(",").map((a) => a.trim()).includes(wanted)));
+      }, "pick");
+      const charRow = pick(charName);
+      if (charRow) out.chars.push({ name: charName, appearance: charRow.appearance, refs: [] });
+      const userRow = pick(userName);
+      if (userRow && userRow !== charRow) {
+        out.chars.push({ name: userName, appearance: userRow.appearance, refs: [] });
+      }
+      if (book.length) {
+        console.log(`${MODULE2} \u0441\u043F\u0440\u0430\u0432\u043E\u0447\u043D\u0438\u043A: ${book.length} \u0437\u0430\u043F\u0438\u0441\u0435\u0439, \u0441\u043E\u0432\u043F\u0430\u043B\u043E ${out.chars.length}`);
+      }
+    } catch (_) {
+    }
+    out.lorebook = findLorebook(raw);
+    out.sendCharAvatar = Boolean(raw.sendCharAvatar);
+    out.sendUserAvatar = Boolean(raw.sendUserAvatar);
+    console.log(`${MODULE2} Haruspics: style=${out.style ? "yes" : "no"} chars=${out.chars.length} lorebook=${out.lorebook.length} neg=${out.negative ? "yes" : "no"}`);
+    if (!out.style && !out.chars.length && !out.lorebook.length) {
+      console.warn(`${MODULE2} \u043D\u0438\u0447\u0435\u0433\u043E \u043D\u0435 \u043D\u0430\u0439\u0434\u0435\u043D\u043E. \u0420\u0435\u0430\u043B\u044C\u043D\u0430\u044F \u0441\u0442\u0440\u0443\u043A\u0442\u0443\u0440\u0430 inline_image_gen:`);
+      for (const line of dumpSettingsShape(raw)) console.warn(`  ${line}`);
+    }
+    return out;
+  }
+  __name(collectHaruspics, "collectHaruspics");
+  function resolveCharName(ctx) {
+    const fromCard = String(ctx?.characters?.[ctx?.characterId]?.name || "").trim();
+    const fallback = String(ctx?.name2 || "").trim();
+    const pick = fromCard || fallback;
+    if (!pick || /sillytavern/i.test(pick)) return fromCard || "the character";
+    return pick;
+  }
+  __name(resolveCharName, "resolveCharName");
+  function resolveUserName(ctx) {
+    const pick = String(ctx?.name1 || "").trim();
+    if (!pick || /sillytavern/i.test(pick)) return "the viewer";
+    return pick;
+  }
+  __name(resolveUserName, "resolveUserName");
+  function buildAsk({ mode, charName, userName, sceneText, knownCharacters, customInstruction }) {
+    const who = mode === "selfie" ? `"${charName}" AND "${userName}" (both in frame)` : `"${charName}" (alone in frame, "${userName}" holds the camera and is NOT visible)`;
+    const locked = Array.isArray(knownCharacters) ? knownCharacters.filter((c) => c?.name && c?.appearance) : [];
+    let appearanceRule;
+    if (locked.length) {
+      const list = locked.map((c) => `  - "${c.name}": ${c.appearance}`).join("\n");
+      appearanceRule = `LOCKED APPEARANCE \u2014 these characters already have a fixed appearance.
+You MUST leave hair, eyes, build and skin EMPTY ("") for them. Do not describe, guess,
+paraphrase or contradict the appearance below. It is inserted into the prompt
+automatically, word for word:
+${list}
+
+For any character NOT in that list, fill hair, eyes, build and skin from the scene.`;
+    } else {
+      appearanceRule = `No fixed appearance exists for anyone \u2014 fill hair, eyes, build and skin from the scene.`;
+    }
+    const custom = customInstruction ? `
+USER'S EXTRA GUIDANCE (follow it, but still answer as JSON):
+${customInstruction}
+` : "";
+    return `You are an image-prompt tagger for NovelAI v5. You do not write prose.
+You read a roleplay scene and return ONLY a JSON object of short English tags.
+
+ROLEPLAY SCENE (may be in any language \u2014 read it, do not copy its language):
+${sceneText}
+
+What is being photographed: ${who}
+${appearanceRule}${custom}
+Return exactly this JSON shape, every value a short English tag string, lowercase, comma-separated tags inside each string:
+
+{
+  "shot": "camera framing, e.g. chest-up two-shot / close-up selfie / full body shot",
+  "setting": "location and time, e.g. cozy kitchen, evening",
+  "lighting": "light and mood, e.g. soft window light, warm colors, low contrast",
+  "characters": [
+    {
+      "ref": "${charName}",
+      "genderTag": "1girl or 1boy or 1other",
+      "position": "e.g. left side",
+      "hair": "",
+      "eyes": "",
+      "build": "",
+      "skin": "",
+      "outfit": "current clothing",
+      "expression": "e.g. open mouth, smiling",
+      "action": "e.g. hand gripping coffee cup",
+      "gaze": "e.g. looking at ${userName} / looking at viewer"
+    }
+  ]
+}
+
+RULES:
+- ENGLISH ONLY. No Cyrillic, no other scripts, no transliteration.
+- Tags, not sentences. "long silver hair, blunt bangs" not "she has long silver hair".
+- No quality tags, no style tags, no "masterpiece" \u2014 those are added separately.
+- Reference characters by the exact names given ("${charName}", "${userName}").
+- For selfie mode add both characters to the array and make the gaze "looking at viewer".
+- Output the JSON only. No markdown fences, no commentary.`;
+  }
+  __name(buildAsk, "buildAsk");
+  function parseStructured(raw) {
+    let text = String(raw || "").trim();
+    if (!text) return null;
+    text = text.replace(/```[a-z]*\n?/gi, "").trim();
+    const start = text.indexOf("{");
+    const end = text.lastIndexOf("}");
+    if (start === -1 || end === -1 || end <= start) return null;
+    const candidate = text.slice(start, end + 1);
+    try {
+      const parsed = JSON.parse(candidate);
+      if (!parsed || typeof parsed !== "object") return null;
+      if (!Array.isArray(parsed.characters)) parsed.characters = [];
+      return parsed;
+    } catch (_) {
+      return null;
+    }
+  }
+  __name(parseStructured, "parseStructured");
+  function cleanTags(value) {
+    let s = String(value || "");
+    if (!s) return "";
+    s = s.replace(/```[a-z]*\n?/gi, " ");
+    s = s.replace(/<[^>]*>/g, " ");
+    s = s.replace(/\[[A-Z_]{3,}[^\]]*\]/g, " ");
+    s = s.replace(/^(tags?|prompt|description|answer)\s*:\s*/i, "");
+    const chunks = s.split(/[,;]\s*|\n+/).map((c) => c.replace(/\s+/g, " ").trim()).filter(Boolean).filter((c) => !/[\u0400-\u04FF\u4E00-\u9FFF\u3040-\u30FF]/.test(c)).filter((c) => /[A-Za-z]{2,}/.test(c));
+    return chunks.join(", ").trim();
+  }
+  __name(cleanTags, "cleanTags");
+  function assemble(structured, haruspics, opts) {
+    const { mode, charName, userName } = opts;
+    const h = haruspics || {};
+    const st = structured || {};
+    const base = [];
+    if (h.style) base.push(cleanTags(h.style));
+    const shot = cleanTags(st.shot) || (mode === "selfie" ? "close-up selfie" : "candid photo, upper body shot");
+    base.push(shot);
+    if (mode === "selfie") base.push("selfie, looking at viewer");
+    else base.push("shot on smartphone, candid");
+    for (const c of st.characters || []) {
+      const nm = String(c.ref || "").trim();
+      const act = cleanTags(c.action);
+      if (nm && act) base.push(`${nm} ${act}`);
+    }
+    const setting = cleanTags(st.setting);
+    if (setting) base.push(setting);
+    const lighting = cleanTags(st.lighting);
+    if (lighting) base.push(lighting);
+    if (h.lorebook?.length) base.push(cleanTags(h.lorebook.join(", ")));
+    base.push(QUALITY_TAGS);
+    const charBlocks = [];
+    for (const c of st.characters || []) {
+      const ref = String(c.ref || "").trim();
+      if (!ref) continue;
+      const tags = [];
+      const gender = cleanTags(c.genderTag);
+      if (gender) tags.push(gender);
+      const pos = cleanTags(c.position);
+      if (pos) tags.push(pos);
+      tags.push(ref);
+      const known = (h.chars || []).find((x) => x.name === ref);
+      const knownAppearance = known?.appearance ? String(known.appearance).trim() : "";
+      if (knownAppearance) {
+        tags.push(knownAppearance);
+      } else {
+        for (const k of ["hair", "eyes", "build", "skin"]) {
+          const t = cleanTags(c[k]);
+          if (t) tags.push(t);
+        }
+      }
+      const outfit = cleanTags(c.outfit);
+      if (outfit) tags.push(outfit);
+      const expr = cleanTags(c.expression);
+      if (expr) tags.push(expr);
+      const action = cleanTags(c.action);
+      if (action) tags.push(action);
+      const gaze = cleanTags(c.gaze);
+      if (gaze) tags.push(gaze);
+      else if (mode === "selfie") tags.push("looking at viewer");
+      charBlocks.push(tags.filter(Boolean).join(", "));
+    }
+    let prompt2 = [base.filter(Boolean).join(", "), ...charBlocks.filter(Boolean)].join(" | ");
+    for (const lockedChar of h.chars || []) {
+      if (!lockedChar.appearance) continue;
+      if (!prompt2.includes(lockedChar.appearance)) {
+        prompt2 = `${lockedChar.appearance}, ${prompt2}`;
+      }
+    }
+    try {
+      const { appearance } = matchCharacters(prompt2);
+      const missing = appearance.filter((a) => !prompt2.toLowerCase().includes(a.toLowerCase()));
+      if (missing.length) prompt2 = `${missing.join(", ")}, ${prompt2}`;
+    } catch (_) {
+    }
+    const negative = h.negative ? cleanTags(h.negative) : DEFAULT_NEGATIVE;
+    return { prompt: prompt2, negative };
+  }
+  __name(assemble, "assemble");
+  async function buildPhotoPrompt({ imageGen: imageGen2, ctx, askModel, sceneText, mode, customInstruction }) {
+    const charName = resolveCharName(ctx);
+    const userName = resolveUserName(ctx);
+    const haruspics = collectHaruspics(imageGen2, ctx);
+    const ask2 = buildAsk({
+      mode,
+      charName,
+      userName,
+      sceneText,
+      knownCharacters: haruspics.chars || [],
+      customInstruction
+    });
+    let structured = null;
+    try {
+      const raw = await askModel(ask2);
+      structured = parseStructured(raw);
+      if (!structured) {
+        console.warn(`${MODULE2} model returned no parseable JSON:`, String(raw || "").slice(0, 200));
+      }
+    } catch (err) {
+      console.warn(`${MODULE2} model call failed:`, err?.message || err);
+    }
+    if (!structured || !(structured.characters || []).some((c) => c.ref === charName)) {
+      structured = structured || {};
+      structured.characters = Array.isArray(structured.characters) ? structured.characters : [];
+      structured.characters.unshift({
+        ref: charName,
+        genderTag: "",
+        position: mode === "selfie" ? "left side" : "center",
+        outfit: "",
+        expression: "",
+        action: "",
+        gaze: mode === "selfie" ? "looking at viewer" : ""
+      });
+    }
+    const { prompt: prompt2, negative } = assemble(structured, haruspics, { mode, charName, userName });
+    return { prompt: prompt2, negative, structured, haruspics };
+  }
+  __name(buildPhotoPrompt, "buildPhotoPrompt");
 
   // apps/image-gen.js
   var HARUSPICS_MODULE_NAME = "inline_image_gen";
@@ -1233,16 +1759,20 @@
      * Haruspics stores the selected style in `extension_settings.inline_image_gen.style`.
      * Falls back to an empty string if not configured.
      */
+    /**
+     * Активный стиль из Haruspics.
+     *
+     * Использует тот же структурный поиск, что и prompt-builder: имена полей в
+     * inline_image_gen менялись между версиями, поэтому жёсткая привязка к
+     * `activeStyleId` находила стиль не всегда — из-за этого в creator studio
+     * он молча пропадал, хотя галерея его подхватывала.
+     */
     getStyle() {
       try {
         const s = this._rawSettings();
         if (!s) return "";
-        const activeId = String(s.activeStyleId || "").trim();
-        if (!activeId) return "";
-        const presets = s.stylePresets;
-        if (!Array.isArray(presets)) return "";
-        const active = presets.find((p) => p.id === activeId);
-        return String(active?.text || active?.prompt || active?.name || "").trim();
+        const found = findStyle(s);
+        return String(found || "").trim();
       } catch (_) {
         return "";
       }
@@ -1327,17 +1857,21 @@
      *   `character` is used as the uploaded image's ch_name.
      * @returns {Promise<string>} ST-hosted path (e.g. /user/images/...) ready for <img src>.
      */
-    async generate(prompt, metadata = {}) {
+    async generate(prompt2, metadata = {}) {
       const settings = this._settings();
-      let text = String(prompt ?? "").trim();
+      let text = String(prompt2 ?? "").trim();
       if (!text) throw new Error("\u041F\u0443\u0441\u0442\u043E\u0439 \u043F\u0440\u043E\u043C\u043F\u0442 \u0434\u043B\u044F \u0433\u0435\u043D\u0435\u0440\u0430\u0446\u0438\u0438 \u0438\u0437\u043E\u0431\u0440\u0430\u0436\u0435\u043D\u0438\u044F.");
       try {
         text = injectAppearance(text);
       } catch (err) {
         console.warn("[AstralImageGen] appearance injection skipped:", err?.message);
       }
-      const style = metadata.style !== void 0 ? String(metadata.style) : this.getStyle();
+      const requested = metadata.style !== void 0 ? String(metadata.style).trim() : "";
+      const style = requested || this.getStyle();
       const refs = metadata.refs !== void 0 ? metadata.refs : this._collectRefs();
+      if (!style) {
+        console.warn("[AstralImageGen] \u0441\u0442\u0438\u043B\u044C \u043D\u0435 \u043F\u0440\u0438\u043C\u0435\u043D\u0451\u043D: \u0432 inline_image_gen \u043D\u0435\u0442 \u0430\u043A\u0442\u0438\u0432\u043D\u043E\u0433\u043E \u043F\u0440\u0435\u0441\u0435\u0442\u0430");
+      }
       const dataUrl = await this._generateWithTimeout(text, settings, style, refs, metadata.negativePrompt);
       return this.saveImageToFile(dataUrl, metadata?.character);
     }
@@ -1389,7 +1923,7 @@
     }
     /* ─────────────────────────── dispatch + timeout ─────────────────────────── */
     /** Port of generateImageWithRetry (3136-3213) with retries and toasts removed. */
-    async _generateWithTimeout(prompt, settings, style = "", refs = EMPTY_REFS, negativePrompt = void 0) {
+    async _generateWithTimeout(prompt2, settings, style = "", refs = EMPTY_REFS, negativePrompt = void 0) {
       const timeoutMs = Math.max(5, Number(settings.requestTimeout) || 120) * 1e3;
       const controller = new AbortController();
       const timeoutId = setTimeout(() => controller.abort(), timeoutMs);
@@ -1401,19 +1935,19 @@
         const isRouterApi = isRouterEndpoint(settings.endpoint);
         const useGeminiApi = settings.apiType === "gemini" && !isRouterApi;
         if (settings.apiType === "naistera") {
-          return await this.generateImageNaistera(prompt, style, settings, options);
+          return await this.generateImageNaistera(prompt2, style, settings, options);
         }
         if (["novelai", "novelai-direct"].includes(settings.apiType)) {
-          return await this.generateImageNovelAI(prompt, style, settings, options);
+          return await this.generateImageNovelAI(prompt2, style, settings, options);
         }
         const useChatApi = settings.apiType === "openai-chat" || isRouterApi && (settings.apiType === "openai" || settings.apiType === "gemini");
         if (useGeminiApi) {
-          return await this.generateImageGemini(prompt, style, settings, options);
+          return await this.generateImageGemini(prompt2, style, settings, options);
         }
         if (useChatApi) {
-          return await this.generateImageOpenAIChat(prompt, style, settings, options);
+          return await this.generateImageOpenAIChat(prompt2, style, settings, options);
         }
-        return await this.generateImageOpenAI(prompt, style, settings, options);
+        return await this.generateImageOpenAI(prompt2, style, settings, options);
       } catch (error) {
         if (error?.name === "AbortError") {
           throw new Error(`\u0422\u0430\u0439\u043C\u0430\u0443\u0442: \u043F\u0440\u043E\u0432\u0430\u0439\u0434\u0435\u0440 \u043D\u0435 \u043E\u0442\u0432\u0435\u0442\u0438\u043B \u0437\u0430 ${Math.round(timeoutMs / 1e3)}\u0441`);
@@ -1494,7 +2028,7 @@
       throw new Error(`Naistera polling timed out after ${Math.round(timeoutMs / 1e3)}s`);
     }
     /** Port of generateImageNaistera (2394-2494). refData is always empty here. */
-    async generateImageNaistera(prompt, style, settings, options = {}) {
+    async generateImageNaistera(prompt2, style, settings, options = {}) {
       const endpoint = normalizeNaisteraEndpoint(settings.endpoint);
       const model = normalizeNaisteraModel(settings.naisteraModel);
       if (!model) throw new Error("Naistera: \u043C\u043E\u0434\u0435\u043B\u044C \u043D\u0435 \u0432\u044B\u0431\u0440\u0430\u043D\u0430 (\u043D\u0430\u0441\u0442\u0440\u043E\u0439\u043A\u0438 haruspics).");
@@ -1517,7 +2051,7 @@
         if (descriptions.length > 0) promptParts.push(`[CHARACTER DESCRIPTIONS]
 ${descriptions.join("\n")}`);
       }
-      promptParts.push(prompt);
+      promptParts.push(prompt2);
       let aspectRatio = options.aspectRatio || settings.naisteraAspectRatio || "1:1";
       const isNaisteraNanaBanana = isGeminiModel(model);
       if (isNaisteraNanaBanana && settings.geminiRandomFormat && !options.aspectRatio) {
@@ -1565,7 +2099,7 @@ ${descriptions.join("\n")}`);
     }
     /* ─────────────────────────── NovelAI ─────────────────────────── */
     /** Port of generateImageNovelAI (2545-2633). refData is always empty here. */
-    async generateImageNovelAI(prompt, style, settings, options = {}) {
+    async generateImageNovelAI(prompt2, style, settings, options = {}) {
       const parts = [];
       if (style) parts.push(style);
       const { textDirectives, textOnlyClothing } = options._refs || EMPTY_REFS;
@@ -1576,7 +2110,7 @@ ${descriptions.join("\n")}`);
       for (const ref of (options._refs || EMPTY_REFS).imageRefs) {
         if (ref.type === "clothing" && ref.description) parts.push(`${ref.name || "Character"} is wearing: ${ref.description}`);
       }
-      parts.push(prompt);
+      parts.push(prompt2);
       const ratio = String(options.aspectRatio || "");
       let width = Number(settings.novelaiWidth);
       let height = Number(settings.novelaiHeight);
@@ -1671,7 +2205,7 @@ ${descriptions.join("\n")}`);
     }
     /* ─────────────────────────── OpenAI images API ─────────────────────────── */
     /** Port of generateImageOpenAI (2635-2736). refData is always empty here. */
-    async generateImageOpenAI(prompt, style, settings, options = {}) {
+    async generateImageOpenAI(prompt2, style, settings, options = {}) {
       const url = buildOpenAIUrl(settings.endpoint, "images/generations");
       const { imageRefs, textOnlyClothing, textDirectives } = options._refs || EMPTY_REFS;
       const promptParts = [];
@@ -1683,7 +2217,7 @@ ${descriptions.join("\n")}`);
           promptParts.push(`[CLOTHING for ${ref.name}: ${ref.description}]`);
         }
       }
-      promptParts.push(prompt);
+      promptParts.push(prompt2);
       const fullPrompt = promptParts.join("\n\n");
       let size = settings.size;
       if (options.aspectRatio) {
@@ -1742,7 +2276,7 @@ ${descriptions.join("\n")}`);
     }
     /* ─────────────────────────── OpenAI chat / routers ─────────────────────────── */
     /** Port of generateImageOpenAIChat (2809-2911). refData is always empty here. */
-    async generateImageOpenAIChat(prompt, style, settings, options = {}) {
+    async generateImageOpenAIChat(prompt2, style, settings, options = {}) {
       const url = buildOpenAIUrl(settings.endpoint, "chat/completions");
       const { imageRefs, textOnlyClothing, textDirectives } = options._refs || EMPTY_REFS;
       let aspectRatio = options.aspectRatio || settings.aspectRatio || "1:1";
@@ -1766,7 +2300,7 @@ ${descriptions.join("\n")}`);
         if (ref.type === "hairstyle") promptParts.push(`[HAIRSTYLE REFERENCE for ${ref.name}: copy only the hair, not the face]`);
       }
       promptParts.push(`[SCENE TO GENERATE]
-${prompt}`);
+${prompt2}`);
       const galleryNegative = options.negativePrompt == null ? this.getEffectiveNegativePrompt("") : String(options.negativePrompt || "").trim();
       if (galleryNegative) promptParts.push(`[NEGATIVE PROMPT: ${galleryNegative}]`);
       const fullPrompt = promptParts.join("\n\n");
@@ -1809,7 +2343,7 @@ ${prompt}`);
     }
     /* ─────────────────────────── Gemini ─────────────────────────── */
     /** Port of generateImageGemini (2913-3114). refData is always empty here. */
-    async generateImageGemini(prompt, style, settings, options = {}) {
+    async generateImageGemini(prompt2, style, settings, options = {}) {
       const model = settings.model;
       if (!model) throw new Error("Gemini: \u043C\u043E\u0434\u0435\u043B\u044C \u043D\u0435 \u0432\u044B\u0431\u0440\u0430\u043D\u0430 (\u043D\u0430\u0441\u0442\u0440\u043E\u0439\u043A\u0438 haruspics).");
       const baseUrl = String(settings.endpoint || "").replace(/\/$/, "");
@@ -1916,7 +2450,7 @@ CRITICAL: Face features must be IDENTICAL to face references. Clothing reference
 
 `;
       fullPrompt += `[SCENE TO GENERATE]
-${prompt}
+${prompt2}
 [END SCENE]`;
       if (faceRefs.length > 0) {
         fullPrompt += `
@@ -2144,8 +2678,8 @@ ${prompt}
         const state = this.storage.getState();
         const thread = (state.messages || []).filter((m) => m.character === character);
         const lastMsg = thread[thread.length - 1];
-        const prompt = this._buildReplyPrompt(character, lastMsg, state);
-        const result = await ctx.generateQuietPrompt(prompt, false, false);
+        const prompt2 = this._buildReplyPrompt(character, lastMsg, state);
+        const result = await ctx.generateQuietPrompt(prompt2, false, false);
         const text = String(result || "").trim();
         if (!text) {
           alert("\u041F\u0435\u0440\u0441\u043E\u043D\u0430\u0436 \u043C\u043E\u043B\u0447\u0438\u0442");
@@ -2252,456 +2786,207 @@ REPLY (text only):`;
     }
   };
 
-  // apps/prompt-builder.js
-  var MODULE2 = "[AstralPrompt]";
-  var QUALITY_TAGS = "masterpiece, best quality, very aesthetic, absurdres, highly detailed";
-  var DEFAULT_NEGATIVE = "lowres, bad anatomy, bad hands, text, watermark, logo, blurry, jpeg artifacts, worst quality, low quality, deformed, extra limbs, extra fingers, cropped, out of frame";
-  function deepWalk(root, visit, maxDepth = 5) {
-    const seen = /* @__PURE__ */ new WeakSet();
-    const walk = /* @__PURE__ */ __name((node, depth, path) => {
-      if (!node || typeof node !== "object" || depth > maxDepth) return;
-      if (seen.has(node)) return;
-      seen.add(node);
-      visit(node, depth, path);
-      for (const [k, v] of Object.entries(node)) {
-        if (v && typeof v === "object") walk(v, depth + 1, path ? `${path}.${k}` : k);
-      }
-    }, "walk");
-    walk(root, 0, "");
-  }
-  __name(deepWalk, "deepWalk");
-  var TEXT_KEYS = ["text", "prompt", "content", "value", "description"];
-  function firstText(obj, keys = TEXT_KEYS) {
-    if (!obj || typeof obj !== "object") return "";
-    for (const k of keys) {
-      const v = obj[k];
-      if (typeof v === "string" && v.trim()) return v.trim();
-    }
-    return "";
-  }
-  __name(firstText, "firstText");
-  function findStyle(raw) {
-    if (!raw) return "";
-    for (const k of ["style", "artStyle", "activeStyle", "stylePreset", "promptPrefix"]) {
-      const v = raw[k];
-      if (typeof v === "string" && v.trim()) return v.trim();
-    }
-    const presetArrays = [];
-    for (const [k, v] of Object.entries(raw)) {
-      if (!Array.isArray(v) || !/style|preset/i.test(k)) continue;
-      const items = v.filter((x) => x && typeof x === "object" && firstText(x));
-      if (items.length) presetArrays.push(items);
-    }
-    for (const k of Object.keys(raw)) {
-      if (!/^active.*(style|preset)/i.test(k)) continue;
-      const id = String(raw[k] || "").trim();
-      if (!id) continue;
-      for (const items of presetArrays) {
-        const hit = items.find((x) => String(x.id || x.key || x.name || "") === id);
-        const text = firstText(hit);
-        if (text) return text;
-      }
-    }
-    const all = presetArrays.flat();
-    const enabled = all.filter((x) => x.enabled === true || x.active === true || x.selected === true);
-    if (enabled.length === 1) return firstText(enabled[0]);
-    if (all.length === 1) return firstText(all[0]);
-    return "";
-  }
-  __name(findStyle, "findStyle");
-  function findLorebook(raw) {
-    const out = [];
-    const seen = /* @__PURE__ */ new WeakSet();
-    deepWalk(raw, (node) => {
-      if (!Array.isArray(node.refs) || seen.has(node)) return;
-      seen.add(node);
-      if (node.enabled === false) return;
-      for (const ref of node.refs) {
-        if (!ref || ref.enabled === false) continue;
-        const desc = firstText(ref);
-        if (!desc) continue;
-        const name = String(ref.name || "").trim();
-        out.push(name ? `${name}, ${desc}` : desc);
-      }
-    });
-    if (Array.isArray(raw?.additionalReferences)) {
-      for (const ref of raw.additionalReferences) {
-        if (!ref || ref.enabled === false) continue;
-        const desc = firstText(ref);
-        if (!desc) continue;
-        const name = String(ref.name || "").trim();
-        out.push(name ? `${name}, ${desc}` : desc);
-      }
-    }
-    return [...new Set(out)];
-  }
-  __name(findLorebook, "findLorebook");
-  function dumpSettingsShape(raw, maxLines = 140) {
-    const lines = [];
-    const seen = /* @__PURE__ */ new WeakSet();
-    const walk = /* @__PURE__ */ __name((node, depth, path) => {
-      if (!node || typeof node !== "object" || depth > 3 || lines.length >= maxLines) return;
-      if (seen.has(node)) return;
-      seen.add(node);
-      for (const [k, v] of Object.entries(node)) {
-        if (lines.length >= maxLines) return;
-        const p = path ? `${path}.${k}` : k;
-        if (Array.isArray(v)) {
-          const sample = v.find((x) => x && typeof x === "object");
-          lines.push(`${p}[] n=${v.length}${sample ? ` {${Object.keys(sample).slice(0, 8).join(",")}}` : ""}`);
-          if (sample) walk(sample, depth + 1, `${p}[0]`);
-        } else if (v && typeof v === "object") {
-          lines.push(`${p}{} {${Object.keys(v).slice(0, 10).join(",")}}`);
-          walk(v, depth + 1, p);
-        } else if (typeof v === "string" && v.trim()) {
-          lines.push(`${p} = "${v.slice(0, 40)}"`);
-        } else if (typeof v === "boolean" || typeof v === "number") {
-          lines.push(`${p} = ${v}`);
-        }
-      }
-    }, "walk");
-    walk(raw, 0, "");
-    return lines;
-  }
-  __name(dumpSettingsShape, "dumpSettingsShape");
-  function collectHaruspics(imageGen2, ctx) {
-    const empty = {
-      available: false,
-      style: "",
-      negative: "",
-      refInstruction: "",
-      chars: [],
-      lorebook: [],
-      sendCharAvatar: false,
-      sendUserAvatar: false
-    };
-    let raw = null;
-    try {
-      raw = imageGen2?._rawSettings?.() || null;
-    } catch (_) {
-    }
-    if (!raw) return empty;
-    const charName = resolveCharName(ctx);
-    const userName = resolveUserName(ctx);
-    const avatarHint = String(ctx?.characters?.[ctx?.characterId]?.avatar || "").trim();
-    let userAvatar = "";
-    try {
-      userAvatar = String(globalThis.SillyTavern?.getContext?.()?.user_avatar || "").trim();
-    } catch (_) {
-    }
-    if (!userAvatar) {
-      try {
-        userAvatar = String(raw.userAvatarFile || "").trim();
-      } catch (_) {
-      }
-    }
-    const out = { ...empty, available: true };
-    out.style = findStyle(raw);
-    try {
-      const items = Array.isArray(raw.negativeGalleryItems) ? raw.negativeGalleryItems : [];
-      if (items.length) {
-        const activeId = String(raw.activeNegativeId || "").trim();
-        const active = items.find((i) => i.id === activeId) || items.find((i) => i.enabled === true || i.active === true);
-        out.negative = firstText(active) || "";
-      }
-    } catch (_) {
-    }
-    if (raw.refInstructionEnabled !== false) {
-      out.refInstruction = String(raw.refInstruction || "").trim();
-    }
-    try {
-      const book = loadCharacters();
-      const pick = /* @__PURE__ */ __name((name) => {
-        const wanted = String(name || "").trim().toLowerCase();
-        if (!wanted) return null;
-        return book.find((row) => row.enabled && (row.name.toLowerCase() === wanted || row.aliases.toLowerCase().split(",").map((a) => a.trim()).includes(wanted)));
-      }, "pick");
-      const charRow = pick(charName);
-      if (charRow) out.chars.push({ name: charName, appearance: charRow.appearance, refs: [] });
-      const userRow = pick(userName);
-      if (userRow && userRow !== charRow) {
-        out.chars.push({ name: userName, appearance: userRow.appearance, refs: [] });
-      }
-      if (book.length) {
-        console.log(`${MODULE2} \u0441\u043F\u0440\u0430\u0432\u043E\u0447\u043D\u0438\u043A: ${book.length} \u0437\u0430\u043F\u0438\u0441\u0435\u0439, \u0441\u043E\u0432\u043F\u0430\u043B\u043E ${out.chars.length}`);
-      }
-    } catch (_) {
-    }
-    out.lorebook = findLorebook(raw);
-    out.sendCharAvatar = Boolean(raw.sendCharAvatar);
-    out.sendUserAvatar = Boolean(raw.sendUserAvatar);
-    console.log(`${MODULE2} Haruspics: style=${out.style ? "yes" : "no"} chars=${out.chars.length} lorebook=${out.lorebook.length} neg=${out.negative ? "yes" : "no"}`);
-    if (!out.style && !out.chars.length && !out.lorebook.length) {
-      console.warn(`${MODULE2} \u043D\u0438\u0447\u0435\u0433\u043E \u043D\u0435 \u043D\u0430\u0439\u0434\u0435\u043D\u043E. \u0420\u0435\u0430\u043B\u044C\u043D\u0430\u044F \u0441\u0442\u0440\u0443\u043A\u0442\u0443\u0440\u0430 inline_image_gen:`);
-      for (const line of dumpSettingsShape(raw)) console.warn(`  ${line}`);
-    }
-    return out;
-  }
-  __name(collectHaruspics, "collectHaruspics");
-  function resolveCharName(ctx) {
-    const fromCard = String(ctx?.characters?.[ctx?.characterId]?.name || "").trim();
-    const fallback = String(ctx?.name2 || "").trim();
-    const pick = fromCard || fallback;
-    if (!pick || /sillytavern/i.test(pick)) return fromCard || "the character";
-    return pick;
-  }
-  __name(resolveCharName, "resolveCharName");
-  function resolveUserName(ctx) {
-    const pick = String(ctx?.name1 || "").trim();
-    if (!pick || /sillytavern/i.test(pick)) return "the viewer";
-    return pick;
-  }
-  __name(resolveUserName, "resolveUserName");
-  function buildAsk({ mode, charName, userName, sceneText, knownCharacters, customInstruction }) {
-    const who = mode === "selfie" ? `"${charName}" AND "${userName}" (both in frame)` : `"${charName}" (alone in frame, "${userName}" holds the camera and is NOT visible)`;
-    const locked = Array.isArray(knownCharacters) ? knownCharacters.filter((c) => c?.name && c?.appearance) : [];
-    let appearanceRule;
-    if (locked.length) {
-      const list = locked.map((c) => `  - "${c.name}": ${c.appearance}`).join("\n");
-      appearanceRule = `LOCKED APPEARANCE \u2014 these characters already have a fixed appearance.
-You MUST leave hair, eyes, build and skin EMPTY ("") for them. Do not describe, guess,
-paraphrase or contradict the appearance below. It is inserted into the prompt
-automatically, word for word:
-${list}
-
-For any character NOT in that list, fill hair, eyes, build and skin from the scene.`;
-    } else {
-      appearanceRule = `No fixed appearance exists for anyone \u2014 fill hair, eyes, build and skin from the scene.`;
-    }
-    const custom = customInstruction ? `
-USER'S EXTRA GUIDANCE (follow it, but still answer as JSON):
-${customInstruction}
-` : "";
-    return `You are an image-prompt tagger for NovelAI v5. You do not write prose.
-You read a roleplay scene and return ONLY a JSON object of short English tags.
-
-ROLEPLAY SCENE (may be in any language \u2014 read it, do not copy its language):
-${sceneText}
-
-What is being photographed: ${who}
-${appearanceRule}${custom}
-Return exactly this JSON shape, every value a short English tag string, lowercase, comma-separated tags inside each string:
-
-{
-  "shot": "camera framing, e.g. chest-up two-shot / close-up selfie / full body shot",
-  "setting": "location and time, e.g. cozy kitchen, evening",
-  "lighting": "light and mood, e.g. soft window light, warm colors, low contrast",
-  "characters": [
-    {
-      "ref": "${charName}",
-      "genderTag": "1girl or 1boy or 1other",
-      "position": "e.g. left side",
-      "hair": "",
-      "eyes": "",
-      "build": "",
-      "skin": "",
-      "outfit": "current clothing",
-      "expression": "e.g. open mouth, smiling",
-      "action": "e.g. hand gripping coffee cup",
-      "gaze": "e.g. looking at ${userName} / looking at viewer"
-    }
-  ]
-}
-
-RULES:
-- ENGLISH ONLY. No Cyrillic, no other scripts, no transliteration.
-- Tags, not sentences. "long silver hair, blunt bangs" not "she has long silver hair".
-- No quality tags, no style tags, no "masterpiece" \u2014 those are added separately.
-- Reference characters by the exact names given ("${charName}", "${userName}").
-- For selfie mode add both characters to the array and make the gaze "looking at viewer".
-- Output the JSON only. No markdown fences, no commentary.`;
-  }
-  __name(buildAsk, "buildAsk");
-  function parseStructured(raw) {
-    let text = String(raw || "").trim();
-    if (!text) return null;
-    text = text.replace(/```[a-z]*\n?/gi, "").trim();
-    const start = text.indexOf("{");
-    const end = text.lastIndexOf("}");
-    if (start === -1 || end === -1 || end <= start) return null;
-    const candidate = text.slice(start, end + 1);
-    try {
-      const parsed = JSON.parse(candidate);
-      if (!parsed || typeof parsed !== "object") return null;
-      if (!Array.isArray(parsed.characters)) parsed.characters = [];
-      return parsed;
-    } catch (_) {
-      return null;
-    }
-  }
-  __name(parseStructured, "parseStructured");
-  function cleanTags(value) {
-    let s = String(value || "");
-    if (!s) return "";
-    s = s.replace(/```[a-z]*\n?/gi, " ");
-    s = s.replace(/<[^>]*>/g, " ");
-    s = s.replace(/\[[A-Z_]{3,}[^\]]*\]/g, " ");
-    s = s.replace(/^(tags?|prompt|description|answer)\s*:\s*/i, "");
-    const chunks = s.split(/[,;]\s*|\n+/).map((c) => c.replace(/\s+/g, " ").trim()).filter(Boolean).filter((c) => !/[\u0400-\u04FF\u4E00-\u9FFF\u3040-\u30FF]/.test(c)).filter((c) => /[A-Za-z]{2,}/.test(c));
-    return chunks.join(", ").trim();
-  }
-  __name(cleanTags, "cleanTags");
-  function assemble(structured, haruspics, opts) {
-    const { mode, charName, userName } = opts;
-    const h = haruspics || {};
-    const st = structured || {};
-    const base = [];
-    if (h.style) base.push(cleanTags(h.style));
-    const shot = cleanTags(st.shot) || (mode === "selfie" ? "close-up selfie" : "candid photo, upper body shot");
-    base.push(shot);
-    if (mode === "selfie") base.push("selfie, looking at viewer");
-    else base.push("shot on smartphone, candid");
-    for (const c of st.characters || []) {
-      const nm = String(c.ref || "").trim();
-      const act = cleanTags(c.action);
-      if (nm && act) base.push(`${nm} ${act}`);
-    }
-    const setting = cleanTags(st.setting);
-    if (setting) base.push(setting);
-    const lighting = cleanTags(st.lighting);
-    if (lighting) base.push(lighting);
-    if (h.lorebook?.length) base.push(cleanTags(h.lorebook.join(", ")));
-    base.push(QUALITY_TAGS);
-    const charBlocks = [];
-    for (const c of st.characters || []) {
-      const ref = String(c.ref || "").trim();
-      if (!ref) continue;
-      const tags = [];
-      const gender = cleanTags(c.genderTag);
-      if (gender) tags.push(gender);
-      const pos = cleanTags(c.position);
-      if (pos) tags.push(pos);
-      tags.push(ref);
-      const known = (h.chars || []).find((x) => x.name === ref);
-      const knownAppearance = known?.appearance ? String(known.appearance).trim() : "";
-      if (knownAppearance) {
-        tags.push(knownAppearance);
-      } else {
-        for (const k of ["hair", "eyes", "build", "skin"]) {
-          const t = cleanTags(c[k]);
-          if (t) tags.push(t);
-        }
-      }
-      const outfit = cleanTags(c.outfit);
-      if (outfit) tags.push(outfit);
-      const expr = cleanTags(c.expression);
-      if (expr) tags.push(expr);
-      const action = cleanTags(c.action);
-      if (action) tags.push(action);
-      const gaze = cleanTags(c.gaze);
-      if (gaze) tags.push(gaze);
-      else if (mode === "selfie") tags.push("looking at viewer");
-      charBlocks.push(tags.filter(Boolean).join(", "));
-    }
-    let prompt = [base.filter(Boolean).join(", "), ...charBlocks.filter(Boolean)].join(" | ");
-    for (const lockedChar of h.chars || []) {
-      if (!lockedChar.appearance) continue;
-      if (!prompt.includes(lockedChar.appearance)) {
-        prompt = `${lockedChar.appearance}, ${prompt}`;
-      }
-    }
-    try {
-      const { appearance } = matchCharacters(prompt);
-      const missing = appearance.filter((a) => !prompt.toLowerCase().includes(a.toLowerCase()));
-      if (missing.length) prompt = `${missing.join(", ")}, ${prompt}`;
-    } catch (_) {
-    }
-    const negative = h.negative ? cleanTags(h.negative) : DEFAULT_NEGATIVE;
-    return { prompt, negative };
-  }
-  __name(assemble, "assemble");
-  async function buildPhotoPrompt({ imageGen: imageGen2, ctx, askModel, sceneText, mode, customInstruction }) {
-    const charName = resolveCharName(ctx);
-    const userName = resolveUserName(ctx);
-    const haruspics = collectHaruspics(imageGen2, ctx);
-    const ask2 = buildAsk({
-      mode,
-      charName,
-      userName,
-      sceneText,
-      knownCharacters: haruspics.chars || [],
-      customInstruction
-    });
-    let structured = null;
-    try {
-      const raw = await askModel(ask2);
-      structured = parseStructured(raw);
-      if (!structured) {
-        console.warn(`${MODULE2} model returned no parseable JSON:`, String(raw || "").slice(0, 200));
-      }
-    } catch (err) {
-      console.warn(`${MODULE2} model call failed:`, err?.message || err);
-    }
-    if (!structured || !(structured.characters || []).some((c) => c.ref === charName)) {
-      structured = structured || {};
-      structured.characters = Array.isArray(structured.characters) ? structured.characters : [];
-      structured.characters.unshift({
-        ref: charName,
-        genderTag: "",
-        position: mode === "selfie" ? "left side" : "center",
-        outfit: "",
-        expression: "",
-        action: "",
-        gaze: mode === "selfie" ? "looking at viewer" : ""
-      });
-    }
-    const { prompt, negative } = assemble(structured, haruspics, { mode, charName, userName });
-    return { prompt, negative, structured, haruspics };
-  }
-  __name(buildPhotoPrompt, "buildPhotoPrompt");
-
   // apps/prompt-llm.js
   var MODULE3 = "[AstralLLM]";
   var SETTINGS_KEY2 = "astral-phone";
-  function loadApiSettings() {
-    const empty = { endpoint: "", apiKey: "", model: "", temperature: 0.7, maxTokens: 600 };
+  function emptyProfile() {
+    return { endpoint: "", apiKey: "", model: "", temperature: 0.7, maxTokens: 600 };
+  }
+  __name(emptyProfile, "emptyProfile");
+  function readStore() {
+    const fallback = { profiles: [], activeId: "" };
     try {
       const ctx = globalThis.SillyTavern?.getContext?.();
       const bag = ctx?.extensionSettings || globalThis.extension_settings;
       const raw = bag?.[SETTINGS_KEY2]?.promptApi;
-      if (!raw || typeof raw !== "object") return empty;
+      if (!raw || typeof raw !== "object") return fallback;
+      if (!Array.isArray(raw.profiles)) {
+        const legacy = normalizeProfile(raw);
+        if (legacy.endpoint || legacy.model) {
+          return { profiles: [{ ...legacy, id: "default", name: "Default" }], activeId: "default" };
+        }
+        return fallback;
+      }
       return {
-        endpoint: String(raw.endpoint || "").trim(),
-        apiKey: String(raw.apiKey || "").trim(),
-        model: String(raw.model || "").trim(),
-        temperature: Number.isFinite(Number(raw.temperature)) ? Number(raw.temperature) : 0.7,
-        maxTokens: Number.isFinite(Number(raw.maxTokens)) ? Number(raw.maxTokens) : 600
+        profiles: raw.profiles.map((p) => ({ ...normalizeProfile(p), id: String(p.id || ""), name: String(p.name || "\u041F\u0440\u043E\u0444\u0438\u043B\u044C") })),
+        activeId: String(raw.activeId || "")
       };
     } catch (_) {
-      return empty;
+      return fallback;
     }
   }
-  __name(loadApiSettings, "loadApiSettings");
-  function saveApiSettings(patch) {
+  __name(readStore, "readStore");
+  function normalizeProfile(raw) {
+    const base = emptyProfile();
+    if (!raw || typeof raw !== "object") return base;
+    return {
+      endpoint: String(raw.endpoint || "").trim(),
+      apiKey: String(raw.apiKey || "").trim(),
+      model: String(raw.model || "").trim(),
+      temperature: Number.isFinite(Number(raw.temperature)) ? Number(raw.temperature) : base.temperature,
+      maxTokens: Number.isFinite(Number(raw.maxTokens)) ? Number(raw.maxTokens) : base.maxTokens
+    };
+  }
+  __name(normalizeProfile, "normalizeProfile");
+  function writeStore(store) {
     try {
       const ctx = globalThis.SillyTavern?.getContext?.();
       const bag = ctx?.extensionSettings || globalThis.extension_settings;
       if (!bag) return false;
       if (!bag[SETTINGS_KEY2]) bag[SETTINGS_KEY2] = {};
-      bag[SETTINGS_KEY2].promptApi = { ...loadApiSettings(), ...patch };
+      bag[SETTINGS_KEY2].promptApi = {
+        profiles: (store.profiles || []).map((p) => ({ ...p })),
+        activeId: store.activeId || ""
+      };
       const persist = ctx?.saveSettingsDebounced || globalThis.saveSettingsDebounced;
       if (typeof persist === "function") persist();
       return true;
     } catch (err) {
-      console.warn(`${MODULE3} save failed:`, err?.message || err);
+      console.warn(`${MODULE3} write failed:`, err?.message || err);
       return false;
     }
   }
-  __name(saveApiSettings, "saveApiSettings");
-  function isApiConfigured() {
-    const s = loadApiSettings();
-    return Boolean(s.endpoint && s.model);
+  __name(writeStore, "writeStore");
+  function listProfiles() {
+    const store = readStore();
+    return { profiles: store.profiles, activeId: store.activeId };
   }
-  __name(isApiConfigured, "isApiConfigured");
+  __name(listProfiles, "listProfiles");
+  function loadApiSettings() {
+    const { profiles, activeId } = readStore();
+    const active = profiles.find((p) => p.id === activeId) || profiles[0];
+    if (!active) return emptyProfile();
+    const { id, name, ...rest } = active;
+    return rest;
+  }
+  __name(loadApiSettings, "loadApiSettings");
+  function saveApiSettings(patch) {
+    const store = readStore();
+    let active = store.profiles.find((p) => p.id === store.activeId);
+    if (!active) {
+      active = { ...emptyProfile(), id: "default", name: "Default" };
+      store.profiles = [active];
+      store.activeId = active.id;
+    }
+    Object.assign(active, normalizeProfile({ ...active, ...patch }));
+    return writeStore(store);
+  }
+  __name(saveApiSettings, "saveApiSettings");
+  function addProfile(name) {
+    const store = readStore();
+    const current = loadApiSettings();
+    const id = `p${Date.now().toString(36)}${Math.random().toString(36).slice(2, 5)}`;
+    store.profiles.push({ ...current, id, name: String(name || `\u041F\u0440\u043E\u0444\u0438\u043B\u044C ${store.profiles.length + 1}`) });
+    store.activeId = id;
+    writeStore(store);
+    return id;
+  }
+  __name(addProfile, "addProfile");
+  function activateProfile(id) {
+    const store = readStore();
+    if (!store.profiles.some((p) => p.id === id)) return false;
+    store.activeId = id;
+    return writeStore(store);
+  }
+  __name(activateProfile, "activateProfile");
+  function removeProfile(id) {
+    const store = readStore();
+    store.profiles = store.profiles.filter((p) => p.id !== id);
+    if (store.activeId === id) store.activeId = store.profiles[0]?.id || "";
+    return writeStore(store);
+  }
+  __name(removeProfile, "removeProfile");
+  function renameProfile(id, name) {
+    const store = readStore();
+    const p = store.profiles.find((x) => x.id === id);
+    if (!p) return false;
+    p.name = String(name || p.name);
+    return writeStore(store);
+  }
+  __name(renameProfile, "renameProfile");
+  function apiRoot(endpoint) {
+    const clean = String(endpoint || "").trim().replace(/\/+$/, "");
+    if (!clean) return "";
+    if (/\/v1$/i.test(clean)) return clean;
+    if (/\/(chat\/completions|completions|models)$/i.test(clean)) {
+      return clean.replace(/\/(chat\/completions|completions|models)$/i, "");
+    }
+    return `${clean}/v1`;
+  }
+  __name(apiRoot, "apiRoot");
+  async function fetchModels(settings) {
+    const root = apiRoot(settings?.endpoint);
+    if (!root) throw new Error("\u0423\u043A\u0430\u0436\u0438\u0442\u0435 endpoint");
+    const headers = {};
+    if (settings.apiKey) headers.Authorization = `Bearer ${settings.apiKey}`;
+    const controller = new AbortController();
+    const timer = setTimeout(() => controller.abort(), 3e4);
+    try {
+      const res = await fetch(`${root}/models`, { headers, signal: controller.signal });
+      if (!res.ok) {
+        const body = await res.text().catch(() => "");
+        throw new Error(`HTTP ${res.status}: ${body.slice(0, 200)}`);
+      }
+      const data = await res.json();
+      const raw = data?.data ?? data?.models ?? data;
+      const ids = [];
+      for (const item of Array.isArray(raw) ? raw : []) {
+        if (typeof item === "string") ids.push(item);
+        else if (item && typeof item === "object") {
+          const id = item.id || item.name || item.model;
+          if (typeof id === "string" && id.trim()) ids.push(id.trim());
+        }
+      }
+      const unique = [...new Set(ids)].sort((a, b) => a.localeCompare(b));
+      if (!unique.length) throw new Error("\u041F\u0440\u043E\u0432\u0430\u0439\u0434\u0435\u0440 \u0432\u0435\u0440\u043D\u0443\u043B \u043F\u0443\u0441\u0442\u043E\u0439 \u0441\u043F\u0438\u0441\u043E\u043A \u043C\u043E\u0434\u0435\u043B\u0435\u0439");
+      return unique;
+    } catch (err) {
+      if (err?.name === "AbortError") throw new Error("\u0422\u0430\u0439\u043C\u0430\u0443\u0442 \u043F\u043E\u0434\u043A\u043B\u044E\u0447\u0435\u043D\u0438\u044F (30\u0441)");
+      throw err;
+    } finally {
+      clearTimeout(timer);
+    }
+  }
+  __name(fetchModels, "fetchModels");
+  async function testConnection(settings) {
+    try {
+      const models = await fetchModels(settings);
+      try {
+        const ctx = globalThis.SillyTavern?.getContext?.();
+        const bag = ctx?.extensionSettings || globalThis.extension_settings;
+        if (bag?.[SETTINGS_KEY2]) {
+          bag[SETTINGS_KEY2].promptApiModels = models;
+          const persist = ctx?.saveSettingsDebounced || globalThis.saveSettingsDebounced;
+          if (typeof persist === "function") persist();
+        }
+      } catch (_) {
+      }
+      return { ok: true, models };
+    } catch (err) {
+      return { ok: false, models: [], error: err?.message || String(err) };
+    }
+  }
+  __name(testConnection, "testConnection");
+  function cachedModels() {
+    try {
+      const ctx = globalThis.SillyTavern?.getContext?.();
+      const bag = ctx?.extensionSettings || globalThis.extension_settings;
+      const list = bag?.[SETTINGS_KEY2]?.promptApiModels;
+      return Array.isArray(list) ? list : [];
+    } catch (_) {
+      return [];
+    }
+  }
+  __name(cachedModels, "cachedModels");
   function normalizeEndpoint(endpoint) {
     const clean = String(endpoint || "").trim().replace(/\/+$/, "");
     if (!clean) return "";
     if (/\/(chat\/completions|completions)$/i.test(clean)) return clean;
-    if (/\/v1$/i.test(clean)) return `${clean}/chat/completions`;
-    return `${clean}/v1/chat/completions`;
+    const root = apiRoot(clean);
+    return root ? `${root}/chat/completions` : "";
   }
   __name(normalizeEndpoint, "normalizeEndpoint");
-  async function callOpenAICompatible(prompt, systemPrompt, settings) {
+  async function callOpenAICompatible(prompt2, systemPrompt, settings) {
     const url = normalizeEndpoint(settings.endpoint);
     if (!url) throw new Error("endpoint \u043D\u0435 \u0437\u0430\u0434\u0430\u043D");
     const headers = { "Content-Type": "application/json" };
@@ -2719,7 +3004,7 @@ RULES:
           max_tokens: settings.maxTokens,
           messages: [
             { role: "system", content: systemPrompt },
-            { role: "user", content: prompt }
+            { role: "user", content: prompt2 }
           ]
         })
       });
@@ -2747,12 +3032,12 @@ RULES:
     }
   }
   __name(callOpenAICompatible, "callOpenAICompatible");
-  async function ask(prompt, opts = {}) {
+  async function ask(prompt2, opts = {}) {
     const system = opts.system || "You output English only. You never narrate or roleplay.";
     const settings = loadApiSettings();
     if (settings.endpoint && settings.model) {
       try {
-        const out = await callOpenAICompatible(prompt, system, settings);
+        const out = await callOpenAICompatible(prompt2, system, settings);
         if (out) return out;
       } catch (err) {
         console.warn(`${MODULE3} \u043D\u0430\u0441\u0442\u0440\u043E\u0435\u043D\u043D\u044B\u0439 API \u043D\u0435 \u043E\u0442\u0432\u0435\u0442\u0438\u043B, \u043E\u0442\u043A\u0430\u0442 \u043D\u0430 ST:`, err?.message || err);
@@ -2762,7 +3047,7 @@ RULES:
     if (typeof ctx?.generateRaw === "function") {
       try {
         const out = await ctx.generateRaw({
-          prompt,
+          prompt: prompt2,
           systemPrompt: system,
           responseLength: opts.responseLength || 600
         });
@@ -2773,7 +3058,7 @@ RULES:
     }
     if (typeof ctx?.generateQuietPrompt === "function") {
       const out = await ctx.generateQuietPrompt(`[ENGLISH ONLY \u2014 NO PROSE]
-${prompt}`, false, false);
+${prompt2}`, false, false);
       if (String(out || "").trim()) return String(out).trim();
     }
     throw new Error("\u041D\u0435\u0442 \u0434\u043E\u0441\u0442\u0443\u043F\u043D\u043E\u0439 \u043C\u043E\u0434\u0435\u043B\u0438 \u0434\u043B\u044F \u0433\u0435\u043D\u0435\u0440\u0430\u0446\u0438\u0438 \u043F\u0440\u043E\u043C\u043F\u0442\u0430");
@@ -2783,16 +3068,24 @@ ${prompt}`, false, false);
     const draft = String(input || "").trim();
     if (!draft) throw new Error("\u041F\u0443\u0441\u0442\u043E\u0439 \u0442\u0435\u043A\u0441\u0442 \u0434\u043B\u044F \u0443\u043B\u0443\u0447\u0448\u0435\u043D\u0438\u044F");
     const char = String(opts.character || "").trim();
+    const style = String(opts.style || "").trim();
+    const appearance = String(opts.appearance || "").trim();
+    const contextLines = [];
+    if (style) contextLines.push(`STYLE (already applied, do not repeat it in your answer): ${style}`);
+    if (appearance) contextLines.push(`FIXED APPEARANCE of ${char || "the subject"} (do not contradict or repeat): ${appearance}`);
     const request = `Rewrite the draft below into a NovelAI v5 image prompt.
 
 DRAFT${char ? ` (post by ${char})` : ""}:
 ${draft}
-
+${contextLines.length ? `
+${contextLines.join("\n")}
+` : ""}
 RULES:
 - Output ENGLISH ONLY. Translate any Russian or other language into English.
 - Comma-separated visual tags, no sentences, no story, no dialogue, no feelings in prose.
-- Describe: framing/shot, subject${char ? ` (${char})` : ""}, appearance, clothing, pose/expression, action, setting, lighting, mood.
-- No quality tags (masterpiece, best quality) \u2014 they are added automatically.
+- Describe: framing/shot, subject${char ? ` (${char})` : ""}, pose/expression, action, outfit, setting, lighting, mood.
+${appearance ? "- Do NOT describe hair, eyes, build or skin \u2014 the fixed appearance is added separately." : `- Describe the subject's appearance briefly (hair, eyes, build).`}
+- No quality tags (masterpiece, best quality) and no style tags \u2014 they are added automatically.
 - No quotes, no labels, no markdown, no explanation. Output the prompt only.
 
 PROMPT:`;
@@ -2819,11 +3112,24 @@ PROMPT:`;
     try {
       const own = String(imageGen2?.getStyle?.() || "").trim();
       if (own) return cleanTags(own);
-    } catch (_) {
+      console.warn(`${MODULE3} \u0430\u043A\u0442\u0438\u0432\u043D\u044B\u0439 \u0441\u0442\u0438\u043B\u044C \u0432 inline_image_gen \u043D\u0435 \u043D\u0430\u0439\u0434\u0435\u043D`);
+    } catch (err) {
+      console.warn(`${MODULE3} resolveStyle failed:`, err?.message || err);
     }
     return "";
   }
   __name(resolveStyle, "resolveStyle");
+  function ensureStyle(prompt2, style) {
+    const text = String(prompt2 || "").trim();
+    const st = cleanTags(style || "");
+    if (!st) return text;
+    if (!text) return st;
+    const firstSegment = text.split("|")[0].slice(0, 200).toLowerCase();
+    const styleHead = st.split(",")[0].trim().toLowerCase();
+    if (styleHead && firstSegment.includes(styleHead)) return text;
+    return `${st}, ${text}`;
+  }
+  __name(ensureStyle, "ensureStyle");
 
   // apps/gallery.js
   var GalleryApp = class {
@@ -3021,7 +3327,7 @@ PROMPT:`;
         const prefs = this._loadCameraPrefs();
         const resolvedMode = mode === "random" ? Math.random() < 0.5 ? "photo" : "selfie" : mode;
         const customInstruction = resolvedMode === "selfie" ? prefs.selfieInstruction.trim() : prefs.photoInstruction.trim();
-        const { prompt, negative, structured } = await buildPhotoPrompt({
+        const { prompt: prompt2, negative, structured } = await buildPhotoPrompt({
           imageGen: this.imageGen,
           ctx,
           sceneText: this._sceneText(ctx),
@@ -3029,13 +3335,13 @@ PROMPT:`;
           customInstruction,
           askModel: /* @__PURE__ */ __name((ask2) => this._askModel(ctx, ask2), "askModel")
         });
-        console.log("[Astral Phone] prompt:", prompt);
+        console.log("[Astral Phone] prompt:", prompt2);
         console.log("[Astral Phone] negative:", negative);
         const state = this.storage.getState();
         if (!Array.isArray(state.gallery)) state.gallery = [];
         state.gallery.push({
           id: `photo_${Date.now()}_${Math.random().toString(36).slice(2, 7)}`,
-          description: prompt,
+          description: prompt2,
           negative,
           imageUrl: null,
           timestamp: Date.now(),
@@ -3078,11 +3384,14 @@ PROMPT:`;
         const state = this.storage.getState();
         const photo = state.gallery[index];
         if (!photo) return;
-        const prompt = this._buildPrompt(photo);
-        const url = await this.imageGen.generate(prompt, {
+        const style = resolveStyle(this.imageGen) || String(photo.style || "");
+        const prompt2 = ensureStyle(this._buildPrompt(photo), style);
+        console.log("[Gallery] prompt:", prompt2);
+        const url = await this.imageGen.generate(prompt2, {
           character: photo.character || this.context?.name2,
           type: "gallery_photo",
-          negativePrompt: photo.negative || void 0
+          negativePrompt: photo.negative || void 0,
+          style
         });
         state.gallery[index].imageUrl = url;
         this.storage.save();
@@ -3318,9 +3627,11 @@ PROMPT:`;
         const state = this.storage.getState();
         const item = state.spicy[index];
         if (!item) return;
-        const prompt = [item.character, item.description].filter(Boolean).join(", ");
         const style = resolveStyle(this.imageGen) || String(item.style || "");
-        const url = await this.imageGen.generate(prompt, {
+        const base = [item.character, item.description].filter(Boolean).join(", ");
+        const prompt2 = ensureStyle(base, style);
+        console.log("[Spicy] prompt:", prompt2);
+        const url = await this.imageGen.generate(prompt2, {
           character: item.character,
           type: "spicy_thumbnail",
           nsfw: true,
@@ -3831,11 +4142,11 @@ PROMPT:`;
       });
       overlay.querySelector("#astral-post-go").addEventListener("click", async () => {
         const caption = overlay.querySelector("#astral-post-caption").value.trim();
-        const prompt = overlay.querySelector("#astral-post-text").value.trim();
-        if (!caption && !prompt) return;
+        const prompt2 = overlay.querySelector("#astral-post-text").value.trim();
+        if (!caption && !prompt2) return;
         close();
-        if (post) this._updatePost(editIndex, { caption, prompt });
-        else await this._createPost(caption, prompt);
+        if (post) this._updatePost(editIndex, { caption, prompt: prompt2 });
+        else await this._createPost(caption, prompt2);
       });
       const enhanceBtn = overlay.querySelector("#astral-post-enhance");
       const promptField = overlay.querySelector("#astral-post-text");
@@ -3850,8 +4161,10 @@ PROMPT:`;
         enhanceBtn.disabled = true;
         enhanceBtn.textContent = "\u0423\u043B\u0443\u0447\u0448\u0430\u044E\u2026";
         try {
+          const style = resolveStyle(this.imageGen);
           const improved = await enhancePrompt(draft, {
-            character: this.context?.characters?.[this.context?.characterId]?.name || this.context?.name2 || ""
+            character: this._charName(),
+            style
           });
           if (improved) {
             promptField.value = improved;
@@ -3870,14 +4183,14 @@ PROMPT:`;
       overlay.querySelector("#astral-post-caption").focus();
     }
     /* ─────────────────────────── create / update / delete ─────────────────────────── */
-    async _createPost(caption, prompt) {
+    async _createPost(caption, prompt2) {
       const state = this.storage.getState();
       if (!state.creator) state.creator = { posts: [], subscribers: 0, revenue: 0, fans: [] };
       if (!Array.isArray(state.creator.posts)) state.creator.posts = [];
       state.creator.posts.unshift({
         id: this._uid(),
         caption,
-        prompt,
+        prompt: prompt2,
         timestamp: Date.now(),
         imageUrl: null,
         imageW: 0,
@@ -3889,7 +4202,7 @@ PROMPT:`;
       this.storage.save();
       this._tab = "feed";
       this.render(document.querySelector(".astral-phone-body"));
-      if (prompt && this.imageGen.isAvailable()) await this._generate(0, true);
+      if (prompt2 && this.imageGen.isAvailable()) await this._generate(0, true);
       this.render(document.querySelector(".astral-phone-body"));
     }
     _updatePost(index, patch) {
@@ -4053,9 +4366,11 @@ PROMPT:`;
         if (!post) return;
         const scene = String(post.prompt || "").trim();
         const charName = this._charName();
-        const prompt = [charName, scene].filter(Boolean).join(", ");
         const style = resolveStyle(this.imageGen) || String(post.style || "");
-        const url = await this.imageGen.generate(prompt, {
+        const base = [charName, scene].filter(Boolean).join(", ");
+        const prompt2 = ensureStyle(base, style);
+        console.log("[Creator] prompt:", prompt2);
+        const url = await this.imageGen.generate(prompt2, {
           character: charName,
           type: "creator_post",
           nsfw: true,
@@ -4208,6 +4523,14 @@ PROMPT:`;
                 <div class="astral-settings-section">
                     <h3 class="astral-section-title">\u041D\u0430\u0441\u0442\u0440\u043E\u0439\u043A\u0438 API</h3>
                     <div class="astral-form-group">
+                        <label>\u041F\u0440\u043E\u0444\u0438\u043B\u044C</label>
+                        <div class="astral-api-profile-bar">
+                            <select id="astral-api-profile"></select>
+                            <button class="astral-btn-icon" data-act="profile-new" title="\u041D\u043E\u0432\u044B\u0439">+</button>
+                            <button class="astral-btn-icon" data-act="profile-del" title="\u0423\u0434\u0430\u043B\u0438\u0442\u044C">\u2715</button>
+                        </div>
+                    </div>
+                    <div class="astral-form-group">
                         <label>Endpoint</label>
                         <input type="text" id="astral-api-endpoint" placeholder="https://api.openai.com/v1" />
                     </div>
@@ -4217,7 +4540,11 @@ PROMPT:`;
                     </div>
                     <div class="astral-form-group">
                         <label>\u041C\u043E\u0434\u0435\u043B\u044C</label>
-                        <input type="text" id="astral-api-model" placeholder="gpt-4o-mini" />
+                        <div class="astral-api-model-bar">
+                            <select id="astral-api-model"></select>
+                            <button class="astral-btn-icon" data-act="api-connect" title="\u041F\u043E\u0434\u043A\u043B\u044E\u0447\u0438\u0442\u044C\u0441\u044F">\u27F3</button>
+                        </div>
+                        <input type="text" id="astral-api-model-manual" placeholder="\u0438\u043B\u0438 \u0432\u0432\u0435\u0441\u0442\u0438 \u0432\u0440\u0443\u0447\u043D\u0443\u044E" />
                     </div>
                     <div class="astral-form-group">
                         <label>\u0422\u0435\u043C\u043F\u0435\u0440\u0430\u0442\u0443\u0440\u0430</label>
@@ -4271,33 +4598,128 @@ PROMPT:`;
       this.attachEvents(container);
     }
     attachEvents(container) {
+      const q = /* @__PURE__ */ __name((sel) => container.querySelector(sel), "q");
       const api = {
-        endpoint: container.querySelector("#astral-api-endpoint"),
-        apiKey: container.querySelector("#astral-api-key"),
-        model: container.querySelector("#astral-api-model"),
-        temperature: container.querySelector("#astral-api-temp")
+        endpoint: q("#astral-api-endpoint"),
+        apiKey: q("#astral-api-key"),
+        profile: q("#astral-api-profile"),
+        model: q("#astral-api-model"),
+        manual: q("#astral-api-model-manual"),
+        temperature: q("#astral-api-temp")
       };
-      const status = container.querySelector("#astral-api-status");
-      const cur = loadApiSettings();
-      if (api.endpoint) api.endpoint.value = cur.endpoint;
-      if (api.apiKey) api.apiKey.value = cur.apiKey;
-      if (api.model) api.model.value = cur.model;
-      if (api.temperature) api.temperature.value = cur.temperature;
-      const refresh = /* @__PURE__ */ __name(() => {
-        if (status) {
-          status.textContent = isApiConfigured() ? "\u2713 \u041F\u0440\u043E\u043C\u043F\u0442\u044B \u043F\u0438\u0448\u0435\u0442 \u0443\u043A\u0430\u0437\u0430\u043D\u043D\u0430\u044F \u043C\u043E\u0434\u0435\u043B\u044C" : "\u041F\u0440\u043E\u043C\u043F\u0442\u044B \u043F\u0438\u0448\u0435\u0442 \u043E\u0441\u043D\u043E\u0432\u043D\u0430\u044F \u043C\u043E\u0434\u0435\u043B\u044C \u0447\u0430\u0442\u0430";
+      const status = q("#astral-api-status");
+      const fillModels = /* @__PURE__ */ __name((models, selected) => {
+        if (!api.model) return;
+        const list = models.length ? models : cachedModels();
+        api.model.innerHTML = "";
+        if (!list.length) {
+          api.model.innerHTML = '<option value="">\u2014 \u043D\u0430\u0436\u043C\u0438\u0442\u0435 \u27F3 \u2014</option>';
+          return;
         }
+        for (const id of list) {
+          const o = document.createElement("option");
+          o.value = id;
+          o.textContent = id;
+          if (id === selected) o.selected = true;
+          api.model.appendChild(o);
+        }
+        if (selected && !list.includes(selected)) {
+          const o = document.createElement("option");
+          o.value = selected;
+          o.textContent = selected;
+          o.selected = true;
+          api.model.appendChild(o);
+        }
+      }, "fillModels");
+      const fillProfiles = /* @__PURE__ */ __name(() => {
+        if (!api.profile) return;
+        const { profiles, activeId } = listProfiles();
+        api.profile.innerHTML = "";
+        if (!profiles.length) {
+          api.profile.innerHTML = '<option value="">\u2014 \u043D\u0435\u0442 \u2014</option>';
+          return;
+        }
+        for (const p of profiles) {
+          const o = document.createElement("option");
+          o.value = p.id;
+          o.textContent = p.name || p.id;
+          if (p.id === activeId) o.selected = true;
+          api.profile.appendChild(o);
+        }
+      }, "fillProfiles");
+      const fillFields = /* @__PURE__ */ __name(() => {
+        const cur = loadApiSettings();
+        if (api.endpoint) api.endpoint.value = cur.endpoint;
+        if (api.apiKey) api.apiKey.value = cur.apiKey;
+        if (api.temperature) api.temperature.value = cur.temperature;
+        if (api.manual) api.manual.value = "";
+        fillModels(cachedModels(), cur.model);
+      }, "fillFields");
+      const refresh = /* @__PURE__ */ __name(() => {
+        if (!status) return;
+        const s = loadApiSettings();
+        status.textContent = s.endpoint && s.model ? `\u2713 \u041F\u0440\u043E\u043C\u043F\u0442\u044B \u043F\u0438\u0448\u0435\u0442: ${s.model}` : "\u041F\u0440\u043E\u043C\u043F\u0442\u044B \u043F\u0438\u0448\u0435\u0442 \u043E\u0441\u043D\u043E\u0432\u043D\u0430\u044F \u043C\u043E\u0434\u0435\u043B\u044C \u0447\u0430\u0442\u0430";
       }, "refresh");
-      refresh();
-      Object.values(api).forEach((el) => el?.addEventListener("change", () => {
+      const save = /* @__PURE__ */ __name(() => {
         saveApiSettings({
           endpoint: api.endpoint?.value || "",
           apiKey: api.apiKey?.value || "",
-          model: api.model?.value || "",
+          model: api.manual?.value.trim() || api.model?.value || "",
           temperature: Number(api.temperature?.value) || 0.7
         });
         refresh();
-      }));
+      }, "save");
+      fillProfiles();
+      fillFields();
+      refresh();
+      container.querySelector('[data-act="api-connect"]')?.addEventListener("click", async (e) => {
+        const btn = e.currentTarget;
+        btn.disabled = true;
+        if (status) status.textContent = "\u041F\u0440\u043E\u0432\u0435\u0440\u044F\u044E \u043F\u043E\u0434\u043A\u043B\u044E\u0447\u0435\u043D\u0438\u0435\u2026";
+        const res = await testConnection({
+          endpoint: api.endpoint?.value.trim() || "",
+          apiKey: api.apiKey?.value.trim() || ""
+        });
+        btn.disabled = false;
+        if (res.ok) {
+          fillModels(res.models, api.model?.value || "");
+          if (api.model && !api.model.value) api.model.value = res.models[0];
+          save();
+          if (status) status.textContent = `\u2713 \u041F\u043E\u0434\u043A\u043B\u044E\u0447\u0435\u043D\u043E, \u043C\u043E\u0434\u0435\u043B\u0435\u0439: ${res.models.length}`;
+        } else if (status) {
+          status.textContent = `\u2717 ${res.error}`;
+        }
+      });
+      api.model?.addEventListener("change", () => {
+        if (api.manual) api.manual.value = "";
+        save();
+      });
+      api.manual?.addEventListener("input", save);
+      api.endpoint?.addEventListener("change", save);
+      api.apiKey?.addEventListener("change", save);
+      api.temperature?.addEventListener("change", save);
+      api.profile?.addEventListener("change", (e) => {
+        activateProfile(e.target.value);
+        fillFields();
+        refresh();
+      });
+      container.querySelector('[data-act="profile-new"]')?.addEventListener("click", () => {
+        const name = prompt("\u041D\u0430\u0437\u0432\u0430\u043D\u0438\u0435 \u043F\u0440\u043E\u0444\u0438\u043B\u044F:", `\u041F\u0440\u043E\u0444\u0438\u043B\u044C ${listProfiles().profiles.length + 1}`);
+        if (name === null) return;
+        addProfile(String(name || "").trim());
+        fillProfiles();
+        fillFields();
+        refresh();
+      });
+      container.querySelector('[data-act="profile-del"]')?.addEventListener("click", () => {
+        const { profiles, activeId } = listProfiles();
+        if (profiles.length <= 1) return;
+        if (!confirm("\u0423\u0434\u0430\u043B\u0438\u0442\u044C \u043F\u0440\u043E\u0444\u0438\u043B\u044C \u043F\u043E\u0434\u043A\u043B\u044E\u0447\u0435\u043D\u0438\u044F?")) return;
+        removeProfile(activeId);
+        fillProfiles();
+        fillFields();
+        refresh();
+      });
       const bookHost = container.querySelector("#astral-app-charbook");
       if (bookHost) {
         bookHost.innerHTML = renderCharacterBookHTML();
@@ -4372,10 +4794,10 @@ PROMPT:`;
         throw new Error("generateQuietPrompt \u043D\u0435\u0434\u043E\u0441\u0442\u0443\u043F\u0435\u043D \u2014 \u043E\u0431\u043D\u043E\u0432\u0438\u0442\u0435 SillyTavern \u0434\u043E \u0430\u043A\u0442\u0443\u0430\u043B\u044C\u043D\u043E\u0439 \u0432\u0435\u0440\u0441\u0438\u0438.");
       }
       onProgress("\u0410\u043D\u0430\u043B\u0438\u0437\u0438\u0440\u0443\u044E \u043F\u0435\u0440\u0441\u043E\u043D\u0430\u0436\u0430\u2026");
-      const prompt = this._buildPrompt(ctx);
+      const prompt2 = this._buildPrompt(ctx);
       let raw;
       try {
-        raw = await ctx.generateQuietPrompt(prompt, false, false);
+        raw = await ctx.generateQuietPrompt(prompt2, false, false);
       } catch (err) {
         throw new Error(`\u0413\u0435\u043D\u0435\u0440\u0430\u0446\u0438\u044F \u0437\u0430\u0432\u0435\u0440\u0448\u0438\u043B\u0430\u0441\u044C \u0441 \u043E\u0448\u0438\u0431\u043A\u043E\u0439: ${err?.message || err}`);
       }
@@ -5003,13 +5425,29 @@ description \u043F\u0438\u0448\u0438 \u043A\u0430\u043A \u043F\u0440\u043E\u043C
         <hr />
         <b>\u041D\u0430\u0441\u0442\u0440\u043E\u0439\u043A\u0438 API</b>
         <small class="notes">\u041C\u043E\u0434\u0435\u043B\u044C, \u043A\u043E\u0442\u043E\u0440\u0430\u044F \u043F\u0438\u0448\u0435\u0442 \u043F\u0440\u043E\u043C\u043F\u0442\u044B \u0434\u043B\u044F \u0438\u0437\u043E\u0431\u0440\u0430\u0436\u0435\u043D\u0438\u0439. \u0415\u0441\u043B\u0438 \u043F\u0443\u0441\u0442\u043E \u2014 \u0438\u0441\u043F\u043E\u043B\u044C\u0437\u0443\u0435\u0442\u0441\u044F \u043E\u0441\u043D\u043E\u0432\u043D\u0430\u044F \u043C\u043E\u0434\u0435\u043B\u044C \u0447\u0430\u0442\u0430.</small>
+
+        <label for="astral-api-profile">\u041F\u0440\u043E\u0444\u0438\u043B\u044C \u043F\u043E\u0434\u043A\u043B\u044E\u0447\u0435\u043D\u0438\u044F</label>
+        <div class="astral-api-profile-bar">
+            <select id="astral-api-profile" class="text_pole"></select>
+            <button class="menu_button" id="astral-api-profile-new" title="\u041D\u043E\u0432\u044B\u0439 \u043F\u0440\u043E\u0444\u0438\u043B\u044C">+</button>
+            <button class="menu_button" id="astral-api-profile-rename" title="\u041F\u0435\u0440\u0435\u0438\u043C\u0435\u043D\u043E\u0432\u0430\u0442\u044C">\u270E</button>
+            <button class="menu_button" id="astral-api-profile-del" title="\u0423\u0434\u0430\u043B\u0438\u0442\u044C">\u2715</button>
+        </div>
+
         <label for="astral-api-endpoint">Endpoint</label>
         <input type="text" id="astral-api-endpoint" class="text_pole"
                placeholder="https://api.openai.com/v1" />
         <label for="astral-api-key">API \u043A\u043B\u044E\u0447</label>
         <input type="password" id="astral-api-key" class="text_pole" placeholder="sk-..." />
+
         <label for="astral-api-model">\u041C\u043E\u0434\u0435\u043B\u044C</label>
-        <input type="text" id="astral-api-model" class="text_pole" placeholder="gpt-4o-mini" />
+        <div class="astral-api-model-bar">
+            <select id="astral-api-model" class="text_pole"></select>
+            <button class="menu_button" id="astral-api-connect">\u041F\u043E\u0434\u043A\u043B\u044E\u0447\u0438\u0442\u044C\u0441\u044F</button>
+        </div>
+        <input type="text" id="astral-api-model-manual" class="text_pole"
+               placeholder="\u0438\u043B\u0438 \u0432\u0432\u0435\u0434\u0438\u0442\u0435 \u0438\u043C\u044F \u043C\u043E\u0434\u0435\u043B\u0438 \u0432\u0440\u0443\u0447\u043D\u0443\u044E" />
+
         <label for="astral-api-temp">\u0422\u0435\u043C\u043F\u0435\u0440\u0430\u0442\u0443\u0440\u0430</label>
         <input type="number" id="astral-api-temp" class="text_pole" min="0" max="2" step="0.1" value="0.7" />
         <div id="astral-api-status" class="notes"></div>
@@ -5029,33 +5467,138 @@ description \u043F\u0438\u0448\u0438 \u043A\u0430\u043A \u043F\u0440\u043E\u043C
         const drawer = document.getElementById("astral-phone-settings");
         drawer?.classList.toggle("openDrawer");
       });
-      const apiFields = {
-        endpoint: document.getElementById("astral-api-endpoint"),
-        apiKey: document.getElementById("astral-api-key"),
-        model: document.getElementById("astral-api-model"),
-        temperature: document.getElementById("astral-api-temp")
-      };
-      const apiStatus = document.getElementById("astral-api-status");
-      const current = loadApiSettings();
-      if (apiFields.endpoint) apiFields.endpoint.value = current.endpoint;
-      if (apiFields.apiKey) apiFields.apiKey.value = current.apiKey;
-      if (apiFields.model) apiFields.model.value = current.model;
-      if (apiFields.temperature) apiFields.temperature.value = current.temperature;
+      const el = /* @__PURE__ */ __name((id) => document.getElementById(id), "el");
+      const apiStatus = el("astral-api-status");
+      const profileSelect = el("astral-api-profile");
+      const modelSelect = el("astral-api-model");
+      const modelManual = el("astral-api-model-manual");
+      const fillModels = /* @__PURE__ */ __name((models, selected) => {
+        if (!modelSelect) return;
+        modelSelect.innerHTML = "";
+        const list = models.length ? models : cachedModels();
+        if (!list.length) {
+          modelSelect.innerHTML = '<option value="">\u2014 \u043D\u0430\u0436\u043C\u0438\u0442\u0435 \xAB\u041F\u043E\u0434\u043A\u043B\u044E\u0447\u0438\u0442\u044C\u0441\u044F\xBB \u2014</option>';
+          return;
+        }
+        for (const id of list) {
+          const opt = document.createElement("option");
+          opt.value = id;
+          opt.textContent = id;
+          if (id === selected) opt.selected = true;
+          modelSelect.appendChild(opt);
+        }
+        if (selected && !list.includes(selected)) {
+          const opt = document.createElement("option");
+          opt.value = selected;
+          opt.textContent = selected;
+          opt.selected = true;
+          modelSelect.appendChild(opt);
+        }
+      }, "fillModels");
+      const fillProfiles = /* @__PURE__ */ __name(() => {
+        if (!profileSelect) return;
+        const { profiles, activeId } = listProfiles();
+        profileSelect.innerHTML = "";
+        if (!profiles.length) {
+          profileSelect.innerHTML = '<option value="">\u2014 \u043D\u0435\u0442 \u043F\u0440\u043E\u0444\u0438\u043B\u0435\u0439 \u2014</option>';
+          return;
+        }
+        for (const p of profiles) {
+          const opt = document.createElement("option");
+          opt.value = p.id;
+          opt.textContent = p.name || p.id;
+          if (p.id === activeId) opt.selected = true;
+          profileSelect.appendChild(opt);
+        }
+      }, "fillProfiles");
+      const fillFields = /* @__PURE__ */ __name(() => {
+        const cur = loadApiSettings();
+        if (el("astral-api-endpoint")) el("astral-api-endpoint").value = cur.endpoint;
+        if (el("astral-api-key")) el("astral-api-key").value = cur.apiKey;
+        if (el("astral-api-temp")) el("astral-api-temp").value = cur.temperature;
+        if (modelManual) modelManual.value = "";
+        fillModels(cachedModels(), cur.model);
+      }, "fillFields");
       const refreshStatus = /* @__PURE__ */ __name(() => {
         if (!apiStatus) return;
-        apiStatus.textContent = isApiConfigured() ? "\u2713 \u041F\u0440\u043E\u043C\u043F\u0442\u044B \u043F\u0438\u0448\u0435\u0442 \u0443\u043A\u0430\u0437\u0430\u043D\u043D\u0430\u044F \u043C\u043E\u0434\u0435\u043B\u044C" : "\u041F\u0440\u043E\u043C\u043F\u0442\u044B \u043F\u0438\u0448\u0435\u0442 \u043E\u0441\u043D\u043E\u0432\u043D\u0430\u044F \u043C\u043E\u0434\u0435\u043B\u044C \u0447\u0430\u0442\u0430";
+        const s = loadApiSettings();
+        apiStatus.textContent = s.endpoint && s.model ? `\u2713 \u041F\u0440\u043E\u043C\u043F\u0442\u044B \u043F\u0438\u0448\u0435\u0442: ${s.model}` : "\u041F\u0440\u043E\u043C\u043F\u0442\u044B \u043F\u0438\u0448\u0435\u0442 \u043E\u0441\u043D\u043E\u0432\u043D\u0430\u044F \u043C\u043E\u0434\u0435\u043B\u044C \u0447\u0430\u0442\u0430";
       }, "refreshStatus");
-      refreshStatus();
       const saveApi = /* @__PURE__ */ __name(() => {
+        const picked = modelManual?.value.trim() || modelSelect?.value || "";
         saveApiSettings({
-          endpoint: apiFields.endpoint?.value || "",
-          apiKey: apiFields.apiKey?.value || "",
-          model: apiFields.model?.value || "",
-          temperature: Number(apiFields.temperature?.value) || 0.7
+          endpoint: el("astral-api-endpoint")?.value || "",
+          apiKey: el("astral-api-key")?.value || "",
+          model: picked,
+          temperature: Number(el("astral-api-temp")?.value) || 0.7
         });
         refreshStatus();
       }, "saveApi");
-      Object.values(apiFields).forEach((el) => el?.addEventListener("change", saveApi));
+      fillProfiles();
+      fillFields();
+      refreshStatus();
+      el("astral-api-connect")?.addEventListener("click", async (e) => {
+        const btn = e.currentTarget;
+        const original = btn.textContent;
+        btn.disabled = true;
+        btn.textContent = "\u041F\u043E\u0434\u043A\u043B\u044E\u0447\u0430\u044E\u0441\u044C\u2026";
+        if (apiStatus) apiStatus.textContent = "\u041F\u0440\u043E\u0432\u0435\u0440\u044F\u044E \u043F\u043E\u0434\u043A\u043B\u044E\u0447\u0435\u043D\u0438\u0435\u2026";
+        const res = await testConnection({
+          endpoint: el("astral-api-endpoint")?.value.trim() || "",
+          apiKey: el("astral-api-key")?.value.trim() || ""
+        });
+        btn.disabled = false;
+        btn.textContent = original;
+        if (res.ok) {
+          fillModels(res.models, modelSelect?.value || "");
+          if (modelSelect?.options.length) {
+            if (!modelSelect.value) modelSelect.value = res.models[0];
+            saveApi();
+          }
+          if (apiStatus) apiStatus.textContent = `\u2713 \u041F\u043E\u0434\u043A\u043B\u044E\u0447\u0435\u043D\u043E, \u043C\u043E\u0434\u0435\u043B\u0435\u0439: ${res.models.length}`;
+        } else {
+          if (apiStatus) apiStatus.textContent = `\u2717 ${res.error}`;
+        }
+      });
+      modelSelect?.addEventListener("change", () => {
+        if (modelManual) modelManual.value = "";
+        saveApi();
+      });
+      modelManual?.addEventListener("input", saveApi);
+      el("astral-api-endpoint")?.addEventListener("change", saveApi);
+      el("astral-api-key")?.addEventListener("change", saveApi);
+      el("astral-api-temp")?.addEventListener("change", saveApi);
+      profileSelect?.addEventListener("change", (e) => {
+        activateProfile(e.target.value);
+        fillFields();
+        refreshStatus();
+      });
+      el("astral-api-profile-new")?.addEventListener("click", () => {
+        const name = prompt("\u041D\u0430\u0437\u0432\u0430\u043D\u0438\u0435 \u043F\u0440\u043E\u0444\u0438\u043B\u044F:", `\u041F\u0440\u043E\u0444\u0438\u043B\u044C ${listProfiles().profiles.length + 1}`);
+        if (name === null) return;
+        addProfile(String(name || "").trim());
+        fillProfiles();
+        fillFields();
+        refreshStatus();
+      });
+      el("astral-api-profile-rename")?.addEventListener("click", () => {
+        const { profiles, activeId } = listProfiles();
+        const active = profiles.find((p) => p.id === activeId);
+        if (!active) return;
+        const name = prompt("\u041D\u043E\u0432\u043E\u0435 \u043D\u0430\u0437\u0432\u0430\u043D\u0438\u0435:", active.name);
+        if (name === null) return;
+        renameProfile(active.id, String(name || "").trim());
+        fillProfiles();
+      });
+      el("astral-api-profile-del")?.addEventListener("click", () => {
+        const { profiles, activeId } = listProfiles();
+        if (profiles.length <= 1) return;
+        if (!confirm("\u0423\u0434\u0430\u043B\u0438\u0442\u044C \u043F\u0440\u043E\u0444\u0438\u043B\u044C \u043F\u043E\u0434\u043A\u043B\u044E\u0447\u0435\u043D\u0438\u044F?")) return;
+        removeProfile(activeId);
+        fillProfiles();
+        fillFields();
+        refreshStatus();
+      });
       const bookHost = document.getElementById("astral-charbook-host");
       if (bookHost) {
         bookHost.innerHTML = renderCharacterBookHTML();

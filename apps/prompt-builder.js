@@ -75,7 +75,7 @@ function normName(value) {
  * но имена полей зависят от версии, поэтому проверяем несколько вариантов:
  * прямые строковые поля → id + массив → единственный включённый → единственный.
  */
-function findStyle(raw) {
+export function findStyle(raw) {
     if (!raw) return '';
 
     // прямые строковые поля

@@ -22,17 +22,129 @@ export const SETTINGS_KEY = 'astral-phone';
 
 /* ─────────────────────────── хранилище ─────────────────────────── */
 
+/* ─────────────────────────── профили книг ─────────────────────────── */
+
 /**
- * Записи справочника из extension_settings.
+ * Профиль справочника = отдельный набор персонажей. Пользователь переключает
+ * их под разные чаты: один сеттинг — один профиль.
+ *
+ * Хранение: settings.characterBooks = [{id, name, characters[]}] + activeId.
+ * Старый формат (settings.characters) мигрирует в первый профиль.
+ */
+function readBooks() {
+    try {
+        const ctx = globalThis.SillyTavern?.getContext?.();
+        const bag = ctx?.extensionSettings || globalThis.extension_settings;
+        const settings = bag?.[SETTINGS_KEY];
+        if (!settings || typeof settings !== 'object') return { books: [], activeId: '' };
+
+        if (Array.isArray(settings.characterBooks)) {
+            const books = settings.characterBooks
+                .filter(b => b && typeof b === 'object')
+                .map(b => ({
+                    id: String(b.id || ''),
+                    name: String(b.name || 'Профиль'),
+                    characters: Array.isArray(b.characters) ? b.characters : [],
+                }));
+            return { books, activeId: String(settings.characterBooksActiveId || books[0]?.id || '') };
+        }
+
+        // миграция старого формата
+        if (Array.isArray(settings.characters) && settings.characters.length) {
+            const id = 'default';
+            const books = [{ id, name: 'Default', characters: settings.characters }];
+            settings.characterBooks = books;
+            settings.characterBooksActiveId = id;
+            return { books, activeId: id };
+        }
+
+        return { books: [], activeId: '' };
+    } catch (_) {
+        return { books: [], activeId: '' };
+    }
+}
+
+function writeBooks(store) {
+    try {
+        const ctx = globalThis.SillyTavern?.getContext?.();
+        const bag = ctx?.extensionSettings || globalThis.extension_settings;
+        if (!bag) return false;
+        if (!bag[SETTINGS_KEY]) bag[SETTINGS_KEY] = {};
+
+        bag[SETTINGS_KEY].characterBooks = (store.books || []).map(b => ({
+            id: b.id,
+            name: b.name,
+            characters: b.characters || [],
+        }));
+        bag[SETTINGS_KEY].characterBooksActiveId = store.activeId || '';
+
+        // старое поле держим актуальным — на случай отката расширения
+        const active = (store.books || []).find(b => b.id === store.activeId) || store.books?.[0];
+        bag[SETTINGS_KEY].characters = active?.characters || [];
+
+        const persist = ctx?.saveSettingsDebounced || globalThis.saveSettingsDebounced;
+        if (typeof persist === 'function') persist();
+        return true;
+    } catch (err) {
+        console.warn(`${MODULE} writeBooks failed:`, err?.message || err);
+        return false;
+    }
+}
+
+/** Список профилей справочника. */
+export function listBooks() {
+    return readBooks();
+}
+
+/** Создать профиль. */
+export function addBook(name) {
+    const store = readBooks();
+    const id = `b${Date.now().toString(36)}${Math.random().toString(36).slice(2, 5)}`;
+    store.books.push({ id, name: String(name || `Профиль ${store.books.length + 1}`), characters: [] });
+    store.activeId = id;
+    writeBooks(store);
+    return id;
+}
+
+/** Переключить активный профиль. */
+export function activateBook(id) {
+    const store = readBooks();
+    if (!store.books.some(b => b.id === id)) return false;
+    store.activeId = id;
+    return writeBooks(store);
+}
+
+/** Переименовать профиль. */
+export function renameBook(id, name) {
+    const store = readBooks();
+    const b = store.books.find(x => x.id === id);
+    if (!b) return false;
+    b.name = String(name || b.name);
+    return writeBooks(store);
+}
+
+/** Удалить профиль. Последний удалить нельзя. */
+export function removeBook(id) {
+    const store = readBooks();
+    if (store.books.length <= 1) return false;
+    store.books = store.books.filter(b => b.id !== id);
+    if (store.activeId === id) store.activeId = store.books[0]?.id || '';
+    return writeBooks(store);
+}
+
+/* ─────────────────────────── записи ─────────────────────────── */
+
+/**
+ * Записи активного профиля справочника.
  * Никогда не бросает: при отсутствии настроек возвращает пустой массив.
  *
  * @returns {Array<{name: string, appearance: string, aliases: string, enabled: boolean}>}
  */
 export function loadCharacters() {
     try {
-        const bag = globalThis.extension_settings;
-        const settings = bag?.[SETTINGS_KEY] || globalThis.SillyTavern?.getContext?.()?.extensionSettings?.[SETTINGS_KEY];
-        const list = settings?.characters;
+        const store = readBooks();
+        const active = store.books.find(b => b.id === store.activeId) || store.books[0];
+        const list = active?.characters;
         if (!Array.isArray(list)) return [];
         return list
             .filter(row => row && typeof row === 'object')
@@ -51,26 +163,24 @@ export function loadCharacters() {
 /** Сохраняет справочник в extension_settings. */
 export function saveCharacters(list) {
     try {
-        const ctx = globalThis.SillyTavern?.getContext?.();
-        // ctx.extensionSettings — тот же объект, что и глобальный extension_settings,
-        // но берём его первым: глобал отсутствует в некоторых сборках.
-        const bag = ctx?.extensionSettings || globalThis.extension_settings;
-        if (!bag) throw new Error('extension_settings недоступен');
+        const store = readBooks();
 
-        if (!bag[SETTINGS_KEY]) bag[SETTINGS_KEY] = {};
-        bag[SETTINGS_KEY].characters = (list || []).map(row => ({
-            name: row.name || '',
-            aliases: row.aliases || '',
-            appearance: row.appearance || '',
+        // если профилей ещё нет — создаём первый
+        if (!store.books.length) {
+            const id = 'default';
+            store.books = [{ id, name: 'Default', characters: [] }];
+            store.activeId = id;
+        }
+
+        const active = store.books.find(b => b.id === store.activeId) || store.books[0];
+        active.characters = (list || []).map(row => ({
+            name: String(row.name || ''),
+            aliases: String(row.aliases || ''),
+            appearance: String(row.appearance || ''),
             enabled: row.enabled !== false,
         }));
 
-        // Персистим через штатный механизм ST
-        const persist = ctx?.saveSettingsDebounced
-            || globalThis.saveSettingsDebounced
-            || ctx?.saveSettings;
-        if (typeof persist === 'function') persist();
-        return true;
+        return writeBooks(store);
     } catch (err) {
         console.warn(`${MODULE} save failed:`, err?.message || err);
         return false;
@@ -200,8 +310,24 @@ export function renderCharacterBookHTML() {
         </div>
     `).join('');
 
+    const store = readBooks();
+    const options = store.books
+        .map(b => `<option value="${escAttr(b.id)}" ${b.id === store.activeId ? 'selected' : ''}>${escText(b.name)}</option>`)
+        .join('');
+
+    const profilesBar = `
+        <div class="astral-book-profiles">
+            <select class="text_pole astral-book-select" title="Профиль справочника">${options}</select>
+            <button class="menu_button astral-book-new" title="Новый профиль">+</button>
+            <button class="menu_button astral-book-rename" title="Переименовать">✎</button>
+            <button class="menu_button astral-book-del" title="Удалить профиль" ${store.books.length <= 1 ? 'disabled' : ''}>✕</button>
+        </div>
+        <small class="notes">Профиль — отдельный набор персонажей. Переключайте его под разные чаты.</small>
+    `;
+
     return `
         <div class="astral-charbook">
+            ${profilesBar}
             <div class="astral-charbook-list">${rows || '<div class="astral-charbook-empty">Пока пусто — добавьте первого персонажа</div>'}</div>
             <button class="menu_button astral-charbook-add">+ Добавить персонажа</button>
             <small class="notes">Имя ищется в промпте (и в алиасах) без учёта регистра. Найденная внешность подставляется в начало промпта при генерации любого изображения.</small>
@@ -256,6 +382,40 @@ export function bindCharacterBook(root, onChange) {
             saveCharacters(list);
             reRender(root, onChange);
         });
+    });
+
+    // ── профили справочника ──
+    book.querySelector('.astral-book-select')?.addEventListener('change', (e) => {
+        activateBook(e.target.value);
+        reRender(root, onChange);
+    });
+
+    book.querySelector('.astral-book-new')?.addEventListener('click', (e) => {
+        e.preventDefault();
+        const name = globalThis.prompt?.('Название профиля:', `Профиль ${listBooks().books.length + 1}`);
+        if (name === null) return;
+        addBook(String(name || '').trim());
+        reRender(root, onChange);
+    });
+
+    book.querySelector('.astral-book-rename')?.addEventListener('click', (e) => {
+        e.preventDefault();
+        const store = listBooks();
+        const active = store.books.find(b => b.id === store.activeId);
+        if (!active) return;
+        const name = globalThis.prompt?.('Новое название:', active.name);
+        if (name === null) return;
+        renameBook(active.id, String(name || '').trim());
+        reRender(root, onChange);
+    });
+
+    book.querySelector('.astral-book-del')?.addEventListener('click', (e) => {
+        e.preventDefault();
+        const store = listBooks();
+        if (store.books.length <= 1) return;
+        if (!globalThis.confirm?.('Удалить профиль со всеми персонажами?')) return;
+        removeBook(store.activeId);
+        reRender(root, onChange);
     });
 
     book.querySelector('.astral-charbook-add')?.addEventListener('click', (e) => {

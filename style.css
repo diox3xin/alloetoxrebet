@@ -2090,3 +2090,83 @@
   opacity: .75;
   margin-top: 6px;
 }
+
+/* ═══════════════════════ profiles & api bars ═══════════════════════ */
+
+.astral-api-profile-bar,
+.astral-api-model-bar,
+.astral-book-profiles {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin-bottom: 8px;
+}
+
+.astral-api-profile-bar select,
+.astral-api-model-bar select,
+.astral-book-profiles select {
+  flex: 1;
+  min-width: 0;
+}
+
+.astral-api-profile-bar .menu_button,
+.astral-api-model-bar .menu_button,
+.astral-book-profiles .menu_button {
+  flex: 0 0 auto;
+  min-width: 30px;
+  padding: 0 8px;
+  height: 30px;
+  line-height: 1;
+}
+
+.astral-api-model-bar #astral-api-connect {
+  white-space: nowrap;
+  font-size: 11px;
+  padding: 0 10px;
+}
+
+.astral-book-profiles .menu_button[disabled] {
+  opacity: .35;
+  cursor: not-allowed;
+}
+
+/* в телефоне селекты и иконки-кнопки компактнее */
+.astral-settings .astral-api-profile-bar,
+.astral-settings .astral-api-model-bar {
+  gap: 5px;
+}
+
+.astral-settings .astral-api-profile-bar select,
+.astral-settings .astral-api-model-bar select {
+  padding: 9px 11px;
+  border-radius: 10px;
+  border: 1px solid rgba(217,154,181,.2);
+  background: rgba(40,32,39,.9);
+  color: var(--phone-text);
+  font-size: 11.5px;
+  font-family: inherit;
+  outline: none;
+}
+
+.astral-settings .astral-btn-icon {
+  width: 32px;
+  height: 32px;
+  flex: 0 0 auto;
+  border-radius: 9px;
+  border: 1px solid rgba(217,154,181,.25);
+  background: rgba(217,154,181,.1);
+  color: var(--phone-accent-light);
+  font-size: 14px;
+  display: grid;
+  place-items: center;
+  cursor: pointer;
+  transition: .15s;
+}
+.astral-settings .astral-btn-icon:hover {
+  background: rgba(217,154,181,.22);
+  border-color: var(--phone-accent);
+}
+
+.astral-settings #astral-api-model-manual {
+  margin-top: 6px;
+}

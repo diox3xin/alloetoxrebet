@@ -5,7 +5,7 @@
 
 import { ICONS } from './phone-core.js';
 import { buildPhotoPrompt } from './prompt-builder.js';
-import { ask as askLLM } from './prompt-llm.js';
+import { ask as askLLM, resolveStyle, ensureStyle } from './prompt-llm.js';
 
 export class GalleryApp {
     constructor(context, storage, imageGen) {
@@ -305,11 +305,16 @@ export class GalleryApp {
             const photo = state.gallery[index];
             if (!photo) return;
 
-            const prompt = this._buildPrompt(photo);
+            const style = resolveStyle(this.imageGen) || String(photo.style || '');
+            const prompt = ensureStyle(this._buildPrompt(photo), style);
+
+            console.log('[Gallery] prompt:', prompt);
+
             const url = await this.imageGen.generate(prompt, {
                 character: photo.character || this.context?.name2,
                 type: 'gallery_photo',
                 negativePrompt: photo.negative || undefined,
+                style,
             });
 
             state.gallery[index].imageUrl = url;

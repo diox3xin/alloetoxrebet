@@ -16,43 +16,136 @@ export const SETTINGS_KEY = 'astral-phone';
 
 /* ─────────────────────────── настройки ─────────────────────────── */
 
-/**
- * @returns {{endpoint: string, apiKey: string, model: string, temperature: number, maxTokens: number}}
- */
-export function loadApiSettings() {
-    const empty = { endpoint: '', apiKey: '', model: '', temperature: 0.7, maxTokens: 600 };
+/** Пустой профиль подключения. */
+export function emptyProfile() {
+    return { endpoint: '', apiKey: '', model: '', temperature: 0.7, maxTokens: 600 };
+}
+
+/** Все сохранённые профили + id активного. */
+function readStore() {
+    const fallback = { profiles: [], activeId: '' };
     try {
         const ctx = globalThis.SillyTavern?.getContext?.();
         const bag = ctx?.extensionSettings || globalThis.extension_settings;
         const raw = bag?.[SETTINGS_KEY]?.promptApi;
-        if (!raw || typeof raw !== 'object') return empty;
+        if (!raw || typeof raw !== 'object') return fallback;
+
+        // старый формат — один набор полей без профилей
+        if (!Array.isArray(raw.profiles)) {
+            const legacy = normalizeProfile(raw);
+            if (legacy.endpoint || legacy.model) {
+                return { profiles: [{ ...legacy, id: 'default', name: 'Default' }], activeId: 'default' };
+            }
+            return fallback;
+        }
+
         return {
-            endpoint: String(raw.endpoint || '').trim(),
-            apiKey: String(raw.apiKey || '').trim(),
-            model: String(raw.model || '').trim(),
-            temperature: Number.isFinite(Number(raw.temperature)) ? Number(raw.temperature) : 0.7,
-            maxTokens: Number.isFinite(Number(raw.maxTokens)) ? Number(raw.maxTokens) : 600,
+            profiles: raw.profiles.map(p => ({ ...normalizeProfile(p), id: String(p.id || ''), name: String(p.name || 'Профиль') })),
+            activeId: String(raw.activeId || ''),
         };
     } catch (_) {
-        return empty;
+        return fallback;
     }
 }
 
-export function saveApiSettings(patch) {
+function normalizeProfile(raw) {
+    const base = emptyProfile();
+    if (!raw || typeof raw !== 'object') return base;
+    return {
+        endpoint: String(raw.endpoint || '').trim(),
+        apiKey: String(raw.apiKey || '').trim(),
+        model: String(raw.model || '').trim(),
+        temperature: Number.isFinite(Number(raw.temperature)) ? Number(raw.temperature) : base.temperature,
+        maxTokens: Number.isFinite(Number(raw.maxTokens)) ? Number(raw.maxTokens) : base.maxTokens,
+    };
+}
+
+function writeStore(store) {
     try {
         const ctx = globalThis.SillyTavern?.getContext?.();
         const bag = ctx?.extensionSettings || globalThis.extension_settings;
         if (!bag) return false;
         if (!bag[SETTINGS_KEY]) bag[SETTINGS_KEY] = {};
-        bag[SETTINGS_KEY].promptApi = { ...loadApiSettings(), ...patch };
-
+        bag[SETTINGS_KEY].promptApi = {
+            profiles: (store.profiles || []).map(p => ({ ...p })),
+            activeId: store.activeId || '',
+        };
         const persist = ctx?.saveSettingsDebounced || globalThis.saveSettingsDebounced;
         if (typeof persist === 'function') persist();
         return true;
     } catch (err) {
-        console.warn(`${MODULE} save failed:`, err?.message || err);
+        console.warn(`${MODULE} write failed:`, err?.message || err);
         return false;
     }
+}
+
+/** Список профилей и активный id. */
+export function listProfiles() {
+    const store = readStore();
+    return { profiles: store.profiles, activeId: store.activeId };
+}
+
+/** Настройки активного профиля (или пустые). */
+export function loadApiSettings() {
+    const { profiles, activeId } = readStore();
+    const active = profiles.find(p => p.id === activeId) || profiles[0];
+    if (!active) return emptyProfile();
+    const { id, name, ...rest } = active;
+    return rest;
+}
+
+/**
+ * Обновить активный профиль. Если профилей нет — создаёт первый.
+ * @param {object} patch
+ */
+export function saveApiSettings(patch) {
+    const store = readStore();
+    let active = store.profiles.find(p => p.id === store.activeId);
+
+    if (!active) {
+        active = { ...emptyProfile(), id: 'default', name: 'Default' };
+        store.profiles = [active];
+        store.activeId = active.id;
+    }
+
+    Object.assign(active, normalizeProfile({ ...active, ...patch }));
+    return writeStore(store);
+}
+
+/** Сохранить текущие поля как новый профиль. */
+export function addProfile(name) {
+    const store = readStore();
+    const current = loadApiSettings();
+    const id = `p${Date.now().toString(36)}${Math.random().toString(36).slice(2, 5)}`;
+    store.profiles.push({ ...current, id, name: String(name || `Профиль ${store.profiles.length + 1}`) });
+    store.activeId = id;
+    writeStore(store);
+    return id;
+}
+
+/** Переключиться на профиль. */
+export function activateProfile(id) {
+    const store = readStore();
+    if (!store.profiles.some(p => p.id === id)) return false;
+    store.activeId = id;
+    return writeStore(store);
+}
+
+/** Удалить профиль. */
+export function removeProfile(id) {
+    const store = readStore();
+    store.profiles = store.profiles.filter(p => p.id !== id);
+    if (store.activeId === id) store.activeId = store.profiles[0]?.id || '';
+    return writeStore(store);
+}
+
+/** Переименовать профиль. */
+export function renameProfile(id, name) {
+    const store = readStore();
+    const p = store.profiles.find(x => x.id === id);
+    if (!p) return false;
+    p.name = String(name || p.name);
+    return writeStore(store);
 }
 
 /** Настроена ли отдельная модель. */
@@ -61,15 +154,109 @@ export function isApiConfigured() {
     return Boolean(s.endpoint && s.model);
 }
 
+/* ─────────────────────────── подключение и модели ─────────────────────────── */
+
+/** Базовый URL до /v1 — из него строятся и chat, и models. */
+function apiRoot(endpoint) {
+    const clean = String(endpoint || '').trim().replace(/\/+$/, '');
+    if (!clean) return '';
+    if (/\/v1$/i.test(clean)) return clean;
+    if (/\/(chat\/completions|completions|models)$/i.test(clean)) {
+        return clean.replace(/\/(chat\/completions|completions|models)$/i, '');
+    }
+    return `${clean}/v1`;
+}
+
+/**
+ * Загрузить список моделей у провайдера.
+ * @param {{endpoint: string, apiKey: string}} settings
+ * @returns {Promise<string[]>}
+ */
+export async function fetchModels(settings) {
+    const root = apiRoot(settings?.endpoint);
+    if (!root) throw new Error('Укажите endpoint');
+
+    const headers = {};
+    if (settings.apiKey) headers.Authorization = `Bearer ${settings.apiKey}`;
+
+    const controller = new AbortController();
+    const timer = setTimeout(() => controller.abort(), 30_000);
+
+    try {
+        const res = await fetch(`${root}/models`, { headers, signal: controller.signal });
+        if (!res.ok) {
+            const body = await res.text().catch(() => '');
+            throw new Error(`HTTP ${res.status}: ${body.slice(0, 200)}`);
+        }
+        const data = await res.json();
+        const raw = data?.data ?? data?.models ?? data;
+
+        const ids = [];
+        for (const item of (Array.isArray(raw) ? raw : [])) {
+            if (typeof item === 'string') ids.push(item);
+            else if (item && typeof item === 'object') {
+                const id = item.id || item.name || item.model;
+                if (typeof id === 'string' && id.trim()) ids.push(id.trim());
+            }
+        }
+
+        const unique = [...new Set(ids)].sort((a, b) => a.localeCompare(b));
+        if (!unique.length) throw new Error('Провайдер вернул пустой список моделей');
+        return unique;
+    } catch (err) {
+        if (err?.name === 'AbortError') throw new Error('Таймаут подключения (30с)');
+        throw err;
+    } finally {
+        clearTimeout(timer);
+    }
+}
+
+/**
+ * Проверить подключение коротким запросом и заодно получить модели.
+ * Сохраняет список моделей, чтобы UI мог показать dropdown.
+ *
+ * @param {{endpoint: string, apiKey: string, model?: string}} settings
+ * @returns {Promise<{ok: boolean, models: string[], error?: string}>}
+ */
+export async function testConnection(settings) {
+    try {
+        const models = await fetchModels(settings);
+        // кэшируем список, чтобы dropdown не дёргал сеть каждый раз
+        try {
+            const ctx = globalThis.SillyTavern?.getContext?.();
+            const bag = ctx?.extensionSettings || globalThis.extension_settings;
+            if (bag?.[SETTINGS_KEY]) {
+                bag[SETTINGS_KEY].promptApiModels = models;
+                const persist = ctx?.saveSettingsDebounced || globalThis.saveSettingsDebounced;
+                if (typeof persist === 'function') persist();
+            }
+        } catch (_) { /* ignore */ }
+        return { ok: true, models };
+    } catch (err) {
+        return { ok: false, models: [], error: err?.message || String(err) };
+    }
+}
+
+/** Последний успешно загруженный список моделей (без сети). */
+export function cachedModels() {
+    try {
+        const ctx = globalThis.SillyTavern?.getContext?.();
+        const bag = ctx?.extensionSettings || globalThis.extension_settings;
+        const list = bag?.[SETTINGS_KEY]?.promptApiModels;
+        return Array.isArray(list) ? list : [];
+    } catch (_) {
+        return [];
+    }
+}
+
 /* ─────────────────────────── запросы ─────────────────────────── */
 
 function normalizeEndpoint(endpoint) {
     const clean = String(endpoint || '').trim().replace(/\/+$/, '');
     if (!clean) return '';
-    // уже полный путь — не трогаем
     if (/\/(chat\/completions|completions)$/i.test(clean)) return clean;
-    if (/\/v1$/i.test(clean)) return `${clean}/chat/completions`;
-    return `${clean}/v1/chat/completions`;
+    const root = apiRoot(clean);
+    return root ? `${root}/chat/completions` : '';
 }
 
 /**
@@ -192,17 +379,24 @@ export async function enhancePrompt(input, opts = {}) {
     if (!draft) throw new Error('Пустой текст для улучшения');
 
     const char = String(opts.character || '').trim();
+    const style = String(opts.style || '').trim();
+    const appearance = String(opts.appearance || '').trim();
+
+    const contextLines = [];
+    if (style) contextLines.push(`STYLE (already applied, do not repeat it in your answer): ${style}`);
+    if (appearance) contextLines.push(`FIXED APPEARANCE of ${char || 'the subject'} (do not contradict or repeat): ${appearance}`);
 
     const request = `Rewrite the draft below into a NovelAI v5 image prompt.
 
 DRAFT${char ? ` (post by ${char})` : ''}:
 ${draft}
-
+${contextLines.length ? `\n${contextLines.join('\n')}\n` : ''}
 RULES:
 - Output ENGLISH ONLY. Translate any Russian or other language into English.
 - Comma-separated visual tags, no sentences, no story, no dialogue, no feelings in prose.
-- Describe: framing/shot, subject${char ? ` (${char})` : ''}, appearance, clothing, pose/expression, action, setting, lighting, mood.
-- No quality tags (masterpiece, best quality) — they are added automatically.
+- Describe: framing/shot, subject${char ? ` (${char})` : ''}, pose/expression, action, outfit, setting, lighting, mood.
+${appearance ? '- Do NOT describe hair, eyes, build or skin — the fixed appearance is added separately.' : `- Describe the subject's appearance briefly (hair, eyes, build).`}
+- No quality tags (masterpiece, best quality) and no style tags — they are added automatically.
 - No quotes, no labels, no markdown, no explanation. Output the prompt only.
 
 PROMPT:`;
@@ -256,6 +450,31 @@ export function resolveStyle(imageGen) {
     try {
         const own = String(imageGen?.getStyle?.() || '').trim();
         if (own) return cleanTags(own);
-    } catch (_) { /* ignore */ }
+        console.warn(`${MODULE} активный стиль в inline_image_gen не найден`);
+    } catch (err) {
+        console.warn(`${MODULE} resolveStyle failed:`, err?.message || err);
+    }
     return '';
+}
+
+/**
+ * Гарантированно добавить стиль в промпт, если его там ещё нет.
+ * Стиль ставится первым тегом — NovelAI придаёт началу строки больший вес.
+ *
+ * @param {string} prompt
+ * @param {string} style
+ * @returns {string}
+ */
+export function ensureStyle(prompt, style) {
+    const text = String(prompt || '').trim();
+    const st = cleanTags(style || '');
+    if (!st) return text;
+    if (!text) return st;
+
+    // уже применён (например, промпт собран prompt-builder'ом)
+    const firstSegment = text.split('|')[0].slice(0, 200).toLowerCase();
+    const styleHead = st.split(',')[0].trim().toLowerCase();
+    if (styleHead && firstSegment.includes(styleHead)) return text;
+
+    return `${st}, ${text}`;
 }

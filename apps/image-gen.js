@@ -41,6 +41,7 @@
  */
 
 import { injectAppearance } from './character-book.js';
+import { findStyle } from './prompt-builder.js';
 
 const HARUSPICS_MODULE_NAME = 'inline_image_gen';
 
@@ -442,17 +443,20 @@ export class ImageGenerator {
      * Haruspics stores the selected style in `extension_settings.inline_image_gen.style`.
      * Falls back to an empty string if not configured.
      */
+    /**
+     * Активный стиль из Haruspics.
+     *
+     * Использует тот же структурный поиск, что и prompt-builder: имена полей в
+     * inline_image_gen менялись между версиями, поэтому жёсткая привязка к
+     * `activeStyleId` находила стиль не всегда — из-за этого в creator studio
+     * он молча пропадал, хотя галерея его подхватывала.
+     */
     getStyle() {
         try {
             const s = this._rawSettings();
             if (!s) return '';
-            // activeStyleId points into stylePresets array
-            const activeId = String(s.activeStyleId || '').trim();
-            if (!activeId) return '';
-            const presets = s.stylePresets;
-            if (!Array.isArray(presets)) return '';
-            const active = presets.find(p => p.id === activeId);
-            return String(active?.text || active?.prompt || active?.name || '').trim();
+            const found = findStyle(s);
+            return String(found || '').trim();
         } catch (_) { return ''; }
     }
 
@@ -569,9 +573,16 @@ export class ImageGenerator {
             console.warn('[AstralImageGen] appearance injection skipped:', err?.message);
         }
 
-        // Auto-sync style and character refs from Haruspics unless overridden
-        const style = metadata.style !== undefined ? String(metadata.style) : this.getStyle();
+        // Auto-sync style and character refs from Haruspics unless overridden.
+        // Пустая строка в metadata.style не должна отключать стиль: вызывающий
+        // код часто не знает о нём, а пользователь ожидает его всегда.
+        const requested = metadata.style !== undefined ? String(metadata.style).trim() : '';
+        const style = requested || this.getStyle();
         const refs = metadata.refs !== undefined ? metadata.refs : this._collectRefs();
+
+        if (!style) {
+            console.warn('[AstralImageGen] стиль не применён: в inline_image_gen нет активного пресета');
+        }
 
         const dataUrl = await this._generateWithTimeout(text, settings, style, refs, metadata.negativePrompt);
         return this.saveImageToFile(dataUrl, metadata?.character);

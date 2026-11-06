@@ -14,7 +14,11 @@ import { SpicyApp } from './apps/spicy.js';
 import { CreatorApp } from './apps/creator.js';
 import { SettingsApp } from './apps/settings.js';
 import { renderCharacterBookHTML, bindCharacterBook } from './apps/character-book.js';
-import { loadApiSettings, saveApiSettings, isApiConfigured } from './apps/prompt-llm.js';
+import {
+    loadApiSettings, saveApiSettings, isApiConfigured,
+    listProfiles, addProfile, activateProfile, removeProfile, renameProfile,
+    testConnection, cachedModels,
+} from './apps/prompt-llm.js';
 import { ContactSeeder } from './apps/contact-seeder.js';
 import { refreshPhonePrompt } from './apps/phone-prompt.js';
 
@@ -568,13 +572,29 @@ function injectSettingsPanel() {
         <hr />
         <b>Настройки API</b>
         <small class="notes">Модель, которая пишет промпты для изображений. Если пусто — используется основная модель чата.</small>
+
+        <label for="astral-api-profile">Профиль подключения</label>
+        <div class="astral-api-profile-bar">
+            <select id="astral-api-profile" class="text_pole"></select>
+            <button class="menu_button" id="astral-api-profile-new" title="Новый профиль">+</button>
+            <button class="menu_button" id="astral-api-profile-rename" title="Переименовать">✎</button>
+            <button class="menu_button" id="astral-api-profile-del" title="Удалить">✕</button>
+        </div>
+
         <label for="astral-api-endpoint">Endpoint</label>
         <input type="text" id="astral-api-endpoint" class="text_pole"
                placeholder="https://api.openai.com/v1" />
         <label for="astral-api-key">API ключ</label>
         <input type="password" id="astral-api-key" class="text_pole" placeholder="sk-..." />
+
         <label for="astral-api-model">Модель</label>
-        <input type="text" id="astral-api-model" class="text_pole" placeholder="gpt-4o-mini" />
+        <div class="astral-api-model-bar">
+            <select id="astral-api-model" class="text_pole"></select>
+            <button class="menu_button" id="astral-api-connect">Подключиться</button>
+        </div>
+        <input type="text" id="astral-api-model-manual" class="text_pole"
+               placeholder="или введите имя модели вручную" />
+
         <label for="astral-api-temp">Температура</label>
         <input type="number" id="astral-api-temp" class="text_pole" min="0" max="2" step="0.1" value="0.7" />
         <div id="astral-api-status" class="notes"></div>
@@ -598,40 +618,159 @@ function injectSettingsPanel() {
             drawer?.classList.toggle('openDrawer');
         });
         
-        // API settings for prompt model
-        const apiFields = {
-            endpoint: document.getElementById('astral-api-endpoint'),
-            apiKey: document.getElementById('astral-api-key'),
-            model: document.getElementById('astral-api-model'),
-            temperature: document.getElementById('astral-api-temp'),
-        };
-        const apiStatus = document.getElementById('astral-api-status');
+        // ── API settings for prompt model ──
+        const el = (id) => document.getElementById(id);
+        const apiStatus = el('astral-api-status');
+        const profileSelect = el('astral-api-profile');
+        const modelSelect = el('astral-api-model');
+        const modelManual = el('astral-api-model-manual');
 
-        const current = loadApiSettings();
-        if (apiFields.endpoint) apiFields.endpoint.value = current.endpoint;
-        if (apiFields.apiKey) apiFields.apiKey.value = current.apiKey;
-        if (apiFields.model) apiFields.model.value = current.model;
-        if (apiFields.temperature) apiFields.temperature.value = current.temperature;
+        const fillModels = (models, selected) => {
+            if (!modelSelect) return;
+            modelSelect.innerHTML = '';
+            const list = models.length ? models : cachedModels();
+            if (!list.length) {
+                modelSelect.innerHTML = '<option value="">— нажмите «Подключиться» —</option>';
+                return;
+            }
+            for (const id of list) {
+                const opt = document.createElement('option');
+                opt.value = id;
+                opt.textContent = id;
+                if (id === selected) opt.selected = true;
+                modelSelect.appendChild(opt);
+            }
+            if (selected && !list.includes(selected)) {
+                const opt = document.createElement('option');
+                opt.value = selected;
+                opt.textContent = selected;
+                opt.selected = true;
+                modelSelect.appendChild(opt);
+            }
+        };
+
+        const fillProfiles = () => {
+            if (!profileSelect) return;
+            const { profiles, activeId } = listProfiles();
+            profileSelect.innerHTML = '';
+            if (!profiles.length) {
+                profileSelect.innerHTML = '<option value="">— нет профилей —</option>';
+                return;
+            }
+            for (const p of profiles) {
+                const opt = document.createElement('option');
+                opt.value = p.id;
+                opt.textContent = p.name || p.id;
+                if (p.id === activeId) opt.selected = true;
+                profileSelect.appendChild(opt);
+            }
+        };
+
+        const fillFields = () => {
+            const cur = loadApiSettings();
+            if (el('astral-api-endpoint')) el('astral-api-endpoint').value = cur.endpoint;
+            if (el('astral-api-key')) el('astral-api-key').value = cur.apiKey;
+            if (el('astral-api-temp')) el('astral-api-temp').value = cur.temperature;
+            if (modelManual) modelManual.value = '';
+            fillModels(cachedModels(), cur.model);
+        };
 
         const refreshStatus = () => {
             if (!apiStatus) return;
-            apiStatus.textContent = isApiConfigured()
-                ? '✓ Промпты пишет указанная модель'
+            const s = loadApiSettings();
+            apiStatus.textContent = (s.endpoint && s.model)
+                ? `✓ Промпты пишет: ${s.model}`
                 : 'Промпты пишет основная модель чата';
         };
-        refreshStatus();
 
         const saveApi = () => {
+            const picked = modelManual?.value.trim() || modelSelect?.value || '';
             saveApiSettings({
-                endpoint: apiFields.endpoint?.value || '',
-                apiKey: apiFields.apiKey?.value || '',
-                model: apiFields.model?.value || '',
-                temperature: Number(apiFields.temperature?.value) || 0.7,
+                endpoint: el('astral-api-endpoint')?.value || '',
+                apiKey: el('astral-api-key')?.value || '',
+                model: picked,
+                temperature: Number(el('astral-api-temp')?.value) || 0.7,
             });
             refreshStatus();
         };
 
-        Object.values(apiFields).forEach(el => el?.addEventListener('change', saveApi));
+        fillProfiles();
+        fillFields();
+        refreshStatus();
+
+        // подключение: получаем список моделей у провайдера
+        el('astral-api-connect')?.addEventListener('click', async (e) => {
+            const btn = e.currentTarget;
+            const original = btn.textContent;
+            btn.disabled = true;
+            btn.textContent = 'Подключаюсь…';
+            if (apiStatus) apiStatus.textContent = 'Проверяю подключение…';
+
+            const res = await testConnection({
+                endpoint: el('astral-api-endpoint')?.value.trim() || '',
+                apiKey: el('astral-api-key')?.value.trim() || '',
+            });
+
+            btn.disabled = false;
+            btn.textContent = original;
+
+            if (res.ok) {
+                fillModels(res.models, modelSelect?.value || '');
+                if (modelSelect?.options.length) {
+                    // сразу выбираем первую модель, чтобы не заставлять вписывать вручную
+                    if (!modelSelect.value) modelSelect.value = res.models[0];
+                    saveApi();
+                }
+                if (apiStatus) apiStatus.textContent = `✓ Подключено, моделей: ${res.models.length}`;
+            } else {
+                if (apiStatus) apiStatus.textContent = `✗ ${res.error}`;
+            }
+        });
+
+        modelSelect?.addEventListener('change', () => {
+            if (modelManual) modelManual.value = '';
+            saveApi();
+        });
+        modelManual?.addEventListener('input', saveApi);
+        el('astral-api-endpoint')?.addEventListener('change', saveApi);
+        el('astral-api-key')?.addEventListener('change', saveApi);
+        el('astral-api-temp')?.addEventListener('change', saveApi);
+
+        // профили
+        profileSelect?.addEventListener('change', (e) => {
+            activateProfile(e.target.value);
+            fillFields();
+            refreshStatus();
+        });
+
+        el('astral-api-profile-new')?.addEventListener('click', () => {
+            const name = prompt('Название профиля:', `Профиль ${listProfiles().profiles.length + 1}`);
+            if (name === null) return;
+            addProfile(String(name || '').trim());
+            fillProfiles();
+            fillFields();
+            refreshStatus();
+        });
+
+        el('astral-api-profile-rename')?.addEventListener('click', () => {
+            const { profiles, activeId } = listProfiles();
+            const active = profiles.find(p => p.id === activeId);
+            if (!active) return;
+            const name = prompt('Новое название:', active.name);
+            if (name === null) return;
+            renameProfile(active.id, String(name || '').trim());
+            fillProfiles();
+        });
+
+        el('astral-api-profile-del')?.addEventListener('click', () => {
+            const { profiles, activeId } = listProfiles();
+            if (profiles.length <= 1) return;
+            if (!confirm('Удалить профиль подключения?')) return;
+            removeProfile(activeId);
+            fillProfiles();
+            fillFields();
+            refreshStatus();
+        });
 
         // Character book editor
         const bookHost = document.getElementById('astral-charbook-host');
