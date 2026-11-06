@@ -2,6 +2,113 @@
   var __defProp = Object.defineProperty;
   var __name = (target, value) => __defProp(target, "name", { value, configurable: true });
 
+  // apps/lockscreen.js
+  var LockScreen = class {
+    static {
+      __name(this, "LockScreen");
+    }
+    constructor(context, storage2) {
+      this.context = context;
+      this.storage = storage2;
+      this.locked = true;
+      this.swipeStart = 0;
+      this.overlay = null;
+      this.clockEl = null;
+    }
+    build() {
+      const state = this.storage.getState();
+      const settings = this.storage._root().settings || {};
+      const bgImage = settings.lockscreenBg || "";
+      const overlay = document.createElement("div");
+      overlay.id = "astral-phone-lockscreen";
+      overlay.className = "astral-lockscreen";
+      const bgStyle = bgImage ? `background-image: url('${bgImage}'); background-size: cover; background-position: center;` : `background: linear-gradient(160deg, rgba(20,15,25,.95), rgba(13,11,16,.98));`;
+      overlay.innerHTML = `
+            <div class="astral-lockscreen-bg" style="${bgStyle}"></div>
+            
+            <div class="astral-lockscreen-content">
+                <div class="astral-lockscreen-time" id="astral-lockscreen-time">--:--</div>
+                <div class="astral-lockscreen-date" id="astral-lockscreen-date">--</div>
+                
+                <div class="astral-lockscreen-notifications">
+                    ${this._renderNotifications(state)}
+                </div>
+            </div>
+            
+            <div class="astral-lockscreen-hint">
+                <div class="astral-swipe-indicator">
+                    <svg viewBox="0 0 24 24" width="24" height="24">
+                        <path d="M12 2v14M19 9l-7-7-7 7"/>
+                    </svg>
+                </div>
+            </div>
+        `;
+      this.overlay = overlay;
+      this.clockEl = overlay.querySelector("#astral-lockscreen-time");
+      this.dateEl = overlay.querySelector("#astral-lockscreen-date");
+      overlay.addEventListener("touchstart", (e) => {
+        this.swipeStart = e.touches[0].clientY;
+      });
+      overlay.addEventListener("touchmove", (e) => {
+        const current = e.touches[0].clientY;
+        const diff = this.swipeStart - current;
+        if (diff > 80) {
+          this.unlock();
+        }
+      });
+      overlay.addEventListener("click", (e) => {
+        if (e.target === overlay || e.target.closest(".astral-lockscreen-hint")) {
+          this.unlock();
+        }
+      });
+      this._updateTime();
+      this._clockInterval = setInterval(() => this._updateTime(), 2e4);
+      return overlay;
+    }
+    _renderNotifications(state) {
+      const messages = state.messages || [];
+      const unreadCount = messages.length;
+      if (unreadCount === 0) {
+        return '<div class="astral-notification" style="opacity: .5;">\u041D\u0435\u0442 \u0443\u0432\u0435\u0434\u043E\u043C\u043B\u0435\u043D\u0438\u0439</div>';
+      }
+      const last = messages[messages.length - 1];
+      return `
+            <div class="astral-notification">
+                <strong>${this._esc(last.character || "\u0421\u043E\u043E\u0431\u0449\u0435\u043D\u0438\u0435")}</strong>
+                <div class="astral-notification-text">${this._esc((last.text || "").slice(0, 60))}</div>
+            </div>
+            ${unreadCount > 1 ? `<div class="astral-notification-badge">${unreadCount}</div>` : ""}
+        `;
+    }
+    _updateTime() {
+      if (!this.clockEl) return;
+      const now = /* @__PURE__ */ new Date();
+      this.clockEl.textContent = now.toLocaleTimeString("ru-RU", {
+        hour: "2-digit",
+        minute: "2-digit"
+      });
+      if (this.dateEl) {
+        this.dateEl.textContent = now.toLocaleDateString("ru-RU", {
+          weekday: "short",
+          month: "short",
+          day: "numeric"
+        });
+      }
+    }
+    unlock() {
+      if (!this.locked) return;
+      this.locked = false;
+      this.overlay?.classList.add("astral-lockscreen-unlocked");
+      clearInterval(this._clockInterval);
+      setTimeout(() => {
+        this.overlay?.remove();
+      }, 400);
+    }
+    _esc(str) {
+      return String(str ?? "").replace(/[&<>\"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" })[c]);
+    }
+  };
+
   // apps/phone-core.js
   var ICONS = {
     home: `<svg viewBox="0 0 24 24"><path d="M12 3.2l1.9 4.6 4.9.4-3.7 3.2 1.1 4.8L12 13.7 7.8 16.2l1.1-4.8L5.2 8.2l4.9-.4z"/></svg>`,
@@ -28,6 +135,7 @@
       this.timeEl = null;
       this.isOpen = false;
       this._clockTimer = null;
+      this.lockScreen = new LockScreen(context, storage2);
       this._onKeyDown = (e) => {
         if (e.key === "Escape") {
           if (this.currentAppId) this.showHome();
@@ -43,7 +151,11 @@
     }
     /* ─────────────────────────── open / close ─────────────────────────── */
     open() {
-      if (!this.overlay) this._build();
+      if (!this.overlay) {
+        const lockEl = this.lockScreen.build();
+        document.body.appendChild(lockEl);
+        this._build();
+      }
       this.overlay.classList.add("active");
       this.isOpen = true;
       this.showHome();
@@ -2335,6 +2447,9 @@ description \u043F\u0438\u0448\u0438 \u043A\u0430\u043A \u043F\u0440\u043E\u043C
         <label for="astral-phone-theme-bg">\u0424\u043E\u043D \u0442\u0435\u043B\u0435\u0444\u043E\u043D\u0430</label>
         <input type="color" id="astral-phone-theme-bg" value="#0D0B10" />
         
+        <label for="astral-phone-lockscreen-bg">\u041E\u0431\u043E\u0438 \u0431\u043B\u043E\u043A\u0438\u0440\u043E\u0432\u043A\u0438</label>
+        <input type="text" id="astral-phone-lockscreen-bg" placeholder="URL \u043E\u0431\u043E\u0435\u0432 \u0438\u043B\u0438 \u043F\u0443\u0441\u0442\u043E" class="text_pole" />
+        
         <small class="notes">\u041F\u0440\u043E\u0432\u0430\u0439\u0434\u0435\u0440 Haruspics \u0438\u0441\u043F\u043E\u043B\u044C\u0437\u0443\u0435\u0442 \u043D\u0430\u0441\u0442\u0440\u043E\u0439\u043A\u0438 \u0438\u0437 \u0440\u0430\u0441\u0448\u0438\u0440\u0435\u043D\u0438\u044F Haruspics Fusion. \u041E\u0441\u0442\u0430\u043B\u044C\u043D\u044B\u0435 \u043F\u0440\u043E\u0432\u0430\u0439\u0434\u0435\u0440\u044B \u0442\u0440\u0435\u0431\u0443\u044E\u0442 API-\u043A\u043B\u044E\u0447\u0438 \u0432 User Settings \u2192 API.</small>
     </div>
 </div>`;
@@ -2349,6 +2464,7 @@ description \u043F\u0438\u0448\u0438 \u043A\u0430\u043A \u043F\u0440\u043E\u043C
       document.getElementById("astral-phone-image-provider")?.addEventListener("change", saveSettings);
       document.getElementById("astral-phone-theme-accent")?.addEventListener("change", saveSettings);
       document.getElementById("astral-phone-theme-bg")?.addEventListener("change", saveSettings);
+      document.getElementById("astral-phone-lockscreen-bg")?.addEventListener("change", saveSettings);
     }
   }
   __name(injectSettingsPanel, "injectSettingsPanel");
@@ -2358,9 +2474,11 @@ description \u043F\u0438\u0448\u0438 \u043A\u0430\u043A \u043F\u0440\u043E\u043C
     const provider = document.getElementById("astral-phone-image-provider");
     const accent = document.getElementById("astral-phone-theme-accent");
     const bg = document.getElementById("astral-phone-theme-bg");
+    const lockbg = document.getElementById("astral-phone-lockscreen-bg");
     if (provider) provider.value = settings.imageProvider || "haruspics";
     if (accent) accent.value = settings.themeAccent || "#D99AB5";
     if (bg) bg.value = settings.themeBg || "#0D0B10";
+    if (lockbg) lockbg.value = settings.lockscreenBg || "";
     if (settings.themeAccent) {
       document.documentElement.style.setProperty("--phone-accent", settings.themeAccent);
     }
@@ -2378,6 +2496,7 @@ description \u043F\u0438\u0448\u0438 \u043A\u0430\u043A \u043F\u0440\u043E\u043C
     const provider = document.getElementById("astral-phone-image-provider");
     const accent = document.getElementById("astral-phone-theme-accent");
     const bg = document.getElementById("astral-phone-theme-bg");
+    const lockbg = document.getElementById("astral-phone-lockscreen-bg");
     if (provider) settings.imageProvider = provider.value;
     if (accent) {
       settings.themeAccent = accent.value;
@@ -2386,6 +2505,9 @@ description \u043F\u0438\u0448\u0438 \u043A\u0430\u043A \u043F\u0440\u043E\u043C
     if (bg) {
       settings.themeBg = bg.value;
       document.documentElement.style.setProperty("--phone-bg", bg.value);
+    }
+    if (lockbg) {
+      settings.lockscreenBg = lockbg.value;
     }
     ctx.saveSettingsDebounced();
     console.log("[Astral Phone] settings saved:", settings);

@@ -286,6 +286,9 @@ function injectSettingsPanel() {
         <label for="astral-phone-theme-bg">Фон телефона</label>
         <input type="color" id="astral-phone-theme-bg" value="#0D0B10" />
         
+        <label for="astral-phone-lockscreen-bg">Обои блокировки</label>
+        <input type="text" id="astral-phone-lockscreen-bg" placeholder="URL обоев или пусто" class="text_pole" />
+        
         <small class="notes">Провайдер Haruspics использует настройки из расширения Haruspics Fusion. Остальные провайдеры требуют API-ключи в User Settings → API.</small>
     </div>
 </div>`;
@@ -305,6 +308,7 @@ function injectSettingsPanel() {
         document.getElementById('astral-phone-image-provider')?.addEventListener('change', saveSettings);
         document.getElementById('astral-phone-theme-accent')?.addEventListener('change', saveSettings);
         document.getElementById('astral-phone-theme-bg')?.addEventListener('change', saveSettings);
+        document.getElementById('astral-phone-lockscreen-bg')?.addEventListener('change', saveSettings);
     }
 }
 
@@ -315,10 +319,12 @@ function loadSettings() {
     const provider = document.getElementById('astral-phone-image-provider');
     const accent = document.getElementById('astral-phone-theme-accent');
     const bg = document.getElementById('astral-phone-theme-bg');
+    const lockbg = document.getElementById('astral-phone-lockscreen-bg');
     
     if (provider) provider.value = settings.imageProvider || 'haruspics';
     if (accent) accent.value = settings.themeAccent || '#D99AB5';
     if (bg) bg.value = settings.themeBg || '#0D0B10';
+    if (lockbg) lockbg.value = settings.lockscreenBg || '';
     
     // Apply theme
     if (settings.themeAccent) {
@@ -339,6 +345,7 @@ function saveSettings() {
     const provider = document.getElementById('astral-phone-image-provider');
     const accent = document.getElementById('astral-phone-theme-accent');
     const bg = document.getElementById('astral-phone-theme-bg');
+    const lockbg = document.getElementById('astral-phone-lockscreen-bg');
     
     if (provider) settings.imageProvider = provider.value;
     if (accent) {
@@ -348,6 +355,9 @@ function saveSettings() {
     if (bg) {
         settings.themeBg = bg.value;
         document.documentElement.style.setProperty('--phone-bg', bg.value);
+    }
+    if (lockbg) {
+        settings.lockscreenBg = lockbg.value;
     }
     
     ctx.saveSettingsDebounced();

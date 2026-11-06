@@ -3,6 +3,8 @@
  * Builds the exact DOM that style.css targets.
  */
 
+import { LockScreen } from './lockscreen.js';
+
 /** Line icons drawn in the accent colour — one visual system instead of emoji. */
 export const ICONS = {
     home: `<svg viewBox="0 0 24 24"><path d="M12 3.2l1.9 4.6 4.9.4-3.7 3.2 1.1 4.8L12 13.7 7.8 16.2l1.1-4.8L5.2 8.2l4.9-.4z"/></svg>`,
@@ -28,6 +30,7 @@ export class PhoneCore {
         this.timeEl = null;
         this.isOpen = false;
         this._clockTimer = null;
+        this.lockScreen = new LockScreen(context, storage);
 
         this._onKeyDown = (e) => {
             if (e.key === 'Escape') {
@@ -47,7 +50,15 @@ export class PhoneCore {
     /* ─────────────────────────── open / close ─────────────────────────── */
 
     open() {
-        if (!this.overlay) this._build();
+        if (!this.overlay) {
+            // Show lock screen first
+            const lockEl = this.lockScreen.build();
+            document.body.appendChild(lockEl);
+            
+            // Build phone after lock screen
+            this._build();
+        }
+        
         this.overlay.classList.add('active');
         this.isOpen = true;
         this.showHome();
