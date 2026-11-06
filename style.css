@@ -1,0 +1,392 @@
+:root {
+  --phone-bg: #0D0B10;
+  --phone-card: #171116;
+  --phone-border: #282027;
+  --phone-accent: #D99AB5;
+  --phone-accent-light: #E5AFC5;
+  --phone-muted: #A18D9B;
+  --phone-text: #E8E2E6;
+  --phone-text-dim: #8A7F89;
+}
+
+/* Phone overlay */
+#astral-phone-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 99999;
+  background: rgba(13, 11, 16, 0.85);
+  backdrop-filter: blur(12px);
+  display: none;
+  align-items: center;
+  justify-content: center;
+  font-family: 'Jost', 'Inter', system-ui, sans-serif;
+  -webkit-font-smoothing: antialiased;
+}
+
+#astral-phone-overlay.active {
+  display: flex;
+}
+
+.astral-phone {
+  position: relative;
+  width: 380px;
+  height: 780px;
+  background: radial-gradient(80% 50% at 15% 8%, rgba(217,154,181,.12), transparent 60%),
+              radial-gradient(70% 45% at 88% 78%, rgba(229,175,197,.08), transparent 60%),
+              linear-gradient(170deg, var(--phone-bg) 0%, #0a080d 55%, #080709 100%);
+  border: 1px solid rgba(217,154,181,.24);
+  border-radius: 42px;
+  box-shadow: 0 40px 90px -30px #000, inset 0 0 80px rgba(217,154,181,.08);
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+  color: var(--phone-text);
+}
+
+/* Notch */
+.astral-phone-notch {
+  position: absolute;
+  top: 10px;
+  left: 50%;
+  transform: translateX(-50%);
+  width: 90px;
+  height: 22px;
+  background: #06050a;
+  border: 1px solid rgba(217,154,181,.18);
+  border-radius: 20px;
+  z-index: 10;
+}
+
+/* Status bar */
+.astral-phone-statusbar {
+  position: relative;
+  z-index: 9;
+  padding: 14px 24px 0;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  font-size: 10px;
+  letter-spacing: 0.06em;
+  color: var(--phone-muted);
+}
+
+.astral-sb-right {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+}
+
+.astral-signal-bars {
+  display: flex;
+  align-items: flex-end;
+  gap: 1.5px;
+}
+
+.astral-signal-bars i {
+  width: 2px;
+  background: currentColor;
+  display: block;
+  border-radius: 1px;
+  opacity: 0.8;
+}
+
+.astral-signal-bars i:nth-child(1) { height: 3px; }
+.astral-signal-bars i:nth-child(2) { height: 5px; }
+.astral-signal-bars i:nth-child(3) { height: 6.5px; }
+.astral-signal-bars i:nth-child(4) { height: 8px; opacity: 0.3; }
+
+.astral-battery {
+  width: 18px;
+  height: 9px;
+  border: 1px solid currentColor;
+  border-radius: 2px;
+  position: relative;
+  opacity: 0.75;
+}
+
+.astral-battery::before {
+  content: '';
+  position: absolute;
+  left: 1.5px;
+  top: 1.5px;
+  bottom: 1.5px;
+  width: 35%;
+  background: currentColor;
+  border-radius: 1px;
+}
+
+.astral-battery::after {
+  content: '';
+  position: absolute;
+  right: -3.5px;
+  top: 3px;
+  width: 2px;
+  height: 3px;
+  background: currentColor;
+  border-radius: 0 1px 1px 0;
+}
+
+/* App header */
+.astral-phone-header {
+  position: relative;
+  z-index: 8;
+  padding: 18px 20px 14px;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  border-bottom: 1px solid rgba(217,154,181,.14);
+}
+
+.astral-back-btn {
+  font-size: 19px;
+  opacity: 0.5;
+  cursor: pointer;
+  transition: 0.15s;
+  line-height: 1;
+  width: 18px;
+  flex: none;
+}
+
+.astral-back-btn:hover {
+  opacity: 1;
+  color: var(--phone-accent-light);
+}
+
+.astral-app-title {
+  flex: 1;
+  min-width: 0;
+  font-size: 13px;
+  letter-spacing: 0.16em;
+  text-transform: uppercase;
+  font-weight: 300;
+}
+
+.astral-app-icon {
+  width: 32px;
+  height: 32px;
+  border-radius: 8px;
+  display: grid;
+  place-items: center;
+  font-size: 15px;
+  flex: none;
+  background: rgba(217,154,181,.12);
+  border: 1px solid rgba(217,154,181,.3);
+}
+
+.astral-menu-btn {
+  font-size: 14px;
+  opacity: 0.45;
+  cursor: pointer;
+  letter-spacing: 0.1em;
+  transition: 0.15s;
+}
+
+.astral-menu-btn:hover {
+  opacity: 1;
+  color: var(--phone-accent);
+}
+
+/* App body */
+.astral-phone-body {
+  position: relative;
+  z-index: 5;
+  flex: 1;
+  overflow-y: auto;
+  overflow-x: hidden;
+  padding: 12px 16px 20px;
+}
+
+.astral-phone-body::-webkit-scrollbar {
+  width: 4px;
+}
+
+.astral-phone-body::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+.astral-phone-body::-webkit-scrollbar-thumb {
+  background: rgba(217,154,181,.2);
+  border-radius: 2px;
+}
+
+.astral-phone-body::-webkit-scrollbar-thumb:hover {
+  background: rgba(217,154,181,.35);
+}
+
+/* Home screen */
+.astral-home-grid {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 22px 18px;
+  padding-top: 30px;
+}
+
+.astral-app-card {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 10px;
+  cursor: pointer;
+  transition: 0.2s;
+}
+
+.astral-app-card:hover .astral-app-card-icon {
+  transform: scale(1.08);
+  border-color: var(--phone-accent-light);
+  box-shadow: 0 0 20px -6px var(--phone-accent);
+}
+
+.astral-app-card-icon {
+  width: 64px;
+  height: 64px;
+  border-radius: 16px;
+  background: linear-gradient(150deg, rgba(217,154,181,.15), rgba(229,175,197,.08));
+  border: 1px solid rgba(217,154,181,.32);
+  display: grid;
+  place-items: center;
+  font-size: 28px;
+  transition: 0.2s;
+  box-shadow: 0 8px 24px -12px rgba(217,154,181,.4);
+}
+
+.astral-app-card-label {
+  font-size: 10.5px;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  opacity: 0.75;
+  text-align: center;
+}
+
+/* Messages list */
+.astral-msg-item {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  padding: 14px 0;
+  border-bottom: 1px solid rgba(217,154,181,.08);
+  cursor: pointer;
+  transition: 0.15s;
+}
+
+.astral-msg-item:hover {
+  background: rgba(217,154,181,.04);
+  padding-left: 10px;
+  padding-right: 10px;
+  margin-left: -10px;
+  margin-right: -10px;
+  border-radius: 10px;
+}
+
+.astral-msg-avatar {
+  width: 48px;
+  height: 48px;
+  border-radius: 50%;
+  flex: none;
+  background: radial-gradient(circle at 30% 28%, rgba(229,175,197,.45), rgba(217,154,181,.2));
+  border: 1px solid rgba(217,154,181,.5);
+  display: grid;
+  place-items: center;
+  font-size: 18px;
+  font-style: italic;
+  color: var(--phone-accent-light);
+}
+
+.astral-msg-content {
+  flex: 1;
+  min-width: 0;
+}
+
+.astral-msg-name {
+  font-size: 13px;
+  letter-spacing: 0.04em;
+  margin-bottom: 4px;
+}
+
+.astral-msg-preview {
+  font-size: 11px;
+  color: var(--phone-text-dim);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.astral-msg-time {
+  font-size: 9px;
+  letter-spacing: 0.1em;
+  color: var(--phone-text-dim);
+  flex: none;
+}
+
+/* Button */
+.astral-btn {
+  padding: 11px 18px;
+  border-radius: 12px;
+  border: 1px solid rgba(217,154,181,.32);
+  background: linear-gradient(150deg, rgba(217,154,181,.12), rgba(229,175,197,.06));
+  color: var(--phone-accent-light);
+  font-size: 11px;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  cursor: pointer;
+  transition: 0.2s;
+  display: inline-block;
+  text-align: center;
+}
+
+.astral-btn:hover {
+  background: linear-gradient(150deg, rgba(229,175,197,.2), rgba(217,154,181,.12));
+  border-color: var(--phone-accent-light);
+  transform: translateY(-1px);
+  box-shadow: 0 6px 18px -8px var(--phone-accent);
+}
+
+.astral-btn-primary {
+  background: linear-gradient(150deg, #ff9de0, #9d5cea);
+  border-color: rgba(255,157,224,.4);
+  color: #fff;
+}
+
+.astral-btn-primary:hover {
+  background: linear-gradient(150deg, #ffa8e3, #a865ed);
+  box-shadow: 0 8px 24px -10px rgba(255,120,200,.65);
+}
+
+/* Close button */
+.astral-phone-close {
+  position: absolute;
+  top: 16px;
+  right: 16px;
+  width: 36px;
+  height: 36px;
+  border-radius: 50%;
+  background: rgba(217,154,181,.08);
+  border: 1px solid rgba(217,154,181,.2);
+  display: grid;
+  place-items: center;
+  cursor: pointer;
+  z-index: 10;
+  font-size: 18px;
+  color: var(--phone-accent);
+  transition: 0.2s;
+}
+
+.astral-phone-close:hover {
+  background: rgba(217,154,181,.16);
+  border-color: var(--phone-accent-light);
+  transform: scale(1.08);
+}
+
+/* Utility */
+.astral-empty-state {
+  text-align: center;
+  padding: 60px 30px;
+  color: var(--phone-text-dim);
+  font-size: 12px;
+  letter-spacing: 0.08em;
+}
+
+.astral-empty-state-icon {
+  font-size: 48px;
+  opacity: 0.2;
+  margin-bottom: 16px;
+}
