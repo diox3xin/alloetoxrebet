@@ -114,77 +114,126 @@ function findStyle(raw) {
 /* ─────────────────────────── внешность ─────────────────────────── */
 
 /**
- * Собирает записи о внешности из библиотеки персонажей.
- *
- * Ключевой момент: Haruspics индексирует записи по имени файла аватарки
- * (`avatar:Mira.png`) или по имени персоны, а человеческое имя лежит в
- * `displayName`. Поэтому сравнение идёт и по ключу, и по displayName.
+ * Ключ записи в библиотеке — ровно как в Haruspics (references.js:112-121):
+ *   avatar:<avatar filename>  →  name:<name>  →  id:<index>
+ * Раньше я искал по имени персонажа и всегда промахивался: записи лежат под
+ * ключом `avatar:Mira.png`, а не `Mira`.
  */
-function findAppearanceEntries(raw) {
-    const entries = [];
-    const seenNodes = new WeakSet();
-
-    deepWalk(raw, (node, depth, path) => {
-        if (!Array.isArray(node.appearanceItems) || seenNodes.has(node)) return;
-        seenNodes.add(node);
-
-        const segs = String(path || '').split('.').filter(Boolean);
-        const key = segs[segs.length - 1] || '';
-        const displayName = String(node.displayName || '').trim() || key;
-
-        const texts = [];
-        const refs = [];
-        for (const item of node.appearanceItems) {
-            if (!item || item.enabled === false) continue;
-            if (item.type === 'image') {
-                const p = String(item.imagePath || item.path || '').trim();
-                if (p) refs.push(p);
-            }
-            const d = firstText(item);
-            if (d) texts.push(d);
-        }
-
-        if (!texts.length && !refs.length) return;
-        entries.push({ key, displayName, texts, refs });
-    });
-
-    // старый формат: characterReferenceDescriptions.characters[name] = "строка"
-    const legacy = raw?.characterReferenceDescriptions;
-    if (legacy && typeof legacy === 'object') {
-        for (const bucket of ['characters', 'users']) {
-            const bag = legacy[bucket];
-            if (!bag || typeof bag !== 'object') continue;
-            for (const [k, v] of Object.entries(bag)) {
-                const text = typeof v === 'string' ? v.trim() : '';
-                if (!text) continue;
-                const displayName = String(legacy.displayNames?.[bucket]?.[k] || '').trim() || k;
-                entries.push({ key: k, displayName, texts: [text], refs: [] });
-            }
-        }
-    }
-
-    return entries;
+export function charLibraryKey(character, fallbackIndex = 0) {
+    const avatar = String(character?.avatar || '').trim();
+    if (avatar) return `avatar:${avatar}`;
+    const name = String(character?.name || '').trim();
+    if (name) return `name:${name}`;
+    return `id:${fallbackIndex}`;
 }
 
-/** Выбирает запись по имени персонажа, имени файла аватарки или частичному совпадению. */
-function pickEntry(entries, ...hints) {
-    if (!entries.length) return null;
-    const targets = hints.map(normName).filter(Boolean);
+/** Все ключи, под которыми может лежать запись персонажа. */
+function candidateKeys(character, name, extra = []) {
+    const keys = [];
+    const avatar = String(character?.avatar || '').trim();
+    if (avatar) {
+        keys.push(`avatar:${avatar}`);
+        // на случай если хранится без префикса или без расширения
+        keys.push(avatar);
+        keys.push(avatar.replace(/\.[a-z0-9]{2,5}$/i, ''));
+        keys.push(`avatar:${avatar.replace(/\.[a-z0-9]{2,5}$/i, '')}`);
+    }
+    if (name) {
+        keys.push(`name:${name}`);
+        keys.push(name);
+    }
+    keys.push(...extra.filter(Boolean));
+    return [...new Set(keys)];
+}
 
-    for (const t of targets) {
-        const exactDisplay = entries.find(e => normName(e.displayName) === t);
-        if (exactDisplay) return exactDisplay;
+/**
+ * Внешность из записи библиотеки.
+ * Повторяет getCharacterLibraryDescription (references.js:327-334):
+ * primary.description + все текстовые appearanceItems с enabled !== false.
+ */
+function extractAppearance(entry) {
+    if (!entry || typeof entry !== 'object') return { appearance: '', refs: [] };
+
+    const parts = [];
+
+    // primary — отдельный объект, не входит в appearanceItems
+    const primary = entry.primary;
+    if (primary && typeof primary === 'object' && primary.enabled !== false) {
+        const d = String(primary.description || '').trim();
+        if (d) parts.push(d);
     }
-    for (const t of targets) {
-        const exactKey = entries.find(e => normName(e.key) === t);
-        if (exactKey) return exactKey;
+
+    const refs = [];
+    for (const item of (entry.appearanceItems || [])) {
+        if (!item || typeof item !== 'object') continue;
+        if (item.enabled === false) continue;
+
+        if (item.type === 'image') {
+            const p = String(item.imagePath || item.path || '').trim();
+            if (p) refs.push(p);
+            continue;
+        }
+
+        // только текстовые айтемы попадают в описание
+        if (item.type && item.type !== 'text') continue;
+        const d = String(item.description || item.text || '').trim();
+        if (d) parts.push(d);
     }
-    for (const t of targets) {
-        const partial = entries.find(e =>
-            normName(e.displayName).includes(t) || normName(e.key).includes(t));
-        if (partial) return partial;
+
+    const appearance = parts
+        .map(p => p.replace(/\s+/g, ' ').trim())
+        .filter(Boolean)
+        .join(', ')
+        .replace(/,\s*,/g, ',')
+        .trim();
+
+    return { appearance, refs };
+}
+
+/** Достаёт запись из библиотеки по списку ключей, с мягким фолбэком. */
+function lookupEntry(library, bucketName, keys, displayName) {
+    const bucket = library?.[bucketName];
+    if (!bucket || typeof bucket !== 'object') return null;
+
+    for (const key of keys) {
+        const hit = bucket[key];
+        if (hit && typeof hit === 'object') return hit;
     }
+
+    // мягкий поиск: по displayName и по совпадению ключа без префикса/расширения
+    const wanted = normName(displayName);
+    for (const [key, entry] of Object.entries(bucket)) {
+        if (!entry || typeof entry !== 'object') continue;
+        const dn = normName(entry.displayName);
+        if (wanted && dn && dn === wanted) return entry;
+
+        const bare = normName(key.replace(/^avatar:/i, '').replace(/^name:/i, '').replace(/^id:/i, ''));
+        if (wanted && bare === wanted) return entry;
+        if (wanted && bare && (bare.includes(wanted) || wanted.includes(bare))) return entry;
+    }
+
     return null;
+}
+
+/**
+ * Активный аватар персоны — ключ юзера в Haruspics тоже строится от него.
+ * Читаем из модуля personas, как это делает references.js:178-190.
+ */
+async function resolveUserAvatar() {
+    try {
+        const mod = await import('/scripts/personas.js');
+        const avatar = String(mod?.user_avatar || '').trim();
+        if (avatar) return avatar;
+    } catch (_) { /* ignore */ }
+
+    // запасной путь: активная персона из контекста
+    try {
+        const ctx = globalThis.SillyTavern?.getContext?.();
+        const persona = String(ctx?.power_user?.persona || '').trim();
+        if (persona) return persona;
+    } catch (_) { /* ignore */ }
+
+    return '';
 }
 
 /* ─────────────────────────── лорбуки ─────────────────────────── */
@@ -286,6 +335,17 @@ export function collectHaruspics(imageGen, ctx) {
     const userName = resolveUserName(ctx);
     const avatarHint = String(ctx?.characters?.[ctx?.characterId]?.avatar || '').trim();
 
+    // активный аватар персоны: Haruspics строит ключ юзера от него
+    let userAvatar = '';
+    try {
+        userAvatar = String(globalThis.SillyTavern?.getContext?.()?.user_avatar || '').trim();
+    } catch (_) { /* ignore */ }
+    if (!userAvatar) {
+        try {
+            userAvatar = String(raw.userAvatarFile || '').trim();
+        } catch (_) { /* ignore */ }
+    }
+
     const out = { ...empty, available: true };
 
     /* ── стиль ── */
@@ -308,24 +368,25 @@ export function collectHaruspics(imageGen, ctx) {
     }
 
     /* ── внешность ── */
-    const entries = findAppearanceEntries(raw);
+    const library = raw.characterReferenceLibrary || {};
 
-    const charEntry = pickEntry(entries, charName, avatarHint);
-    if (charEntry) {
-        out.chars.push({
-            name: charName,
-            appearance: charEntry.texts.join(', ').replace(/,\s*,/g, ',').trim(),
-            refs: charEntry.refs,
-        });
+    const character = ctx?.characters?.[ctx?.characterId] || null;
+    const charKeys = candidateKeys(character, charName, [avatarHint ? `avatar:${avatarHint}` : '']);
+    const charEntry = lookupEntry(library, 'characters', charKeys, charName);
+    const charApp = extractAppearance(charEntry);
+    if (charApp.appearance || charApp.refs.length) {
+        out.chars.push({ name: charName, appearance: charApp.appearance, refs: charApp.refs });
     }
 
-    const userEntry = pickEntry(entries, userName);
+    const userKeys = userAvatar
+        ? [`avatar:${userAvatar}`, userAvatar, userAvatar.replace(/\.[a-z0-9]{2,5}$/i, '')]
+        : [];
+    const userEntry = lookupEntry(library, 'users', [...userKeys, ...candidateKeys(null, userName)], userName);
     if (userEntry && userEntry !== charEntry) {
-        out.chars.push({
-            name: userName,
-            appearance: userEntry.texts.join(', ').replace(/,\s*,/g, ',').trim(),
-            refs: userEntry.refs,
-        });
+        const userApp = extractAppearance(userEntry);
+        if (userApp.appearance || userApp.refs.length) {
+            out.chars.push({ name: userName, appearance: userApp.appearance, refs: userApp.refs });
+        }
     }
 
     /* ── лорбуки ── */
@@ -336,10 +397,19 @@ export function collectHaruspics(imageGen, ctx) {
     out.sendUserAvatar = Boolean(raw.sendUserAvatar);
 
     console.log(`${MODULE} Haruspics: style=${out.style ? 'yes' : 'no'} `
-        + `chars=${out.chars.length} (entries=${entries.length}) `
-        + `lorebook=${out.lorebook.length} neg=${out.negative ? 'yes' : 'no'}`);
+        + `chars=${out.chars.length} lorebook=${out.lorebook.length} `
+        + `neg=${out.negative ? 'yes' : 'no'}`);
 
     // Ничего не нашлось — печатаем реальную структуру, чтобы починить точно
+    if (!out.chars.length && library && typeof library === 'object') {
+        const charKeysAvail = Object.keys(library.characters || {});
+        const userKeysAvail = Object.keys(library.users || {});
+        console.warn(`${MODULE} внешность не найдена. Искал ключи:`, charKeys);
+        console.warn(`${MODULE} есть в библиотеке characters:`, charKeysAvail);
+        console.warn(`${MODULE} есть в библиотеке users:`, userKeysAvail);
+        console.warn(`${MODULE} персонаж:`, { name: charName, avatar: avatarHint });
+    }
+
     if (!out.style && !out.chars.length && !out.lorebook.length) {
         console.warn(`${MODULE} ничего не найдено. Реальная структура inline_image_gen:`);
         for (const line of dumpSettingsShape(raw)) console.warn(`  ${line}`);

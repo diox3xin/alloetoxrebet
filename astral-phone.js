@@ -2127,63 +2127,67 @@ REPLY (text only):`;
     return "";
   }
   __name(findStyle, "findStyle");
-  function findAppearanceEntries(raw) {
-    const entries = [];
-    const seenNodes = /* @__PURE__ */ new WeakSet();
-    deepWalk(raw, (node, depth, path) => {
-      if (!Array.isArray(node.appearanceItems) || seenNodes.has(node)) return;
-      seenNodes.add(node);
-      const segs = String(path || "").split(".").filter(Boolean);
-      const key = segs[segs.length - 1] || "";
-      const displayName = String(node.displayName || "").trim() || key;
-      const texts = [];
-      const refs = [];
-      for (const item of node.appearanceItems) {
-        if (!item || item.enabled === false) continue;
-        if (item.type === "image") {
-          const p = String(item.imagePath || item.path || "").trim();
-          if (p) refs.push(p);
-        }
-        const d = firstText(item);
-        if (d) texts.push(d);
-      }
-      if (!texts.length && !refs.length) return;
-      entries.push({ key, displayName, texts, refs });
-    });
-    const legacy = raw?.characterReferenceDescriptions;
-    if (legacy && typeof legacy === "object") {
-      for (const bucket of ["characters", "users"]) {
-        const bag = legacy[bucket];
-        if (!bag || typeof bag !== "object") continue;
-        for (const [k, v] of Object.entries(bag)) {
-          const text = typeof v === "string" ? v.trim() : "";
-          if (!text) continue;
-          const displayName = String(legacy.displayNames?.[bucket]?.[k] || "").trim() || k;
-          entries.push({ key: k, displayName, texts: [text], refs: [] });
-        }
-      }
+  function candidateKeys(character, name, extra = []) {
+    const keys = [];
+    const avatar = String(character?.avatar || "").trim();
+    if (avatar) {
+      keys.push(`avatar:${avatar}`);
+      keys.push(avatar);
+      keys.push(avatar.replace(/\.[a-z0-9]{2,5}$/i, ""));
+      keys.push(`avatar:${avatar.replace(/\.[a-z0-9]{2,5}$/i, "")}`);
     }
-    return entries;
+    if (name) {
+      keys.push(`name:${name}`);
+      keys.push(name);
+    }
+    keys.push(...extra.filter(Boolean));
+    return [...new Set(keys)];
   }
-  __name(findAppearanceEntries, "findAppearanceEntries");
-  function pickEntry(entries, ...hints) {
-    if (!entries.length) return null;
-    const targets = hints.map(normName).filter(Boolean);
-    for (const t of targets) {
-      const exactDisplay = entries.find((e) => normName(e.displayName) === t);
-      if (exactDisplay) return exactDisplay;
+  __name(candidateKeys, "candidateKeys");
+  function extractAppearance(entry) {
+    if (!entry || typeof entry !== "object") return { appearance: "", refs: [] };
+    const parts = [];
+    const primary = entry.primary;
+    if (primary && typeof primary === "object" && primary.enabled !== false) {
+      const d = String(primary.description || "").trim();
+      if (d) parts.push(d);
     }
-    for (const t of targets) {
-      const exactKey = entries.find((e) => normName(e.key) === t);
-      if (exactKey) return exactKey;
+    const refs = [];
+    for (const item of entry.appearanceItems || []) {
+      if (!item || typeof item !== "object") continue;
+      if (item.enabled === false) continue;
+      if (item.type === "image") {
+        const p = String(item.imagePath || item.path || "").trim();
+        if (p) refs.push(p);
+        continue;
+      }
+      if (item.type && item.type !== "text") continue;
+      const d = String(item.description || item.text || "").trim();
+      if (d) parts.push(d);
     }
-    for (const t of targets) {
-      const partial = entries.find((e) => normName(e.displayName).includes(t) || normName(e.key).includes(t));
-      if (partial) return partial;
+    const appearance = parts.map((p) => p.replace(/\s+/g, " ").trim()).filter(Boolean).join(", ").replace(/,\s*,/g, ",").trim();
+    return { appearance, refs };
+  }
+  __name(extractAppearance, "extractAppearance");
+  function lookupEntry(library, bucketName, keys, displayName) {
+    const bucket = library?.[bucketName];
+    if (!bucket || typeof bucket !== "object") return null;
+    for (const key of keys) {
+      const hit = bucket[key];
+      if (hit && typeof hit === "object") return hit;
+    }
+    const wanted = normName(displayName);
+    for (const [key, entry] of Object.entries(bucket)) {
+      if (!entry || typeof entry !== "object") continue;
+      const dn = normName(entry.displayName);
+      if (wanted && dn && dn === wanted) return entry;
+      const bare = normName(key.replace(/^avatar:/i, "").replace(/^name:/i, "").replace(/^id:/i, ""));
+      if (wanted && bare === wanted) return entry;
+      if (wanted && bare && (bare.includes(wanted) || wanted.includes(bare))) return entry;
     }
     return null;
   }
-  __name(pickEntry, "pickEntry");
+  __name(lookupEntry, "lookupEntry");
   function findLorebook(raw) {
     const out = [];
     const seen = /* @__PURE__ */ new WeakSet();
@@ -2259,6 +2263,17 @@ REPLY (text only):`;
     const charName = resolveCharName(ctx);
     const userName = resolveUserName(ctx);
     const avatarHint = String(ctx?.characters?.[ctx?.characterId]?.avatar || "").trim();
+    let userAvatar = "";
+    try {
+      userAvatar = String(globalThis.SillyTavern?.getContext?.()?.user_avatar || "").trim();
+    } catch (_) {
+    }
+    if (!userAvatar) {
+      try {
+        userAvatar = String(raw.userAvatarFile || "").trim();
+      } catch (_) {
+      }
+    }
     const out = { ...empty, available: true };
     out.style = findStyle(raw);
     try {
@@ -2273,27 +2288,34 @@ REPLY (text only):`;
     if (raw.refInstructionEnabled !== false) {
       out.refInstruction = String(raw.refInstruction || "").trim();
     }
-    const entries = findAppearanceEntries(raw);
-    const charEntry = pickEntry(entries, charName, avatarHint);
-    if (charEntry) {
-      out.chars.push({
-        name: charName,
-        appearance: charEntry.texts.join(", ").replace(/,\s*,/g, ",").trim(),
-        refs: charEntry.refs
-      });
+    const library = raw.characterReferenceLibrary || {};
+    const character = ctx?.characters?.[ctx?.characterId] || null;
+    const charKeys = candidateKeys(character, charName, [avatarHint ? `avatar:${avatarHint}` : ""]);
+    const charEntry = lookupEntry(library, "characters", charKeys, charName);
+    const charApp = extractAppearance(charEntry);
+    if (charApp.appearance || charApp.refs.length) {
+      out.chars.push({ name: charName, appearance: charApp.appearance, refs: charApp.refs });
     }
-    const userEntry = pickEntry(entries, userName);
+    const userKeys = userAvatar ? [`avatar:${userAvatar}`, userAvatar, userAvatar.replace(/\.[a-z0-9]{2,5}$/i, "")] : [];
+    const userEntry = lookupEntry(library, "users", [...userKeys, ...candidateKeys(null, userName)], userName);
     if (userEntry && userEntry !== charEntry) {
-      out.chars.push({
-        name: userName,
-        appearance: userEntry.texts.join(", ").replace(/,\s*,/g, ",").trim(),
-        refs: userEntry.refs
-      });
+      const userApp = extractAppearance(userEntry);
+      if (userApp.appearance || userApp.refs.length) {
+        out.chars.push({ name: userName, appearance: userApp.appearance, refs: userApp.refs });
+      }
     }
     out.lorebook = findLorebook(raw);
     out.sendCharAvatar = Boolean(raw.sendCharAvatar);
     out.sendUserAvatar = Boolean(raw.sendUserAvatar);
-    console.log(`${MODULE} Haruspics: style=${out.style ? "yes" : "no"} chars=${out.chars.length} (entries=${entries.length}) lorebook=${out.lorebook.length} neg=${out.negative ? "yes" : "no"}`);
+    console.log(`${MODULE} Haruspics: style=${out.style ? "yes" : "no"} chars=${out.chars.length} lorebook=${out.lorebook.length} neg=${out.negative ? "yes" : "no"}`);
+    if (!out.chars.length && library && typeof library === "object") {
+      const charKeysAvail = Object.keys(library.characters || {});
+      const userKeysAvail = Object.keys(library.users || {});
+      console.warn(`${MODULE} \u0432\u043D\u0435\u0448\u043D\u043E\u0441\u0442\u044C \u043D\u0435 \u043D\u0430\u0439\u0434\u0435\u043D\u0430. \u0418\u0441\u043A\u0430\u043B \u043A\u043B\u044E\u0447\u0438:`, charKeys);
+      console.warn(`${MODULE} \u0435\u0441\u0442\u044C \u0432 \u0431\u0438\u0431\u043B\u0438\u043E\u0442\u0435\u043A\u0435 characters:`, charKeysAvail);
+      console.warn(`${MODULE} \u0435\u0441\u0442\u044C \u0432 \u0431\u0438\u0431\u043B\u0438\u043E\u0442\u0435\u043A\u0435 users:`, userKeysAvail);
+      console.warn(`${MODULE} \u043F\u0435\u0440\u0441\u043E\u043D\u0430\u0436:`, { name: charName, avatar: avatarHint });
+    }
     if (!out.style && !out.chars.length && !out.lorebook.length) {
       console.warn(`${MODULE} \u043D\u0438\u0447\u0435\u0433\u043E \u043D\u0435 \u043D\u0430\u0439\u0434\u0435\u043D\u043E. \u0420\u0435\u0430\u043B\u044C\u043D\u0430\u044F \u0441\u0442\u0440\u0443\u043A\u0442\u0443\u0440\u0430 inline_image_gen:`);
       for (const line of dumpSettingsShape(raw)) console.warn(`  ${line}`);
