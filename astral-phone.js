@@ -1046,6 +1046,56 @@
       const item = (settings.negativeGalleryItems || []).find((candidate) => candidate.id === settings.activeNegativeId);
       return String(tagNegativePrompt || "").trim() || String(item?.prompt || "").trim();
     }
+    /* ─────────────────────────── haruspics sync ─────────────────────────── */
+    /**
+     * Read the active style tag from Haruspics settings.
+     * Haruspics stores the selected style in `extension_settings.inline_image_gen.style`.
+     * Falls back to an empty string if not configured.
+     */
+    getStyle() {
+      try {
+        const s = this._rawSettings();
+        const style = s?.style || s?.artStyle || s?.imageStyle || s?.stylePreset || "";
+        return String(style || "").trim();
+      } catch (_) {
+        return "";
+      }
+    }
+    /**
+     * Read character/clothing descriptions from Haruspics settings.
+     * Returns refs in the same shape as EMPTY_REFS so existing prompt-builders
+     * can use it transparently.
+     *
+     * Haruspics stores character data in several possible keys; we try them all.
+     */
+    _collectRefs() {
+      try {
+        const s = this._rawSettings();
+        if (!s) return EMPTY_REFS;
+        const textDirectives = [];
+        const textOnlyClothing = [];
+        const globalField = s.characterField || s.charField || s.charPrompt || s.characterPrompt || s.globalCharacterDescription || s.globalDescription || "";
+        if (globalField && String(globalField).trim()) {
+          textDirectives.push(String(globalField).trim());
+        }
+        const chars = s.characters || s.characterDescriptions || s.charDescriptions || [];
+        if (Array.isArray(chars)) {
+          for (const c of chars) {
+            const name = String(c.name || c.charName || "").trim();
+            const desc = String(c.description || c.clothing || c.outfit || "").trim();
+            const enabled = c.enabled !== false;
+            if (name && desc && enabled) {
+              textOnlyClothing.push({ charName: name, description: desc });
+            }
+          }
+        }
+        if (textDirectives.length === 0 && textOnlyClothing.length === 0) return EMPTY_REFS;
+        console.log(`[AstralImageGen] Synced from Haruspics \u2014 style="${this.getStyle()}", directives=${textDirectives.length}, clothing=${textOnlyClothing.length}`);
+        return { imageRefs: [], textDirectives, textOnlyClothing };
+      } catch (_) {
+        return EMPTY_REFS;
+      }
+    }
     /* ─────────────────────────── availability ─────────────────────────── */
     /**
      * True when the haruspics extension is present and its current provider has
@@ -1083,7 +1133,9 @@
       const settings = this._settings();
       const text = String(prompt ?? "").trim();
       if (!text) throw new Error("\u041F\u0443\u0441\u0442\u043E\u0439 \u043F\u0440\u043E\u043C\u043F\u0442 \u0434\u043B\u044F \u0433\u0435\u043D\u0435\u0440\u0430\u0446\u0438\u0438 \u0438\u0437\u043E\u0431\u0440\u0430\u0436\u0435\u043D\u0438\u044F.");
-      const dataUrl = await this._generateWithTimeout(text, settings);
+      const style = metadata.style !== void 0 ? String(metadata.style) : this.getStyle();
+      const refs = metadata.refs !== void 0 ? metadata.refs : this._collectRefs();
+      const dataUrl = await this._generateWithTimeout(text, settings, style, refs);
       return this.saveImageToFile(dataUrl, metadata?.character);
     }
     /* ─────────────────────── save to ST images folder ─────────────────────── */
@@ -1134,28 +1186,28 @@
     }
     /* ─────────────────────────── dispatch + timeout ─────────────────────────── */
     /** Port of generateImageWithRetry (3136-3213) with retries and toasts removed. */
-    async _generateWithTimeout(prompt, settings) {
+    async _generateWithTimeout(prompt, settings, style = "", refs = EMPTY_REFS) {
       const timeoutMs = Math.max(5, Number(settings.requestTimeout) || 120) * 1e3;
       const controller = new AbortController();
       const timeoutId = setTimeout(() => controller.abort(), timeoutMs);
-      const options = { signal: controller.signal };
+      const options = { signal: controller.signal, _refs: refs };
       try {
         const isRouterApi = isRouterEndpoint(settings.endpoint);
         const useGeminiApi = settings.apiType === "gemini" && !isRouterApi;
         if (settings.apiType === "naistera") {
-          return await this.generateImageNaistera(prompt, "", settings, options);
+          return await this.generateImageNaistera(prompt, style, settings, options);
         }
         if (["novelai", "novelai-direct"].includes(settings.apiType)) {
-          return await this.generateImageNovelAI(prompt, "", settings, options);
+          return await this.generateImageNovelAI(prompt, style, settings, options);
         }
         const useChatApi = settings.apiType === "openai-chat" || isRouterApi && (settings.apiType === "openai" || settings.apiType === "gemini");
         if (useGeminiApi) {
-          return await this.generateImageGemini(prompt, "", settings, options);
+          return await this.generateImageGemini(prompt, style, settings, options);
         }
         if (useChatApi) {
-          return await this.generateImageOpenAIChat(prompt, "", settings, options);
+          return await this.generateImageOpenAIChat(prompt, style, settings, options);
         }
-        return await this.generateImageOpenAI(prompt, "", settings, options);
+        return await this.generateImageOpenAI(prompt, style, settings, options);
       } catch (error) {
         if (error?.name === "AbortError") {
           throw new Error(`\u0422\u0430\u0439\u043C\u0430\u0443\u0442: \u043F\u0440\u043E\u0432\u0430\u0439\u0434\u0435\u0440 \u043D\u0435 \u043E\u0442\u0432\u0435\u0442\u0438\u043B \u0437\u0430 ${Math.round(timeoutMs / 1e3)}\u0441`);
@@ -1245,7 +1297,7 @@
       }
       const modelInfo = this.getNaisteraModelInfo(model);
       const descriptionMode = normalizeNaisteraCharacterDescriptionsMode(settings.naisteraCharacterDescriptionsMode);
-      const { imageRefs, textOnlyClothing, textDirectives } = EMPTY_REFS;
+      const { imageRefs, textOnlyClothing, textDirectives } = options._refs || EMPTY_REFS;
       const promptParts = [];
       if (style) promptParts.push(isNaisteraNovelAIModel(model) ? style : `[Style: ${style}]`);
       if (descriptionMode === "as-is") {
@@ -1310,11 +1362,12 @@ ${descriptions.join("\n")}`);
     async generateImageNovelAI(prompt, style, settings, options = {}) {
       const parts = [];
       if (style) parts.push(style);
-      parts.push(...EMPTY_REFS.textDirectives);
-      for (const clothing of EMPTY_REFS.textOnlyClothing) {
+      const { textDirectives, textOnlyClothing } = options._refs || EMPTY_REFS;
+      parts.push(...textDirectives);
+      for (const clothing of textOnlyClothing) {
         if (clothing.description) parts.push(`${clothing.charName || "Character"} is wearing: ${clothing.description}`);
       }
-      for (const ref of EMPTY_REFS.imageRefs) {
+      for (const ref of (options._refs || EMPTY_REFS).imageRefs) {
         if (ref.type === "clothing" && ref.description) parts.push(`${ref.name || "Character"} is wearing: ${ref.description}`);
       }
       parts.push(prompt);
@@ -1414,7 +1467,7 @@ ${descriptions.join("\n")}`);
     /** Port of generateImageOpenAI (2635-2736). refData is always empty here. */
     async generateImageOpenAI(prompt, style, settings, options = {}) {
       const url = buildOpenAIUrl(settings.endpoint, "images/generations");
-      const { imageRefs, textOnlyClothing, textDirectives } = EMPTY_REFS;
+      const { imageRefs, textOnlyClothing, textDirectives } = options._refs || EMPTY_REFS;
       const promptParts = [];
       if (style) promptParts.push(`[Style: ${style}]`);
       for (const directive of textDirectives) promptParts.push(directive);
@@ -1485,7 +1538,7 @@ ${descriptions.join("\n")}`);
     /** Port of generateImageOpenAIChat (2809-2911). refData is always empty here. */
     async generateImageOpenAIChat(prompt, style, settings, options = {}) {
       const url = buildOpenAIUrl(settings.endpoint, "chat/completions");
-      const { imageRefs, textOnlyClothing, textDirectives } = EMPTY_REFS;
+      const { imageRefs, textOnlyClothing, textDirectives } = options._refs || EMPTY_REFS;
       let aspectRatio = options.aspectRatio || settings.aspectRatio || "1:1";
       if (!VALID_ASPECT_RATIOS.includes(aspectRatio)) aspectRatio = "1:1";
       let imageSize = options.imageSize || settings.imageSize || "1K";
@@ -1563,7 +1616,7 @@ ${prompt}`);
         aspectRatio = VALID_ASPECT_RATIOS[Math.floor(Math.random() * VALID_ASPECT_RATIOS.length)];
         console.log(`[AstralImageGen] Gemini random format: ${aspectRatio} ${imageSize}`);
       }
-      const { imageRefs, textOnlyClothing, textDirectives } = EMPTY_REFS;
+      const { imageRefs, textOnlyClothing, textDirectives } = options._refs || EMPTY_REFS;
       const faceRefs = imageRefs.filter((r) => r.type === "face");
       const clothingImageRefs = imageRefs.filter((r) => r.type === "clothing");
       const hairstyleRefs = imageRefs.filter((r) => r.type === "hairstyle");

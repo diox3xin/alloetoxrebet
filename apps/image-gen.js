@@ -433,6 +433,67 @@ export class ImageGenerator {
         return String(tagNegativePrompt || '').trim() || String(item?.prompt || '').trim();
     }
 
+    /* ─────────────────────────── haruspics sync ─────────────────────────── */
+
+    /**
+     * Read the active style tag from Haruspics settings.
+     * Haruspics stores the selected style in `extension_settings.inline_image_gen.style`.
+     * Falls back to an empty string if not configured.
+     */
+    getStyle() {
+        try {
+            const s = this._rawSettings();
+            // Try known field names used by different Haruspics versions
+            const style = s?.style || s?.artStyle || s?.imageStyle || s?.stylePreset || '';
+            return String(style || '').trim();
+        } catch (_) { return ''; }
+    }
+
+    /**
+     * Read character/clothing descriptions from Haruspics settings.
+     * Returns refs in the same shape as EMPTY_REFS so existing prompt-builders
+     * can use it transparently.
+     *
+     * Haruspics stores character data in several possible keys; we try them all.
+     */
+    _collectRefs() {
+        try {
+            const s = this._rawSettings();
+            if (!s) return EMPTY_REFS;
+
+            const textDirectives = [];
+            const textOnlyClothing = [];
+
+            // Global "character field" / free-text directives
+            const globalField = s.characterField || s.charField || s.charPrompt
+                || s.characterPrompt || s.globalCharacterDescription || s.globalDescription || '';
+            if (globalField && String(globalField).trim()) {
+                textDirectives.push(String(globalField).trim());
+            }
+
+            // Per-character clothing entries — Haruspics stores them as
+            // `characters: [{ name, description, enabled }]` or similar
+            const chars = s.characters || s.characterDescriptions || s.charDescriptions || [];
+            if (Array.isArray(chars)) {
+                for (const c of chars) {
+                    const name = String(c.name || c.charName || '').trim();
+                    const desc = String(c.description || c.clothing || c.outfit || '').trim();
+                    const enabled = c.enabled !== false; // default to enabled
+                    if (name && desc && enabled) {
+                        textOnlyClothing.push({ charName: name, description: desc });
+                    }
+                }
+            }
+
+            if (textDirectives.length === 0 && textOnlyClothing.length === 0) return EMPTY_REFS;
+
+            console.log(`[AstralImageGen] Synced from Haruspics — style="${this.getStyle()}", directives=${textDirectives.length}, clothing=${textOnlyClothing.length}`);
+            return { imageRefs: [], textDirectives, textOnlyClothing };
+        } catch (_) {
+            return EMPTY_REFS;
+        }
+    }
+
     /* ─────────────────────────── availability ─────────────────────────── */
 
     /**
@@ -480,7 +541,11 @@ export class ImageGenerator {
         const text = String(prompt ?? '').trim();
         if (!text) throw new Error('Пустой промпт для генерации изображения.');
 
-        const dataUrl = await this._generateWithTimeout(text, settings);
+        // Auto-sync style and character refs from Haruspics unless overridden
+        const style = metadata.style !== undefined ? String(metadata.style) : this.getStyle();
+        const refs = metadata.refs !== undefined ? metadata.refs : this._collectRefs();
+
+        const dataUrl = await this._generateWithTimeout(text, settings, style, refs);
         return this.saveImageToFile(dataUrl, metadata?.character);
     }
 
@@ -543,32 +608,32 @@ export class ImageGenerator {
     /* ─────────────────────────── dispatch + timeout ─────────────────────────── */
 
     /** Port of generateImageWithRetry (3136-3213) with retries and toasts removed. */
-    async _generateWithTimeout(prompt, settings) {
+    async _generateWithTimeout(prompt, settings, style = '', refs = EMPTY_REFS) {
         const timeoutMs = Math.max(5, Number(settings.requestTimeout) || 120) * 1000;
         const controller = new AbortController();
         const timeoutId = setTimeout(() => controller.abort(), timeoutMs);
-        const options = { signal: controller.signal };
+        const options = { signal: controller.signal, _refs: refs };
 
         try {
             const isRouterApi = isRouterEndpoint(settings.endpoint);
             const useGeminiApi = settings.apiType === 'gemini' && !isRouterApi;
 
             if (settings.apiType === 'naistera') {
-                return await this.generateImageNaistera(prompt, '', settings, options);
+                return await this.generateImageNaistera(prompt, style, settings, options);
             }
             if (['novelai', 'novelai-direct'].includes(settings.apiType)) {
-                return await this.generateImageNovelAI(prompt, '', settings, options);
+                return await this.generateImageNovelAI(prompt, style, settings, options);
             }
             const useChatApi = settings.apiType === 'openai-chat'
                 || (isRouterApi && (settings.apiType === 'openai' || settings.apiType === 'gemini'));
 
             if (useGeminiApi) {
-                return await this.generateImageGemini(prompt, '', settings, options);
+                return await this.generateImageGemini(prompt, style, settings, options);
             }
             if (useChatApi) {
-                return await this.generateImageOpenAIChat(prompt, '', settings, options);
+                return await this.generateImageOpenAIChat(prompt, style, settings, options);
             }
-            return await this.generateImageOpenAI(prompt, '', settings, options);
+            return await this.generateImageOpenAI(prompt, style, settings, options);
         } catch (error) {
             if (error?.name === 'AbortError') {
                 throw new Error(`Таймаут: провайдер не ответил за ${Math.round(timeoutMs / 1000)}с`);
@@ -664,7 +729,7 @@ export class ImageGenerator {
         }
         const modelInfo = this.getNaisteraModelInfo(model);
         const descriptionMode = normalizeNaisteraCharacterDescriptionsMode(settings.naisteraCharacterDescriptionsMode);
-        const { imageRefs, textOnlyClothing, textDirectives } = EMPTY_REFS;
+        const { imageRefs, textOnlyClothing, textDirectives } = options._refs || EMPTY_REFS;
 
         const promptParts = [];
         // sillyimages sends NovelAI styles as ordinary prompt text, while other
@@ -747,11 +812,12 @@ export class ImageGenerator {
     async generateImageNovelAI(prompt, style, settings, options = {}) {
         const parts = [];
         if (style) parts.push(style);
-        parts.push(...EMPTY_REFS.textDirectives);
-        for (const clothing of EMPTY_REFS.textOnlyClothing) {
+        const { textDirectives, textOnlyClothing } = options._refs || EMPTY_REFS;
+        parts.push(...textDirectives);
+        for (const clothing of textOnlyClothing) {
             if (clothing.description) parts.push(`${clothing.charName || 'Character'} is wearing: ${clothing.description}`);
         }
-        for (const ref of EMPTY_REFS.imageRefs) {
+        for (const ref of (options._refs || EMPTY_REFS).imageRefs) {
             if (ref.type === 'clothing' && ref.description) parts.push(`${ref.name || 'Character'} is wearing: ${ref.description}`);
         }
         parts.push(prompt);
@@ -848,7 +914,7 @@ export class ImageGenerator {
     /** Port of generateImageOpenAI (2635-2736). refData is always empty here. */
     async generateImageOpenAI(prompt, style, settings, options = {}) {
         const url = buildOpenAIUrl(settings.endpoint, 'images/generations');
-        const { imageRefs, textOnlyClothing, textDirectives } = EMPTY_REFS;
+        const { imageRefs, textOnlyClothing, textDirectives } = options._refs || EMPTY_REFS;
 
         const promptParts = [];
         if (style) promptParts.push(`[Style: ${style}]`);
@@ -936,7 +1002,7 @@ export class ImageGenerator {
     /** Port of generateImageOpenAIChat (2809-2911). refData is always empty here. */
     async generateImageOpenAIChat(prompt, style, settings, options = {}) {
         const url = buildOpenAIUrl(settings.endpoint, 'chat/completions');
-        const { imageRefs, textOnlyClothing, textDirectives } = EMPTY_REFS;
+        const { imageRefs, textOnlyClothing, textDirectives } = options._refs || EMPTY_REFS;
 
         let aspectRatio = options.aspectRatio || settings.aspectRatio || '1:1';
         if (!VALID_ASPECT_RATIOS.includes(aspectRatio)) aspectRatio = '1:1';
@@ -1032,7 +1098,7 @@ export class ImageGenerator {
             console.log(`[AstralImageGen] Gemini random format: ${aspectRatio} ${imageSize}`);
         }
 
-        const { imageRefs, textOnlyClothing, textDirectives } = EMPTY_REFS;
+        const { imageRefs, textOnlyClothing, textDirectives } = options._refs || EMPTY_REFS;
         const faceRefs = imageRefs.filter(r => r.type === 'face');
         const clothingImageRefs = imageRefs.filter(r => r.type === 'clothing');
         const hairstyleRefs = imageRefs.filter(r => r.type === 'hairstyle');
