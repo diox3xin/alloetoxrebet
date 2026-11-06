@@ -148,46 +148,84 @@ function candidateKeys(character, name, extra = []) {
 
 /**
  * Внешность из записи библиотеки.
- * Повторяет getCharacterLibraryDescription (references.js:327-334):
- * primary.description + все текстовые appearanceItems с enabled !== false.
+ *
+ * Основной путь повторяет Haruspics: primary.description + текстовые
+ * appearanceItems. Но формат библиотеки пережил несколько миграций
+ * (descriptions[] / references[] → appearanceItems[]), поэтому в конце
+ * работает «сборщик текста»: он вытаскивает любые человекочитаемые строки
+ * из записи. Иначе заполненная в UI внешность молча теряется.
  */
 function extractAppearance(entry) {
     if (!entry || typeof entry !== 'object') return { appearance: '', refs: [] };
 
     const parts = [];
+    const refs = [];
+
+    const pushText = (value) => {
+        const s = String(value ?? '').replace(/\s+/g, ' ').trim();
+        if (s && !parts.includes(s)) parts.push(s);
+    };
 
     // primary — отдельный объект, не входит в appearanceItems
     const primary = entry.primary;
     if (primary && typeof primary === 'object' && primary.enabled !== false) {
-        const d = String(primary.description || '').trim();
-        if (d) parts.push(d);
+        pushText(primary.description || primary.text);
+        const p = String(primary.imagePath || '').trim();
+        if (p) refs.push(p);
     }
 
-    const refs = [];
+    // текущий формат
     for (const item of (entry.appearanceItems || [])) {
         if (!item || typeof item !== 'object') continue;
         if (item.enabled === false) continue;
-
         if (item.type === 'image') {
             const p = String(item.imagePath || item.path || '').trim();
             if (p) refs.push(p);
             continue;
         }
-
-        // только текстовые айтемы попадают в описание
-        if (item.type && item.type !== 'text') continue;
-        const d = String(item.description || item.text || '').trim();
-        if (d) parts.push(d);
+        pushText(item.description || item.text);
     }
 
-    const appearance = parts
-        .map(p => p.replace(/\s+/g, ' ').trim())
-        .filter(Boolean)
-        .join(', ')
-        .replace(/,\s*,/g, ',')
-        .trim();
+    // legacy: descriptions[] — массив строк или {text}
+    for (const d of (entry.descriptions || [])) {
+        if (typeof d === 'string') { pushText(d); continue; }
+        if (d && typeof d === 'object' && d.enabled !== false) pushText(d.text || d.description);
+    }
 
-    return { appearance, refs };
+    // legacy: references[] — только текстовые описания
+    for (const r of (entry.references || [])) {
+        if (!r || typeof r !== 'object') continue;
+        if (r.enabled === false) continue;
+        const p = String(r.imagePath || '').trim();
+        if (p) refs.push(p);
+        pushText(r.description || r.text);
+    }
+
+    // страховка: если ничего не собрали — вытаскиваем человекочитаемые строки
+    if (parts.length === 0) {
+        const skipKey = /^(id|type|imagePath|path|name|displayName|mimeType|kind|source)$/i;
+        const walk = (node, depth) => {
+            if (!node || depth > 3) return;
+            if (typeof node === 'string') return;
+            if (Array.isArray(node)) { node.forEach(n => walk(n, depth + 1)); return; }
+            if (typeof node !== 'object') return;
+            for (const [k, v] of Object.entries(node)) {
+                if (skipKey.test(k)) continue;
+                if (typeof v === 'string') {
+                    // отбрасываем служебные значения: пути, id, enum-токены
+                    if (/[\/\\]/.test(v) && v.length < 200 && !/\s/.test(v)) continue;
+                    if (/^[a-z0-9_-]{1,24}$/i.test(v)) continue;
+                    pushText(v);
+                } else if (v && typeof v === 'object') {
+                    walk(v, depth + 1);
+                }
+            }
+        };
+        walk(entry, 0);
+    }
+
+    const appearance = parts.join(', ').replace(/,\s*,/g, ',').trim();
+    return { appearance, refs: [...new Set(refs)] };
 }
 
 /** Достаёт запись из библиотеки по списку ключей, с мягким фолбэком. */
@@ -200,16 +238,35 @@ function lookupEntry(library, bucketName, keys, displayName) {
         if (hit && typeof hit === 'object') return hit;
     }
 
-    // мягкий поиск: по displayName и по совпадению ключа без префикса/расширения
+    const all = Object.entries(bucket).filter(([, v]) => v && typeof v === 'object');
     const wanted = normName(displayName);
-    for (const [key, entry] of Object.entries(bucket)) {
-        if (!entry || typeof entry !== 'object') continue;
-        const dn = normName(entry.displayName);
-        if (wanted && dn && dn === wanted) return entry;
 
-        const bare = normName(key.replace(/^avatar:/i, '').replace(/^name:/i, '').replace(/^id:/i, ''));
-        if (wanted && bare === wanted) return entry;
-        if (wanted && bare && (bare.includes(wanted) || wanted.includes(bare))) return entry;
+    // точное совпадение displayName
+    if (wanted) {
+        const byDisplay = all.find(([, v]) => normName(v.displayName) === wanted);
+        if (byDisplay) return byDisplay[1];
+    }
+
+    // ключ без префикса и расширения
+    if (wanted) {
+        const bareOf = (k) => normName(String(k).split(':').pop());
+        const byBare = all.find(([k]) => {
+            const bare = bareOf(k);
+            return bare === wanted || bare.includes(wanted) || wanted.includes(bare);
+        });
+        if (byBare) return byBare[1];
+    }
+
+    // ключ содержит имя персонажа где угодно
+    if (wanted) {
+        const bySubstring = all.find(([k]) => normName(k).includes(wanted));
+        if (bySubstring) return bySubstring[1];
+    }
+
+    // единственная запись в бакете — берём её: почти всегда это и есть наш перс
+    if (all.length === 1) {
+        console.warn(`${MODULE} ключ не совпал, использую единственную запись bucket="${bucketName}": ${all[0][0]}`);
+        return all[0][1];
     }
 
     return null;
@@ -402,12 +459,24 @@ export function collectHaruspics(imageGen, ctx) {
 
     // Ничего не нашлось — печатаем реальную структуру, чтобы починить точно
     if (!out.chars.length && library && typeof library === 'object') {
-        const charKeysAvail = Object.keys(library.characters || {});
-        const userKeysAvail = Object.keys(library.users || {});
-        console.warn(`${MODULE} внешность не найдена. Искал ключи:`, charKeys);
-        console.warn(`${MODULE} есть в библиотеке characters:`, charKeysAvail);
-        console.warn(`${MODULE} есть в библиотеке users:`, userKeysAvail);
-        console.warn(`${MODULE} персонаж:`, { name: charName, avatar: avatarHint });
+        const entriesFound = [];
+        for (const bucket of ['characters', 'users']) {
+            for (const [k, v] of Object.entries(library[bucket] || {})) {
+                entriesFound.push({ bucket, key: k, type: typeof v, fields: v && typeof v === 'object' ? Object.keys(v) : null });
+            }
+        }
+        console.warn(`${MODULE} ВНЕШНОСТЬ НЕ НАЙДЕНА`);
+        console.warn(`${MODULE} искал ключи      : ${JSON.stringify(charKeys)}`);
+        console.warn(`${MODULE} characters keys   : ${JSON.stringify(Object.keys(library.characters || {}))}`);
+        console.warn(`${MODULE} users keys        : ${JSON.stringify(Object.keys(library.users || {}))}`);
+        console.warn(`${MODULE} персонаж          : ${JSON.stringify({ name: charName, avatar: avatarHint })}`);
+
+        console.warn(`${MODULE} найденные записи  : ${JSON.stringify(entriesFound)}`);
+
+        const sampleChar = Object.values(library.characters || {})[0];
+        if (sampleChar && typeof sampleChar === 'object') {
+            console.warn(`${MODULE} пример записи raw : ${JSON.stringify(sampleChar).slice(0, 900)}`);
+        }
     }
 
     if (!out.style && !out.chars.length && !out.lorebook.length) {
