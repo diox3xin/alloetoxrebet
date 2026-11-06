@@ -2070,6 +2070,175 @@ REPLY (text only):`;
   var MODULE = "[AstralPrompt]";
   var QUALITY_TAGS = "masterpiece, best quality, very aesthetic, absurdres, highly detailed";
   var DEFAULT_NEGATIVE = "lowres, bad anatomy, bad hands, text, watermark, logo, blurry, jpeg artifacts, worst quality, low quality, deformed, extra limbs, extra fingers, cropped, out of frame";
+  function deepWalk(root, visit, maxDepth = 5) {
+    const seen = /* @__PURE__ */ new WeakSet();
+    const walk = /* @__PURE__ */ __name((node, depth, path) => {
+      if (!node || typeof node !== "object" || depth > maxDepth) return;
+      if (seen.has(node)) return;
+      seen.add(node);
+      visit(node, depth, path);
+      for (const [k, v] of Object.entries(node)) {
+        if (v && typeof v === "object") walk(v, depth + 1, path ? `${path}.${k}` : k);
+      }
+    }, "walk");
+    walk(root, 0, "");
+  }
+  __name(deepWalk, "deepWalk");
+  var TEXT_KEYS = ["text", "prompt", "content", "value", "description"];
+  function firstText(obj, keys = TEXT_KEYS) {
+    if (!obj || typeof obj !== "object") return "";
+    for (const k of keys) {
+      const v = obj[k];
+      if (typeof v === "string" && v.trim()) return v.trim();
+    }
+    return "";
+  }
+  __name(firstText, "firstText");
+  function normName(value) {
+    return String(value || "").toLowerCase().replace(/\.[a-z0-9]{2,5}$/, "").replace(/[_\s-]+/g, " ").trim();
+  }
+  __name(normName, "normName");
+  function findStyle(raw) {
+    if (!raw) return "";
+    for (const k of ["style", "artStyle", "activeStyle", "stylePreset", "promptPrefix"]) {
+      const v = raw[k];
+      if (typeof v === "string" && v.trim()) return v.trim();
+    }
+    const presetArrays = [];
+    for (const [k, v] of Object.entries(raw)) {
+      if (!Array.isArray(v) || !/style|preset/i.test(k)) continue;
+      const items = v.filter((x) => x && typeof x === "object" && firstText(x));
+      if (items.length) presetArrays.push(items);
+    }
+    for (const k of Object.keys(raw)) {
+      if (!/^active.*(style|preset)/i.test(k)) continue;
+      const id = String(raw[k] || "").trim();
+      if (!id) continue;
+      for (const items of presetArrays) {
+        const hit = items.find((x) => String(x.id || x.key || x.name || "") === id);
+        const text = firstText(hit);
+        if (text) return text;
+      }
+    }
+    const all = presetArrays.flat();
+    const enabled = all.filter((x) => x.enabled === true || x.active === true || x.selected === true);
+    if (enabled.length === 1) return firstText(enabled[0]);
+    if (all.length === 1) return firstText(all[0]);
+    return "";
+  }
+  __name(findStyle, "findStyle");
+  function findAppearanceEntries(raw) {
+    const entries = [];
+    const seenNodes = /* @__PURE__ */ new WeakSet();
+    deepWalk(raw, (node, depth, path) => {
+      if (!Array.isArray(node.appearanceItems) || seenNodes.has(node)) return;
+      seenNodes.add(node);
+      const segs = String(path || "").split(".").filter(Boolean);
+      const key = segs[segs.length - 1] || "";
+      const displayName = String(node.displayName || "").trim() || key;
+      const texts = [];
+      const refs = [];
+      for (const item of node.appearanceItems) {
+        if (!item || item.enabled === false) continue;
+        if (item.type === "image") {
+          const p = String(item.imagePath || item.path || "").trim();
+          if (p) refs.push(p);
+        }
+        const d = firstText(item);
+        if (d) texts.push(d);
+      }
+      if (!texts.length && !refs.length) return;
+      entries.push({ key, displayName, texts, refs });
+    });
+    const legacy = raw?.characterReferenceDescriptions;
+    if (legacy && typeof legacy === "object") {
+      for (const bucket of ["characters", "users"]) {
+        const bag = legacy[bucket];
+        if (!bag || typeof bag !== "object") continue;
+        for (const [k, v] of Object.entries(bag)) {
+          const text = typeof v === "string" ? v.trim() : "";
+          if (!text) continue;
+          const displayName = String(legacy.displayNames?.[bucket]?.[k] || "").trim() || k;
+          entries.push({ key: k, displayName, texts: [text], refs: [] });
+        }
+      }
+    }
+    return entries;
+  }
+  __name(findAppearanceEntries, "findAppearanceEntries");
+  function pickEntry(entries, ...hints) {
+    if (!entries.length) return null;
+    const targets = hints.map(normName).filter(Boolean);
+    for (const t of targets) {
+      const exactDisplay = entries.find((e) => normName(e.displayName) === t);
+      if (exactDisplay) return exactDisplay;
+    }
+    for (const t of targets) {
+      const exactKey = entries.find((e) => normName(e.key) === t);
+      if (exactKey) return exactKey;
+    }
+    for (const t of targets) {
+      const partial = entries.find((e) => normName(e.displayName).includes(t) || normName(e.key).includes(t));
+      if (partial) return partial;
+    }
+    return null;
+  }
+  __name(pickEntry, "pickEntry");
+  function findLorebook(raw) {
+    const out = [];
+    const seen = /* @__PURE__ */ new WeakSet();
+    deepWalk(raw, (node) => {
+      if (!Array.isArray(node.refs) || seen.has(node)) return;
+      seen.add(node);
+      if (node.enabled === false) return;
+      for (const ref of node.refs) {
+        if (!ref || ref.enabled === false) continue;
+        const desc = firstText(ref);
+        if (!desc) continue;
+        const name = String(ref.name || "").trim();
+        out.push(name ? `${name}, ${desc}` : desc);
+      }
+    });
+    if (Array.isArray(raw?.additionalReferences)) {
+      for (const ref of raw.additionalReferences) {
+        if (!ref || ref.enabled === false) continue;
+        const desc = firstText(ref);
+        if (!desc) continue;
+        const name = String(ref.name || "").trim();
+        out.push(name ? `${name}, ${desc}` : desc);
+      }
+    }
+    return [...new Set(out)];
+  }
+  __name(findLorebook, "findLorebook");
+  function dumpSettingsShape(raw, maxLines = 140) {
+    const lines = [];
+    const seen = /* @__PURE__ */ new WeakSet();
+    const walk = /* @__PURE__ */ __name((node, depth, path) => {
+      if (!node || typeof node !== "object" || depth > 3 || lines.length >= maxLines) return;
+      if (seen.has(node)) return;
+      seen.add(node);
+      for (const [k, v] of Object.entries(node)) {
+        if (lines.length >= maxLines) return;
+        const p = path ? `${path}.${k}` : k;
+        if (Array.isArray(v)) {
+          const sample = v.find((x) => x && typeof x === "object");
+          lines.push(`${p}[] n=${v.length}${sample ? ` {${Object.keys(sample).slice(0, 8).join(",")}}` : ""}`);
+          if (sample) walk(sample, depth + 1, `${p}[0]`);
+        } else if (v && typeof v === "object") {
+          lines.push(`${p}{} {${Object.keys(v).slice(0, 10).join(",")}}`);
+          walk(v, depth + 1, p);
+        } else if (typeof v === "string" && v.trim()) {
+          lines.push(`${p} = "${v.slice(0, 40)}"`);
+        } else if (typeof v === "boolean" || typeof v === "number") {
+          lines.push(`${p} = ${v}`);
+        }
+      }
+    }, "walk");
+    walk(raw, 0, "");
+    return lines;
+  }
+  __name(dumpSettingsShape, "dumpSettingsShape");
   function collectHaruspics(imageGen2, ctx) {
     const empty = {
       available: false,
@@ -2089,70 +2258,46 @@ REPLY (text only):`;
     if (!raw) return empty;
     const charName = resolveCharName(ctx);
     const userName = resolveUserName(ctx);
+    const avatarHint = String(ctx?.characters?.[ctx?.characterId]?.avatar || "").trim();
     const out = { ...empty, available: true };
+    out.style = findStyle(raw);
     try {
-      const activeId = String(raw.activeStyleId || "").trim();
-      const presets = Array.isArray(raw.stylePresets) ? raw.stylePresets : [];
-      const preset = presets.find((p) => p.id === activeId);
-      out.style = String(preset?.text || preset?.prompt || "").trim();
-    } catch (_) {
-    }
-    try {
-      const negId = String(raw.activeNegativeId || "").trim();
       const items = Array.isArray(raw.negativeGalleryItems) ? raw.negativeGalleryItems : [];
-      const active = items.find((i) => i.id === negId);
-      out.negative = String(active?.prompt || "").trim();
-    } catch (_) {
-    }
-    try {
-      if (raw.refInstructionEnabled !== false) {
-        out.refInstruction = String(raw.refInstruction || "").trim();
+      if (items.length) {
+        const activeId = String(raw.activeNegativeId || "").trim();
+        const active = items.find((i) => i.id === activeId) || items.find((i) => i.enabled === true || i.active === true);
+        out.negative = firstText(active) || "";
       }
     } catch (_) {
     }
-    try {
-      const lib = raw.characterReferenceLibrary;
-      const grab = /* @__PURE__ */ __name((bucket, name) => {
-        if (!lib || !name) return null;
-        const entry = lib[bucket]?.[name];
-        if (!entry) return null;
-        const texts = [];
-        const refs = [];
-        for (const item of entry.appearanceItems || []) {
-          if (item.enabled === false) continue;
-          if (item.type === "image") {
-            if (item.imagePath) refs.push(item.imagePath);
-            if (item.description) texts.push(String(item.description).trim());
-          } else if (item.description) {
-            texts.push(String(item.description).trim());
-          }
-        }
-        if (texts.length === 0 && refs.length === 0) return null;
-        return { name, appearance: texts.join(", ").replace(/,\s*,/g, ",").trim(), refs };
-      }, "grab");
-      const ch = grab("characters", charName);
-      if (ch) out.chars.push(ch);
-      const us = grab("users", userName);
-      if (us) out.chars.push(us);
-    } catch (_) {
+    if (raw.refInstructionEnabled !== false) {
+      out.refInstruction = String(raw.refInstruction || "").trim();
     }
-    try {
-      const books = Array.isArray(raw.lorebooks) ? raw.lorebooks : [];
-      for (const book of books) {
-        if (book.enabled === false) continue;
-        for (const ref of book.refs || []) {
-          if (ref.enabled === false) continue;
-          const desc = String(ref.description || "").trim();
-          if (!desc) continue;
-          const name = String(ref.name || "").trim();
-          out.lorebook.push(name ? `${name}, ${desc}` : desc);
-        }
-      }
-    } catch (_) {
+    const entries = findAppearanceEntries(raw);
+    const charEntry = pickEntry(entries, charName, avatarHint);
+    if (charEntry) {
+      out.chars.push({
+        name: charName,
+        appearance: charEntry.texts.join(", ").replace(/,\s*,/g, ",").trim(),
+        refs: charEntry.refs
+      });
     }
+    const userEntry = pickEntry(entries, userName);
+    if (userEntry && userEntry !== charEntry) {
+      out.chars.push({
+        name: userName,
+        appearance: userEntry.texts.join(", ").replace(/,\s*,/g, ",").trim(),
+        refs: userEntry.refs
+      });
+    }
+    out.lorebook = findLorebook(raw);
     out.sendCharAvatar = Boolean(raw.sendCharAvatar);
     out.sendUserAvatar = Boolean(raw.sendUserAvatar);
-    console.log(`${MODULE} Haruspics: style=${out.style ? "yes" : "no"} chars=${out.chars.length} lorebook=${out.lorebook.length} neg=${out.negative ? "yes" : "no"}`);
+    console.log(`${MODULE} Haruspics: style=${out.style ? "yes" : "no"} chars=${out.chars.length} (entries=${entries.length}) lorebook=${out.lorebook.length} neg=${out.negative ? "yes" : "no"}`);
+    if (!out.style && !out.chars.length && !out.lorebook.length) {
+      console.warn(`${MODULE} \u043D\u0438\u0447\u0435\u0433\u043E \u043D\u0435 \u043D\u0430\u0439\u0434\u0435\u043D\u043E. \u0420\u0435\u0430\u043B\u044C\u043D\u0430\u044F \u0441\u0442\u0440\u0443\u043A\u0442\u0443\u0440\u0430 inline_image_gen:`);
+      for (const line of dumpSettingsShape(raw)) console.warn(`  ${line}`);
+    }
     return out;
   }
   __name(collectHaruspics, "collectHaruspics");

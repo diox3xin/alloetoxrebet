@@ -28,22 +28,241 @@ export const DEFAULT_NEGATIVE = 'lowres, bad anatomy, bad hands, text, watermark
 
 /* ─────────────────────────── Haruspics ─────────────────────────── */
 
+/* ─────────────────────────── обход настроек ─────────────────────────── */
+
+/** Обход объекта настроек по структуре, а не по угаданным ключам. */
+function deepWalk(root, visit, maxDepth = 5) {
+    const seen = new WeakSet();
+    const walk = (node, depth, path) => {
+        if (!node || typeof node !== 'object' || depth > maxDepth) return;
+        if (seen.has(node)) return;
+        seen.add(node);
+        visit(node, depth, path);
+        for (const [k, v] of Object.entries(node)) {
+            if (v && typeof v === 'object') walk(v, depth + 1, path ? `${path}.${k}` : k);
+        }
+    };
+    walk(root, 0, '');
+}
+
+const TEXT_KEYS = ['text', 'prompt', 'content', 'value', 'description'];
+
+/** Первое непустое строковое поле из списка. */
+function firstText(obj, keys = TEXT_KEYS) {
+    if (!obj || typeof obj !== 'object') return '';
+    for (const k of keys) {
+        const v = obj[k];
+        if (typeof v === 'string' && v.trim()) return v.trim();
+    }
+    return '';
+}
+
+/** Нормализация имени для сравнения: без расширения, регистра, разделителей. */
+function normName(value) {
+    return String(value || '')
+        .toLowerCase()
+        .replace(/\.[a-z0-9]{2,5}$/, '')
+        .replace(/[_\s-]+/g, ' ')
+        .trim();
+}
+
+/* ─────────────────────────── стиль ─────────────────────────── */
+
+/**
+ * Ищет активный стиль. Haruspics хранит id активного пресета и массив пресетов,
+ * но имена полей зависят от версии, поэтому проверяем несколько вариантов:
+ * прямые строковые поля → id + массив → единственный включённый → единственный.
+ */
+function findStyle(raw) {
+    if (!raw) return '';
+
+    // прямые строковые поля
+    for (const k of ['style', 'artStyle', 'activeStyle', 'stylePreset', 'promptPrefix']) {
+        const v = raw[k];
+        if (typeof v === 'string' && v.trim()) return v.trim();
+    }
+
+    // массивы пресетов
+    const presetArrays = [];
+    for (const [k, v] of Object.entries(raw)) {
+        if (!Array.isArray(v) || !/style|preset/i.test(k)) continue;
+        const items = v.filter(x => x && typeof x === 'object' && firstText(x));
+        if (items.length) presetArrays.push(items);
+    }
+
+    // id → элемент массива
+    for (const k of Object.keys(raw)) {
+        if (!/^active.*(style|preset)/i.test(k)) continue;
+        const id = String(raw[k] || '').trim();
+        if (!id) continue;
+        for (const items of presetArrays) {
+            const hit = items.find(x => String(x.id || x.key || x.name || '') === id);
+            const text = firstText(hit);
+            if (text) return text;
+        }
+    }
+
+    // единственный включённый / единственный существующий
+    const all = presetArrays.flat();
+    const enabled = all.filter(x => x.enabled === true || x.active === true || x.selected === true);
+    if (enabled.length === 1) return firstText(enabled[0]);
+    if (all.length === 1) return firstText(all[0]);
+
+    return '';
+}
+
+/* ─────────────────────────── внешность ─────────────────────────── */
+
+/**
+ * Собирает записи о внешности из библиотеки персонажей.
+ *
+ * Ключевой момент: Haruspics индексирует записи по имени файла аватарки
+ * (`avatar:Mira.png`) или по имени персоны, а человеческое имя лежит в
+ * `displayName`. Поэтому сравнение идёт и по ключу, и по displayName.
+ */
+function findAppearanceEntries(raw) {
+    const entries = [];
+    const seenNodes = new WeakSet();
+
+    deepWalk(raw, (node, depth, path) => {
+        if (!Array.isArray(node.appearanceItems) || seenNodes.has(node)) return;
+        seenNodes.add(node);
+
+        const segs = String(path || '').split('.').filter(Boolean);
+        const key = segs[segs.length - 1] || '';
+        const displayName = String(node.displayName || '').trim() || key;
+
+        const texts = [];
+        const refs = [];
+        for (const item of node.appearanceItems) {
+            if (!item || item.enabled === false) continue;
+            if (item.type === 'image') {
+                const p = String(item.imagePath || item.path || '').trim();
+                if (p) refs.push(p);
+            }
+            const d = firstText(item);
+            if (d) texts.push(d);
+        }
+
+        if (!texts.length && !refs.length) return;
+        entries.push({ key, displayName, texts, refs });
+    });
+
+    // старый формат: characterReferenceDescriptions.characters[name] = "строка"
+    const legacy = raw?.characterReferenceDescriptions;
+    if (legacy && typeof legacy === 'object') {
+        for (const bucket of ['characters', 'users']) {
+            const bag = legacy[bucket];
+            if (!bag || typeof bag !== 'object') continue;
+            for (const [k, v] of Object.entries(bag)) {
+                const text = typeof v === 'string' ? v.trim() : '';
+                if (!text) continue;
+                const displayName = String(legacy.displayNames?.[bucket]?.[k] || '').trim() || k;
+                entries.push({ key: k, displayName, texts: [text], refs: [] });
+            }
+        }
+    }
+
+    return entries;
+}
+
+/** Выбирает запись по имени персонажа, имени файла аватарки или частичному совпадению. */
+function pickEntry(entries, ...hints) {
+    if (!entries.length) return null;
+    const targets = hints.map(normName).filter(Boolean);
+
+    for (const t of targets) {
+        const exactDisplay = entries.find(e => normName(e.displayName) === t);
+        if (exactDisplay) return exactDisplay;
+    }
+    for (const t of targets) {
+        const exactKey = entries.find(e => normName(e.key) === t);
+        if (exactKey) return exactKey;
+    }
+    for (const t of targets) {
+        const partial = entries.find(e =>
+            normName(e.displayName).includes(t) || normName(e.key).includes(t));
+        if (partial) return partial;
+    }
+    return null;
+}
+
+/* ─────────────────────────── лорбуки ─────────────────────────── */
+
+function findLorebook(raw) {
+    const out = [];
+    const seen = new WeakSet();
+
+    deepWalk(raw, (node) => {
+        if (!Array.isArray(node.refs) || seen.has(node)) return;
+        seen.add(node);
+        if (node.enabled === false) return;
+        for (const ref of node.refs) {
+            if (!ref || ref.enabled === false) continue;
+            const desc = firstText(ref);
+            if (!desc) continue;
+            const name = String(ref.name || '').trim();
+            out.push(name ? `${name}, ${desc}` : desc);
+        }
+    });
+
+    // плоский список дополнительных референсов
+    if (Array.isArray(raw?.additionalReferences)) {
+        for (const ref of raw.additionalReferences) {
+            if (!ref || ref.enabled === false) continue;
+            const desc = firstText(ref);
+            if (!desc) continue;
+            const name = String(ref.name || '').trim();
+            out.push(name ? `${name}, ${desc}` : desc);
+        }
+    }
+
+    return [...new Set(out)];
+}
+
+/* ─────────────────────────── диагностика ─────────────────────────── */
+
+/**
+ * Компактное дерево настроек — печатается, только если ничего не нашлось.
+ * Нужно, чтобы не угадывать имена полей, а увидеть их.
+ */
+export function dumpSettingsShape(raw, maxLines = 140) {
+    const lines = [];
+    const seen = new WeakSet();
+
+    const walk = (node, depth, path) => {
+        if (!node || typeof node !== 'object' || depth > 3 || lines.length >= maxLines) return;
+        if (seen.has(node)) return;
+        seen.add(node);
+
+        for (const [k, v] of Object.entries(node)) {
+            if (lines.length >= maxLines) return;
+            const p = path ? `${path}.${k}` : k;
+
+            if (Array.isArray(v)) {
+                const sample = v.find(x => x && typeof x === 'object');
+                lines.push(`${p}[] n=${v.length}${sample ? ` {${Object.keys(sample).slice(0, 8).join(',')}}` : ''}`);
+                if (sample) walk(sample, depth + 1, `${p}[0]`);
+            } else if (v && typeof v === 'object') {
+                lines.push(`${p}{} {${Object.keys(v).slice(0, 10).join(',')}}`);
+                walk(v, depth + 1, p);
+            } else if (typeof v === 'string' && v.trim()) {
+                lines.push(`${p} = "${v.slice(0, 40)}"`);
+            } else if (typeof v === 'boolean' || typeof v === 'number') {
+                lines.push(`${p} = ${v}`);
+            }
+        }
+    };
+
+    walk(raw, 0, '');
+    return lines;
+}
+
+/* ─────────────────────────── Haruspics ─────────────────────────── */
+
 /**
  * Собирает всё, что расширение картинок может дать телефону.
  * Никогда не бросает — при отсутствии Haruspics возвращает пустой набор.
- *
- * @param {object} imageGen экземпляр ImageGenerator
- * @param {object} ctx SillyTavern context
- * @returns {{
- *   available: boolean,
- *   style: string,
- *   negative: string,
- *   refInstruction: string,
- *   chars: Array<{name: string, appearance: string, refs: string[]}>,
- *   lorebook: string[],
- *   sendCharAvatar: boolean,
- *   sendUserAvatar: boolean,
- * }}
  */
 export function collectHaruspics(imageGen, ctx) {
     const empty = {
@@ -65,83 +284,66 @@ export function collectHaruspics(imageGen, ctx) {
 
     const charName = resolveCharName(ctx);
     const userName = resolveUserName(ctx);
+    const avatarHint = String(ctx?.characters?.[ctx?.characterId]?.avatar || '').trim();
 
     const out = { ...empty, available: true };
 
     /* ── стиль ── */
-    try {
-        const activeId = String(raw.activeStyleId || '').trim();
-        const presets = Array.isArray(raw.stylePresets) ? raw.stylePresets : [];
-        const preset = presets.find(p => p.id === activeId);
-        out.style = String(preset?.text || preset?.prompt || '').trim();
-    } catch (_) { /* ignore */ }
+    out.style = findStyle(raw);
 
-    /* ── негатив из библиотеки ── */
+    /* ── негатив ── */
     try {
-        const negId = String(raw.activeNegativeId || '').trim();
         const items = Array.isArray(raw.negativeGalleryItems) ? raw.negativeGalleryItems : [];
-        const active = items.find(i => i.id === negId);
-        out.negative = String(active?.prompt || '').trim();
+        if (items.length) {
+            const activeId = String(raw.activeNegativeId || '').trim();
+            const active = items.find(i => i.id === activeId)
+                || items.find(i => i.enabled === true || i.active === true);
+            out.negative = firstText(active) || '';
+        }
     } catch (_) { /* ignore */ }
 
     /* ── инструкция к референсам ── */
-    try {
-        if (raw.refInstructionEnabled !== false) {
-            out.refInstruction = String(raw.refInstruction || '').trim();
-        }
-    } catch (_) { /* ignore */ }
+    if (raw.refInstructionEnabled !== false) {
+        out.refInstruction = String(raw.refInstruction || '').trim();
+    }
 
-    /* ── внешность из библиотеки персонажей ── */
-    try {
-        const lib = raw.characterReferenceLibrary;
-        const grab = (bucket, name) => {
-            if (!lib || !name) return null;
-            const entry = lib[bucket]?.[name];
-            if (!entry) return null;
+    /* ── внешность ── */
+    const entries = findAppearanceEntries(raw);
 
-            const texts = [];
-            const refs = [];
-            for (const item of (entry.appearanceItems || [])) {
-                if (item.enabled === false) continue;
-                if (item.type === 'image') {
-                    if (item.imagePath) refs.push(item.imagePath);
-                    // у image-айтема тоже бывает описание — оно полезно
-                    if (item.description) texts.push(String(item.description).trim());
-                } else if (item.description) {
-                    texts.push(String(item.description).trim());
-                }
-            }
-            if (texts.length === 0 && refs.length === 0) return null;
-            return { name, appearance: texts.join(', ').replace(/,\s*,/g, ',').trim(), refs };
-        };
+    const charEntry = pickEntry(entries, charName, avatarHint);
+    if (charEntry) {
+        out.chars.push({
+            name: charName,
+            appearance: charEntry.texts.join(', ').replace(/,\s*,/g, ',').trim(),
+            refs: charEntry.refs,
+        });
+    }
 
-        const ch = grab('characters', charName);
-        if (ch) out.chars.push(ch);
-        const us = grab('users', userName);
-        if (us) out.chars.push(us);
-    } catch (_) { /* ignore */ }
+    const userEntry = pickEntry(entries, userName);
+    if (userEntry && userEntry !== charEntry) {
+        out.chars.push({
+            name: userName,
+            appearance: userEntry.texts.join(', ').replace(/,\s*,/g, ',').trim(),
+            refs: userEntry.refs,
+        });
+    }
 
-    /* ── лорбуки: включённые записи с описанием ── */
-    try {
-        const books = Array.isArray(raw.lorebooks) ? raw.lorebooks : [];
-        for (const book of books) {
-            if (book.enabled === false) continue;
-            for (const ref of (book.refs || [])) {
-                if (ref.enabled === false) continue;
-                const desc = String(ref.description || '').trim();
-                if (!desc) continue;
-                const name = String(ref.name || '').trim();
-                out.lorebook.push(name ? `${name}, ${desc}` : desc);
-            }
-        }
-    } catch (_) { /* ignore */ }
+    /* ── лорбуки ── */
+    out.lorebook = findLorebook(raw);
 
-    /* ── отправлять ли аватарки как референсы ── */
+    /* ── аватарки как референсы ── */
     out.sendCharAvatar = Boolean(raw.sendCharAvatar);
     out.sendUserAvatar = Boolean(raw.sendUserAvatar);
 
     console.log(`${MODULE} Haruspics: style=${out.style ? 'yes' : 'no'} `
-        + `chars=${out.chars.length} lorebook=${out.lorebook.length} neg=${out.negative ? 'yes' : 'no'}`);
+        + `chars=${out.chars.length} (entries=${entries.length}) `
+        + `lorebook=${out.lorebook.length} neg=${out.negative ? 'yes' : 'no'}`);
+
+    // Ничего не нашлось — печатаем реальную структуру, чтобы починить точно
+    if (!out.style && !out.chars.length && !out.lorebook.length) {
+        console.warn(`${MODULE} ничего не найдено. Реальная структура inline_image_gen:`);
+        for (const line of dumpSettingsShape(raw)) console.warn(`  ${line}`);
+    }
 
     return out;
 }
