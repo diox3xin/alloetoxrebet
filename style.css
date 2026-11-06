@@ -996,6 +996,57 @@
   z-index: -1;
 }
 
+/* Вариант: Стандартные (туманность) */
+.astral-lockscreen-default .astral-lockscreen-bg {
+  background: 
+    radial-gradient(ellipse at 20% 50%, rgba(217,154,181,.25) 0%, transparent 50%),
+    radial-gradient(ellipse at 80% 80%, rgba(229,175,197,.15) 0%, transparent 40%),
+    linear-gradient(160deg, rgba(20,15,25,.95), rgba(13,11,16,.98));
+}
+
+/* Вариант: Звёзды */
+.astral-lockscreen-stars .astral-lockscreen-bg {
+  background:
+    radial-gradient(circle at 20px 30px, #EFE6EC 1px, transparent 1px),
+    radial-gradient(circle at 60px 70px, #EFE6EC 0.5px, transparent 0.5px),
+    radial-gradient(circle at 130px 80px, #EFE6EC 0.8px, transparent 0.8px),
+    radial-gradient(circle at 90px 10px, #EFE6EC 0.6px, transparent 0.6px),
+    radial-gradient(circle at 30px 80px, #EFE6EC 0.5px, transparent 0.5px),
+    radial-gradient(circle at 130px 130px, #EFE6EC 0.7px, transparent 0.7px),
+    radial-gradient(circle at 70px 40px, #EFE6EC 0.4px, transparent 0.4px),
+    linear-gradient(160deg, rgba(13,11,16,.98), rgba(8,6,12,.99));
+  background-size:
+    200px 200px,
+    300px 300px,
+    250px 250px,
+    350px 350px,
+    280px 280px,
+    320px 320px,
+    270px 270px,
+    100% 100%;
+  background-position:
+    0 0,
+    40px 60px,
+    130px 270px,
+    70px 100px,
+    0 0,
+    40px 40px,
+    0 0,
+    0 0;
+}
+
+/* Вариант: Градиент */
+.astral-lockscreen-gradient .astral-lockscreen-bg {
+  background: linear-gradient(135deg, rgba(217,154,181,.3) 0%, rgba(13,11,16,.95) 50%, rgba(8,6,12,.99) 100%);
+}
+
+/* Вариант: Пустота */
+.astral-lockscreen-void .astral-lockscreen-bg {
+  background: linear-gradient(160deg, rgba(13,11,16,.98), rgba(8,6,12,.99));
+}
+
+
+
 .astral-lockscreen-content {
   display: flex;
   flex-direction: column;

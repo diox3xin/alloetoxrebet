@@ -15,19 +15,14 @@ export class LockScreen {
     build() {
         const state = this.storage.getState();
         const settings = this.storage._root().settings || {};
-        const bgImage = settings.lockscreenBg || '';
+        const wallpaper = settings.lockscreenWallpaper || 'default';
         
         const overlay = document.createElement('div');
         overlay.id = 'astral-phone-lockscreen';
-        overlay.className = 'astral-lockscreen';
-        
-        // Фон
-        const bgStyle = bgImage 
-            ? `background-image: url('${bgImage}'); background-size: cover; background-position: center;`
-            : `background: linear-gradient(160deg, rgba(20,15,25,.95), rgba(13,11,16,.98));`;
+        overlay.className = `astral-lockscreen astral-lockscreen-${wallpaper}`;
         
         overlay.innerHTML = `
-            <div class="astral-lockscreen-bg" style="${bgStyle}"></div>
+            <div class="astral-lockscreen-bg"></div>
             
             <div class="astral-lockscreen-content">
                 <div class="astral-lockscreen-time" id="astral-lockscreen-time">--:--</div>

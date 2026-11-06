@@ -286,8 +286,21 @@ function injectSettingsPanel() {
         <label for="astral-phone-theme-bg">Фон телефона</label>
         <input type="color" id="astral-phone-theme-bg" value="#0D0B10" />
         
-        <label for="astral-phone-lockscreen-bg">Обои блокировки</label>
-        <input type="text" id="astral-phone-lockscreen-bg" placeholder="URL обоев или пусто" class="text_pole" />
+        <label for="astral-phone-wallpaper">Обои экрана</label>
+        <select id="astral-phone-wallpaper" class="text_pole">
+            <option value="default">Стандартные (туманность)</option>
+            <option value="stars">Звёзды</option>
+            <option value="gradient">Градиент</option>
+            <option value="void">Пустота</option>
+        </select>
+        
+        <label for="astral-phone-lockscreen-wallpaper">Обои блокировки</label>
+        <select id="astral-phone-lockscreen-wallpaper" class="text_pole">
+            <option value="default">Стандартные</option>
+            <option value="stars">Звёзды</option>
+            <option value="gradient">Градиент</option>
+            <option value="void">Пустота</option>
+        </select>
         
         <small class="notes">Провайдер Haruspics использует настройки из расширения Haruspics Fusion. Остальные провайдеры требуют API-ключи в User Settings → API.</small>
     </div>
@@ -308,7 +321,8 @@ function injectSettingsPanel() {
         document.getElementById('astral-phone-image-provider')?.addEventListener('change', saveSettings);
         document.getElementById('astral-phone-theme-accent')?.addEventListener('change', saveSettings);
         document.getElementById('astral-phone-theme-bg')?.addEventListener('change', saveSettings);
-        document.getElementById('astral-phone-lockscreen-bg')?.addEventListener('change', saveSettings);
+        document.getElementById('astral-phone-wallpaper')?.addEventListener('change', saveSettings);
+        document.getElementById('astral-phone-lockscreen-wallpaper')?.addEventListener('change', saveSettings);
     }
 }
 
@@ -319,12 +333,14 @@ function loadSettings() {
     const provider = document.getElementById('astral-phone-image-provider');
     const accent = document.getElementById('astral-phone-theme-accent');
     const bg = document.getElementById('astral-phone-theme-bg');
-    const lockbg = document.getElementById('astral-phone-lockscreen-bg');
+    const wallpaper = document.getElementById('astral-phone-wallpaper');
+    const lockWallpaper = document.getElementById('astral-phone-lockscreen-wallpaper');
     
     if (provider) provider.value = settings.imageProvider || 'haruspics';
     if (accent) accent.value = settings.themeAccent || '#D99AB5';
     if (bg) bg.value = settings.themeBg || '#0D0B10';
-    if (lockbg) lockbg.value = settings.lockscreenBg || '';
+    if (wallpaper) wallpaper.value = settings.wallpaper || 'default';
+    if (lockWallpaper) lockWallpaper.value = settings.lockscreenWallpaper || 'default';
     
     // Apply theme
     if (settings.themeAccent) {
@@ -332,6 +348,12 @@ function loadSettings() {
     }
     if (settings.themeBg) {
         document.documentElement.style.setProperty('--phone-bg', settings.themeBg);
+    }
+    if (settings.wallpaper) {
+        document.documentElement.style.setProperty('--phone-wallpaper', settings.wallpaper);
+    }
+    if (settings.lockscreenWallpaper) {
+        document.documentElement.style.setProperty('--lockscreen-wallpaper', settings.lockscreenWallpaper);
     }
 }
 
@@ -345,7 +367,8 @@ function saveSettings() {
     const provider = document.getElementById('astral-phone-image-provider');
     const accent = document.getElementById('astral-phone-theme-accent');
     const bg = document.getElementById('astral-phone-theme-bg');
-    const lockbg = document.getElementById('astral-phone-lockscreen-bg');
+    const wallpaper = document.getElementById('astral-phone-wallpaper');
+    const lockWallpaper = document.getElementById('astral-phone-lockscreen-wallpaper');
     
     if (provider) settings.imageProvider = provider.value;
     if (accent) {
@@ -356,8 +379,13 @@ function saveSettings() {
         settings.themeBg = bg.value;
         document.documentElement.style.setProperty('--phone-bg', bg.value);
     }
-    if (lockbg) {
-        settings.lockscreenBg = lockbg.value;
+    if (wallpaper) {
+        settings.wallpaper = wallpaper.value;
+        document.documentElement.style.setProperty('--phone-wallpaper', wallpaper.value);
+    }
+    if (lockWallpaper) {
+        settings.lockscreenWallpaper = lockWallpaper.value;
+        document.documentElement.style.setProperty('--lockscreen-wallpaper', lockWallpaper.value);
     }
     
     ctx.saveSettingsDebounced();

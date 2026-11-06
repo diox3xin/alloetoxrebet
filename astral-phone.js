@@ -18,13 +18,12 @@
     build() {
       const state = this.storage.getState();
       const settings = this.storage._root().settings || {};
-      const bgImage = settings.lockscreenBg || "";
+      const wallpaper = settings.lockscreenWallpaper || "default";
       const overlay = document.createElement("div");
       overlay.id = "astral-phone-lockscreen";
-      overlay.className = "astral-lockscreen";
-      const bgStyle = bgImage ? `background-image: url('${bgImage}'); background-size: cover; background-position: center;` : `background: linear-gradient(160deg, rgba(20,15,25,.95), rgba(13,11,16,.98));`;
+      overlay.className = `astral-lockscreen astral-lockscreen-${wallpaper}`;
       overlay.innerHTML = `
-            <div class="astral-lockscreen-bg" style="${bgStyle}"></div>
+            <div class="astral-lockscreen-bg"></div>
             
             <div class="astral-lockscreen-content">
                 <div class="astral-lockscreen-time" id="astral-lockscreen-time">--:--</div>
@@ -2447,8 +2446,21 @@ description \u043F\u0438\u0448\u0438 \u043A\u0430\u043A \u043F\u0440\u043E\u043C
         <label for="astral-phone-theme-bg">\u0424\u043E\u043D \u0442\u0435\u043B\u0435\u0444\u043E\u043D\u0430</label>
         <input type="color" id="astral-phone-theme-bg" value="#0D0B10" />
         
-        <label for="astral-phone-lockscreen-bg">\u041E\u0431\u043E\u0438 \u0431\u043B\u043E\u043A\u0438\u0440\u043E\u0432\u043A\u0438</label>
-        <input type="text" id="astral-phone-lockscreen-bg" placeholder="URL \u043E\u0431\u043E\u0435\u0432 \u0438\u043B\u0438 \u043F\u0443\u0441\u0442\u043E" class="text_pole" />
+        <label for="astral-phone-wallpaper">\u041E\u0431\u043E\u0438 \u044D\u043A\u0440\u0430\u043D\u0430</label>
+        <select id="astral-phone-wallpaper" class="text_pole">
+            <option value="default">\u0421\u0442\u0430\u043D\u0434\u0430\u0440\u0442\u043D\u044B\u0435 (\u0442\u0443\u043C\u0430\u043D\u043D\u043E\u0441\u0442\u044C)</option>
+            <option value="stars">\u0417\u0432\u0451\u0437\u0434\u044B</option>
+            <option value="gradient">\u0413\u0440\u0430\u0434\u0438\u0435\u043D\u0442</option>
+            <option value="void">\u041F\u0443\u0441\u0442\u043E\u0442\u0430</option>
+        </select>
+        
+        <label for="astral-phone-lockscreen-wallpaper">\u041E\u0431\u043E\u0438 \u0431\u043B\u043E\u043A\u0438\u0440\u043E\u0432\u043A\u0438</label>
+        <select id="astral-phone-lockscreen-wallpaper" class="text_pole">
+            <option value="default">\u0421\u0442\u0430\u043D\u0434\u0430\u0440\u0442\u043D\u044B\u0435</option>
+            <option value="stars">\u0417\u0432\u0451\u0437\u0434\u044B</option>
+            <option value="gradient">\u0413\u0440\u0430\u0434\u0438\u0435\u043D\u0442</option>
+            <option value="void">\u041F\u0443\u0441\u0442\u043E\u0442\u0430</option>
+        </select>
         
         <small class="notes">\u041F\u0440\u043E\u0432\u0430\u0439\u0434\u0435\u0440 Haruspics \u0438\u0441\u043F\u043E\u043B\u044C\u0437\u0443\u0435\u0442 \u043D\u0430\u0441\u0442\u0440\u043E\u0439\u043A\u0438 \u0438\u0437 \u0440\u0430\u0441\u0448\u0438\u0440\u0435\u043D\u0438\u044F Haruspics Fusion. \u041E\u0441\u0442\u0430\u043B\u044C\u043D\u044B\u0435 \u043F\u0440\u043E\u0432\u0430\u0439\u0434\u0435\u0440\u044B \u0442\u0440\u0435\u0431\u0443\u044E\u0442 API-\u043A\u043B\u044E\u0447\u0438 \u0432 User Settings \u2192 API.</small>
     </div>
@@ -2464,7 +2476,8 @@ description \u043F\u0438\u0448\u0438 \u043A\u0430\u043A \u043F\u0440\u043E\u043C
       document.getElementById("astral-phone-image-provider")?.addEventListener("change", saveSettings);
       document.getElementById("astral-phone-theme-accent")?.addEventListener("change", saveSettings);
       document.getElementById("astral-phone-theme-bg")?.addEventListener("change", saveSettings);
-      document.getElementById("astral-phone-lockscreen-bg")?.addEventListener("change", saveSettings);
+      document.getElementById("astral-phone-wallpaper")?.addEventListener("change", saveSettings);
+      document.getElementById("astral-phone-lockscreen-wallpaper")?.addEventListener("change", saveSettings);
     }
   }
   __name(injectSettingsPanel, "injectSettingsPanel");
@@ -2474,16 +2487,24 @@ description \u043F\u0438\u0448\u0438 \u043A\u0430\u043A \u043F\u0440\u043E\u043C
     const provider = document.getElementById("astral-phone-image-provider");
     const accent = document.getElementById("astral-phone-theme-accent");
     const bg = document.getElementById("astral-phone-theme-bg");
-    const lockbg = document.getElementById("astral-phone-lockscreen-bg");
+    const wallpaper = document.getElementById("astral-phone-wallpaper");
+    const lockWallpaper = document.getElementById("astral-phone-lockscreen-wallpaper");
     if (provider) provider.value = settings.imageProvider || "haruspics";
     if (accent) accent.value = settings.themeAccent || "#D99AB5";
     if (bg) bg.value = settings.themeBg || "#0D0B10";
-    if (lockbg) lockbg.value = settings.lockscreenBg || "";
+    if (wallpaper) wallpaper.value = settings.wallpaper || "default";
+    if (lockWallpaper) lockWallpaper.value = settings.lockscreenWallpaper || "default";
     if (settings.themeAccent) {
       document.documentElement.style.setProperty("--phone-accent", settings.themeAccent);
     }
     if (settings.themeBg) {
       document.documentElement.style.setProperty("--phone-bg", settings.themeBg);
+    }
+    if (settings.wallpaper) {
+      document.documentElement.style.setProperty("--phone-wallpaper", settings.wallpaper);
+    }
+    if (settings.lockscreenWallpaper) {
+      document.documentElement.style.setProperty("--lockscreen-wallpaper", settings.lockscreenWallpaper);
     }
   }
   __name(loadSettings, "loadSettings");
@@ -2496,7 +2517,8 @@ description \u043F\u0438\u0448\u0438 \u043A\u0430\u043A \u043F\u0440\u043E\u043C
     const provider = document.getElementById("astral-phone-image-provider");
     const accent = document.getElementById("astral-phone-theme-accent");
     const bg = document.getElementById("astral-phone-theme-bg");
-    const lockbg = document.getElementById("astral-phone-lockscreen-bg");
+    const wallpaper = document.getElementById("astral-phone-wallpaper");
+    const lockWallpaper = document.getElementById("astral-phone-lockscreen-wallpaper");
     if (provider) settings.imageProvider = provider.value;
     if (accent) {
       settings.themeAccent = accent.value;
@@ -2506,8 +2528,13 @@ description \u043F\u0438\u0448\u0438 \u043A\u0430\u043A \u043F\u0440\u043E\u043C
       settings.themeBg = bg.value;
       document.documentElement.style.setProperty("--phone-bg", bg.value);
     }
-    if (lockbg) {
-      settings.lockscreenBg = lockbg.value;
+    if (wallpaper) {
+      settings.wallpaper = wallpaper.value;
+      document.documentElement.style.setProperty("--phone-wallpaper", wallpaper.value);
+    }
+    if (lockWallpaper) {
+      settings.lockscreenWallpaper = lockWallpaper.value;
+      document.documentElement.style.setProperty("--lockscreen-wallpaper", lockWallpaper.value);
     }
     ctx.saveSettingsDebounced();
     console.log("[Astral Phone] settings saved:", settings);
