@@ -1,5 +1,7 @@
 /**
- * Messages — SMS threads with the characters.
+ * Messages — SMS threads with characters.
+ * Supports both live messages (fromUser boolean) and pre-seeded messages
+ * (from: 'them' | 'me') from ContactSeeder.
  */
 
 import { ICONS } from './phone-core.js';
@@ -12,54 +14,72 @@ export class MessagesApp {
         this.id = 'messages';
         this.title = 'Messages';
         this.icon = ICONS.messages;
+        this._thread = null;   // currently open character name
     }
 
     render(container, params = {}) {
+        if (params.character !== undefined) this._thread = params.character || null;
+
+        if (this._thread) {
+            this._renderThread(container, this._thread);
+        } else {
+            this._renderList(container);
+        }
+    }
+
+    /* ─────────────────────────── thread list ─────────────────────────── */
+
+    _renderList(container) {
         const state = this.storage.getState();
         const messages = state.messages || [];
 
         container.innerHTML = '';
-
-        if (params.character) {
-            this._renderThread(container, messages, params.character);
-            return;
-        }
 
         if (messages.length === 0) {
             container.innerHTML = `
                 <div class="astral-empty-state">
                     <div class="astral-empty-state-icon">${ICONS.messages}</div>
                     <div>Нет переписки</div>
-                    <div style="margin-top:10px;opacity:.7">Сообщения появятся, когда персонаж напишет</div>
+                    <div class="astral-empty-hint">Сообщения появятся автоматически или после /seed-contacts</div>
                 </div>`;
             return;
         }
 
-        const grouped = new Map();
+        // Group by character, collect last message and role
+        const threads = new Map();
         for (const msg of messages) {
             const key = msg.character || 'Неизвестный';
-            if (!grouped.has(key)) grouped.set(key, []);
-            grouped.get(key).push(msg);
+            const entry = threads.get(key);
+            if (!entry || msg.timestamp > entry.last.timestamp) {
+                threads.set(key, { last: msg, role: msg.role || entry?.role || '' });
+            } else if (!entry.role && msg.role) {
+                entry.role = msg.role;
+            }
         }
 
         const list = document.createElement('div');
         list.className = 'astral-thread-list';
 
-        for (const [char, msgs] of grouped) {
-            const last = msgs[msgs.length - 1];
+        for (const [char, { last, role }] of threads) {
             const item = document.createElement('div');
             item.className = 'astral-msg-item';
+            const isOut = this._isOut(last);
             item.innerHTML = `
                 <div class="astral-msg-avatar">${this._esc((char[0] || '?').toUpperCase())}</div>
                 <div class="astral-msg-content">
-                    <div class="astral-msg-name">${this._esc(char)}</div>
-                    <div class="astral-msg-preview">${this._esc(last.text)}</div>
+                    <div class="astral-msg-name-row">
+                        <span class="astral-msg-name">${this._esc(char)}</span>
+                        ${role ? `<span class="astral-msg-role">${this._esc(role)}</span>` : ''}
+                    </div>
+                    <div class="astral-msg-preview ${isOut ? 'astral-msg-preview--out' : ''}">
+                        ${isOut ? '→ ' : ''}${this._esc(this._truncate(last.text, 48))}
+                    </div>
                 </div>
                 <div class="astral-msg-time">${this._time(last.timestamp)}</div>
             `;
             item.addEventListener('click', () => {
-                const core = this._core();
-                core?.openApp('messages', { character: char });
+                this._thread = char;
+                this.render(document.querySelector('.astral-phone-body'));
             });
             list.appendChild(item);
         }
@@ -67,8 +87,33 @@ export class MessagesApp {
         container.appendChild(list);
     }
 
-    _renderThread(container, messages, character) {
-        const msgs = messages.filter((m) => m.character === character);
+    /* ─────────────────────────── single thread ─────────────────────────── */
+
+    _renderThread(container, character) {
+        const state = this.storage.getState();
+        const msgs = (state.messages || []).filter(m => m.character === character);
+        const role = msgs.find(m => m.role)?.role || '';
+
+        container.innerHTML = '';
+
+        // Back header
+        const header = document.createElement('div');
+        header.className = 'astral-thread-header';
+        header.innerHTML = `
+            <button class="astral-back-btn" id="astral-thread-back">
+                <svg viewBox="0 0 24 24" width="16" height="16" stroke="currentColor" fill="none" stroke-width="2.2">
+                    <path d="M19 12H5M5 12l7-7M5 12l7 7"/>
+                </svg>
+            </button>
+            <div class="astral-thread-avatar">${this._esc((character[0] || '?').toUpperCase())}</div>
+            <div class="astral-thread-info">
+                <div class="astral-thread-name">${this._esc(character)}</div>
+                ${role ? `<div class="astral-thread-role">${this._esc(role)}</div>` : ''}
+            </div>
+        `;
+        container.appendChild(header);
+
+        // Bubble area
         const wrap = document.createElement('div');
         wrap.className = 'astral-thread';
 
@@ -77,8 +122,9 @@ export class MessagesApp {
         }
 
         for (const msg of msgs) {
+            const isOut = this._isOut(msg);
             const bubble = document.createElement('div');
-            bubble.className = msg.fromUser ? 'astral-bubble astral-bubble--out' : 'astral-bubble astral-bubble--in';
+            bubble.className = `astral-bubble ${isOut ? 'astral-bubble--out' : 'astral-bubble--in'}`;
             bubble.innerHTML = `
                 <div class="astral-bubble-text">${this._esc(msg.text)}</div>
                 <div class="astral-bubble-time">${this._time(msg.timestamp, true)}</div>
@@ -87,23 +133,44 @@ export class MessagesApp {
         }
 
         container.appendChild(wrap);
-        container.scrollTop = container.scrollHeight;
+        wrap.scrollTop = wrap.scrollHeight;
+
+        header.querySelector('#astral-thread-back').addEventListener('click', () => {
+            this._thread = null;
+            this.render(document.querySelector('.astral-phone-body'));
+        });
     }
+
+    /* ─────────────────────────── event handler ─────────────────────────── */
 
     async handleEvent(eventData) {
         const state = this.storage.getState();
+        if (!Array.isArray(state.messages)) state.messages = [];
+
         state.messages.push({
             character: eventData.character || this.context.name2 || '',
             text: eventData.description || '',
             timestamp: Date.now(),
             fromUser: false,
+            from: 'them',
+            isIncoming: true,
         });
         this.storage.save();
         return { success: true, message: 'Сообщение добавлено' };
     }
 
-    _core() {
-        return window.__astralPhoneCore || null;
+    /* ─────────────────────────── utils ─────────────────────────── */
+
+    /** Unified check: supports both old `fromUser` flag and new `from` field. */
+    _isOut(msg) {
+        if (msg.from === 'me') return true;
+        if (msg.from === 'them') return false;
+        return Boolean(msg.fromUser);
+    }
+
+    _truncate(str, max) {
+        const s = String(str ?? '');
+        return s.length > max ? s.slice(0, max) + '…' : s;
     }
 
     _time(ts, short = false) {

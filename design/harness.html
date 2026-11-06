@@ -27,8 +27,34 @@ window.__switchChat = (id) => {
   chat_metadata = __chatStore[id];
 };
 window.__diskState = () => JSON.parse(JSON.stringify(__chatStore));
+window.__quietPrompt = async (prompt) => {
+  window.__lastPrompt = prompt;
+  return JSON.stringify({
+    contacts: [
+      { name: 'Мира', role: 'лучшая подруга', messages: [
+        { from: 'them', text: 'Ты где пропала?', minutesAgo: 120 },
+        { from: 'me', text: 'Прости, замоталась', minutesAgo: 110 },
+        { from: 'them', text: 'Пиши хоть иногда 🖤', minutesAgo: 100 }
+      ]},
+      { name: 'Кай', role: 'бывший', messages: [
+        { from: 'them', text: 'Не спишь?', minutesAgo: 40 },
+        { from: 'me', text: 'Сплю', minutesAgo: 35 }
+      ]},
+      { name: 'Босс', role: 'менеджер', messages: [
+        { from: 'them', text: 'Отчёт до утра', minutesAgo: 25 }
+      ]}
+    ]
+  });
+};
 window.SillyTavern = {
   getContext: () => ({
+    generateQuietPrompt: window.__quietPrompt,
+    name1: 'Тестюзер',
+    name2: 'Астра',
+    personas: { 'u1': { name: 'Тестюзер', description: 'фотограф, ночной житель' } },
+    user_persona: 'u1',
+    characters: { 0: { name: 'Астра', description: 'загадочная девушка из клуба', scenario: 'современный город' } },
+    characterId: 0,
     chatMetadata: chat_metadata,
     saveMetadata: async () => {
       window.__saveCount++;
@@ -37,8 +63,6 @@ window.SillyTavern = {
     saveMetadataDebounced: () => { window.__saveCount++; },
     getCurrentChatId: () => currentChatId,
     name2: 'Лиза Воронова',
-    characters: [{ name: 'Лиза Воронова' }],
-    characterId: 0,
     chat: [],
     updateChatMetadata: () => {},
     getRequestHeaders: () => ({ 'Content-Type': 'application/json' }),

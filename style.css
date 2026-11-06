@@ -1493,3 +1493,88 @@
   font-size: 13px;
   resize: none;
 }
+
+/* ── messages: thread header, role badge, outgoing preview ─── */
+.astral-thread-header {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 10px 14px;
+  border-bottom: 1px solid rgba(217,154,181,.12);
+  flex-shrink: 0;
+}
+
+.astral-back-btn {
+  width: 30px;
+  height: 30px;
+  display: grid;
+  place-items: center;
+  background: none;
+  border: 0;
+  border-radius: 8px;
+  color: var(--phone-accent);
+  cursor: pointer;
+  transition: .15s;
+  flex-shrink: 0;
+}
+.astral-back-btn:hover { background: rgba(217,154,181,.12); }
+
+.astral-thread-avatar {
+  width: 34px;
+  height: 34px;
+  border-radius: 50%;
+  background: linear-gradient(150deg, rgba(217,154,181,.3), rgba(217,154,181,.1));
+  border: 1px solid rgba(217,154,181,.25);
+  display: grid;
+  place-items: center;
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--phone-accent-light);
+  flex-shrink: 0;
+}
+
+.astral-thread-info { min-width: 0; }
+.astral-thread-name {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--phone-text);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.astral-thread-role {
+  font-size: 10px;
+  color: var(--phone-muted);
+  opacity: .8;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.astral-msg-name-row {
+  display: flex;
+  align-items: baseline;
+  gap: 6px;
+  flex-wrap: wrap;
+}
+
+.astral-msg-role {
+  font-size: 9px;
+  letter-spacing: .06em;
+  color: var(--phone-muted);
+  opacity: .75;
+  font-style: italic;
+}
+
+.astral-msg-preview--out {
+  color: rgba(217,154,181,.55);
+}
+
+.astral-empty-hint {
+  margin-top: 8px;
+  font-size: 10px;
+  opacity: .6;
+  text-align: center;
+  padding: 0 16px;
+  line-height: 1.5;
+}

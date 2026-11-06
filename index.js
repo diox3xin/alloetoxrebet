@@ -13,6 +13,7 @@ import { GalleryApp } from './apps/gallery.js';
 import { SpicyApp } from './apps/spicy.js';
 import { CreatorApp } from './apps/creator.js';
 import { SettingsApp } from './apps/settings.js';
+import { ContactSeeder } from './apps/contact-seeder.js';
 
 const MODULE_NAME = 'astral-phone';
 const EVENT_TAG_RE = /<phone-event\b([^>]*?)\/?>/gi;
@@ -21,6 +22,7 @@ const ATTR_RE = /(\w+)\s*=\s*"([^"]*)"/g;
 let core = null;
 let storage = null;
 let imageGen = null;
+let seeder = null;
 let initialized = false;
 
 /* ────────────────────────────── prompt block ────────────────────────────── */
@@ -54,6 +56,7 @@ function init() {
     imageGen = new ImageGenerator(context);
 
     core = new PhoneCore(context, storage, imageGen);
+    seeder = new ContactSeeder(context, storage);
 
     // Launcher first — the icon must appear even if an app fails to construct.
     window.__astralPhoneCore = core;
@@ -81,6 +84,7 @@ function init() {
         ['slash commands', registerSlashCommands],
         ['event fallback', registerEventTagFallback],
         ['chat switch', registerChatSwitchHandler],
+        ['contact seeder', registerContactSeeder],
         ['prompt block', injectPromptBlock],
     ]) {
         try {
@@ -272,6 +276,61 @@ function injectPromptBlock(context) {
     }
 }
 
+/* ────────────────────────────── contact seeder ────────────────────────────── */
+
+/**
+ * Auto-seed contacts on first phone open (non-blocking, runs in background).
+ * Also wires up /seed-contacts slash command for manual trigger.
+ */
+function registerContactSeeder(context) {
+    // Auto-seed: hook into the phone's open() to run once silently
+    const origOpen = core.open.bind(core);
+    core.open = function(...args) {
+        origOpen(...args);
+        if (!seeder.isSeeded()) {
+            _runSeed(false).catch(err =>
+                console.warn('[Astral Phone] auto-seed failed:', err));
+        }
+    };
+
+    // Also re-seed on chat switch (new chat = new seeder state)
+    const origSwitch = core._onChatSwitch?.bind(core) || null;
+    const ctx = context;
+    ctx.eventSource?.on?.(ctx.event_types?.CHAT_CHANGED, () => {
+        // Small delay so storage has time to invalidate
+        setTimeout(() => {
+            if (!seeder.isSeeded()) {
+                _runSeed(false).catch(() => {});
+            }
+        }, 800);
+    });
+}
+
+async function _runSeed(force = false) {
+    const toast = (msg, kind = 'info') => {
+        try { (window.toastr?.[kind] || window.toastr?.info)?.(msg); } catch {}
+    };
+
+    try {
+        const res = await seeder.seed({
+            force,
+            onProgress: (msg) => console.debug('[Astral Phone] seed:', msg),
+        });
+
+        if (res.skipped) return;
+
+        toast(`Телефон заполнен: ${res.contacts} контакт(ов)`, 'success');
+
+        // Refresh messages if open
+        if (core.isOpen && core.currentAppId === 'messages') {
+            core.openApp('messages');
+        }
+    } catch (err) {
+        console.warn('[Astral Phone] seed error:', err.message);
+        // Don't toast errors from auto-seed to avoid noise; manual command will surface them
+    }
+}
+
 /* ────────────────────────────── slash commands ────────────────────────────── */
 
 function registerSlashCommands(context) {
@@ -309,6 +368,36 @@ function registerSlashCommands(context) {
         },
         [],
         'Открыть телефон персонажа. /phone open | close | reset | event {"type":"photo_taken",...}',
+        true,
+        true,
+    );
+
+    context.registerSlashCommand(
+        'seed-contacts',
+        async (args) => {
+            const force = String(args || '').trim() === 'force';
+            const toast = (msg, kind = 'info') => {
+                try { (window.toastr?.[kind] || window.toastr?.info)?.(msg); } catch {}
+            };
+            try {
+                toast('Генерирую контакты…');
+                const res = await seeder.seed({
+                    force,
+                    onProgress: (msg) => toast(msg),
+                });
+                if (res.skipped) {
+                    toast('Контакты уже сгенерированы. Используй /seed-contacts force для повторной генерации.');
+                } else {
+                    toast(`Готово: ${res.contacts} контакт(ов) добавлено`, 'success');
+                    if (core.isOpen && core.currentAppId === 'messages') core.openApp('messages');
+                }
+            } catch (err) {
+                toast(`Ошибка: ${err.message}`, 'error');
+            }
+            return '';
+        },
+        [],
+        'Заполнить телефон контактами и сообщениями на основе персонажа. /seed-contacts [force]',
         true,
         true,
     );

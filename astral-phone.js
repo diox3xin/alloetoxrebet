@@ -1638,62 +1638,97 @@ ${prompt}
       this.id = "messages";
       this.title = "Messages";
       this.icon = ICONS.messages;
+      this._thread = null;
     }
     render(container, params = {}) {
+      if (params.character !== void 0) this._thread = params.character || null;
+      if (this._thread) {
+        this._renderThread(container, this._thread);
+      } else {
+        this._renderList(container);
+      }
+    }
+    /* ─────────────────────────── thread list ─────────────────────────── */
+    _renderList(container) {
       const state = this.storage.getState();
       const messages = state.messages || [];
       container.innerHTML = "";
-      if (params.character) {
-        this._renderThread(container, messages, params.character);
-        return;
-      }
       if (messages.length === 0) {
         container.innerHTML = `
                 <div class="astral-empty-state">
                     <div class="astral-empty-state-icon">${ICONS.messages}</div>
                     <div>\u041D\u0435\u0442 \u043F\u0435\u0440\u0435\u043F\u0438\u0441\u043A\u0438</div>
-                    <div style="margin-top:10px;opacity:.7">\u0421\u043E\u043E\u0431\u0449\u0435\u043D\u0438\u044F \u043F\u043E\u044F\u0432\u044F\u0442\u0441\u044F, \u043A\u043E\u0433\u0434\u0430 \u043F\u0435\u0440\u0441\u043E\u043D\u0430\u0436 \u043D\u0430\u043F\u0438\u0448\u0435\u0442</div>
+                    <div class="astral-empty-hint">\u0421\u043E\u043E\u0431\u0449\u0435\u043D\u0438\u044F \u043F\u043E\u044F\u0432\u044F\u0442\u0441\u044F \u0430\u0432\u0442\u043E\u043C\u0430\u0442\u0438\u0447\u0435\u0441\u043A\u0438 \u0438\u043B\u0438 \u043F\u043E\u0441\u043B\u0435 /seed-contacts</div>
                 </div>`;
         return;
       }
-      const grouped = /* @__PURE__ */ new Map();
+      const threads = /* @__PURE__ */ new Map();
       for (const msg of messages) {
         const key = msg.character || "\u041D\u0435\u0438\u0437\u0432\u0435\u0441\u0442\u043D\u044B\u0439";
-        if (!grouped.has(key)) grouped.set(key, []);
-        grouped.get(key).push(msg);
+        const entry = threads.get(key);
+        if (!entry || msg.timestamp > entry.last.timestamp) {
+          threads.set(key, { last: msg, role: msg.role || entry?.role || "" });
+        } else if (!entry.role && msg.role) {
+          entry.role = msg.role;
+        }
       }
       const list = document.createElement("div");
       list.className = "astral-thread-list";
-      for (const [char, msgs] of grouped) {
-        const last = msgs[msgs.length - 1];
+      for (const [char, { last, role }] of threads) {
         const item = document.createElement("div");
         item.className = "astral-msg-item";
+        const isOut = this._isOut(last);
         item.innerHTML = `
                 <div class="astral-msg-avatar">${this._esc((char[0] || "?").toUpperCase())}</div>
                 <div class="astral-msg-content">
-                    <div class="astral-msg-name">${this._esc(char)}</div>
-                    <div class="astral-msg-preview">${this._esc(last.text)}</div>
+                    <div class="astral-msg-name-row">
+                        <span class="astral-msg-name">${this._esc(char)}</span>
+                        ${role ? `<span class="astral-msg-role">${this._esc(role)}</span>` : ""}
+                    </div>
+                    <div class="astral-msg-preview ${isOut ? "astral-msg-preview--out" : ""}">
+                        ${isOut ? "\u2192 " : ""}${this._esc(this._truncate(last.text, 48))}
+                    </div>
                 </div>
                 <div class="astral-msg-time">${this._time(last.timestamp)}</div>
             `;
         item.addEventListener("click", () => {
-          const core2 = this._core();
-          core2?.openApp("messages", { character: char });
+          this._thread = char;
+          this.render(document.querySelector(".astral-phone-body"));
         });
         list.appendChild(item);
       }
       container.appendChild(list);
     }
-    _renderThread(container, messages, character) {
-      const msgs = messages.filter((m) => m.character === character);
+    /* ─────────────────────────── single thread ─────────────────────────── */
+    _renderThread(container, character) {
+      const state = this.storage.getState();
+      const msgs = (state.messages || []).filter((m) => m.character === character);
+      const role = msgs.find((m) => m.role)?.role || "";
+      container.innerHTML = "";
+      const header = document.createElement("div");
+      header.className = "astral-thread-header";
+      header.innerHTML = `
+            <button class="astral-back-btn" id="astral-thread-back">
+                <svg viewBox="0 0 24 24" width="16" height="16" stroke="currentColor" fill="none" stroke-width="2.2">
+                    <path d="M19 12H5M5 12l7-7M5 12l7 7"/>
+                </svg>
+            </button>
+            <div class="astral-thread-avatar">${this._esc((character[0] || "?").toUpperCase())}</div>
+            <div class="astral-thread-info">
+                <div class="astral-thread-name">${this._esc(character)}</div>
+                ${role ? `<div class="astral-thread-role">${this._esc(role)}</div>` : ""}
+            </div>
+        `;
+      container.appendChild(header);
       const wrap = document.createElement("div");
       wrap.className = "astral-thread";
       if (msgs.length === 0) {
         wrap.innerHTML = `<div class="astral-empty-state"><div>\u041F\u0443\u0441\u0442\u043E</div></div>`;
       }
       for (const msg of msgs) {
+        const isOut = this._isOut(msg);
         const bubble = document.createElement("div");
-        bubble.className = msg.fromUser ? "astral-bubble astral-bubble--out" : "astral-bubble astral-bubble--in";
+        bubble.className = `astral-bubble ${isOut ? "astral-bubble--out" : "astral-bubble--in"}`;
         bubble.innerHTML = `
                 <div class="astral-bubble-text">${this._esc(msg.text)}</div>
                 <div class="astral-bubble-time">${this._time(msg.timestamp, true)}</div>
@@ -1701,21 +1736,37 @@ ${prompt}
         wrap.appendChild(bubble);
       }
       container.appendChild(wrap);
-      container.scrollTop = container.scrollHeight;
+      wrap.scrollTop = wrap.scrollHeight;
+      header.querySelector("#astral-thread-back").addEventListener("click", () => {
+        this._thread = null;
+        this.render(document.querySelector(".astral-phone-body"));
+      });
     }
+    /* ─────────────────────────── event handler ─────────────────────────── */
     async handleEvent(eventData) {
       const state = this.storage.getState();
+      if (!Array.isArray(state.messages)) state.messages = [];
       state.messages.push({
         character: eventData.character || this.context.name2 || "",
         text: eventData.description || "",
         timestamp: Date.now(),
-        fromUser: false
+        fromUser: false,
+        from: "them",
+        isIncoming: true
       });
       this.storage.save();
       return { success: true, message: "\u0421\u043E\u043E\u0431\u0449\u0435\u043D\u0438\u0435 \u0434\u043E\u0431\u0430\u0432\u043B\u0435\u043D\u043E" };
     }
-    _core() {
-      return window.__astralPhoneCore || null;
+    /* ─────────────────────────── utils ─────────────────────────── */
+    /** Unified check: supports both old `fromUser` flag and new `from` field. */
+    _isOut(msg) {
+      if (msg.from === "me") return true;
+      if (msg.from === "them") return false;
+      return Boolean(msg.fromUser);
+    }
+    _truncate(str, max) {
+      const s = String(str ?? "");
+      return s.length > max ? s.slice(0, max) + "\u2026" : s;
     }
     _time(ts, short = false) {
       const d = new Date(ts);
@@ -2900,6 +2951,161 @@ ${prompt}
     }
   };
 
+  // apps/contact-seeder.js
+  var ContactSeeder = class {
+    static {
+      __name(this, "ContactSeeder");
+    }
+    constructor(context, storage2) {
+      this._seed = context || null;
+      this.storage = storage2;
+    }
+    _ctx() {
+      try {
+        const live = globalThis.SillyTavern?.getContext?.();
+        if (live) return live;
+      } catch {
+      }
+      return this._seed || {};
+    }
+    /** Returns true if contacts have already been seeded for this chat. */
+    isSeeded() {
+      return Boolean(this.storage.getState().seeded);
+    }
+    /**
+     * Seed contacts + messages for the current chat.
+     * @param {{ force?: boolean, onProgress?: (msg: string) => void }} opts
+     */
+    async seed({ force = false, onProgress = /* @__PURE__ */ __name(() => {
+    }, "onProgress") } = {}) {
+      if (!force && this.isSeeded()) return { skipped: true };
+      const ctx = this._ctx();
+      if (typeof ctx.generateQuietPrompt !== "function") {
+        throw new Error("generateQuietPrompt \u043D\u0435\u0434\u043E\u0441\u0442\u0443\u043F\u0435\u043D \u2014 \u043E\u0431\u043D\u043E\u0432\u0438\u0442\u0435 SillyTavern \u0434\u043E \u0430\u043A\u0442\u0443\u0430\u043B\u044C\u043D\u043E\u0439 \u0432\u0435\u0440\u0441\u0438\u0438.");
+      }
+      onProgress("\u0410\u043D\u0430\u043B\u0438\u0437\u0438\u0440\u0443\u044E \u043F\u0435\u0440\u0441\u043E\u043D\u0430\u0436\u0430\u2026");
+      const prompt = this._buildPrompt(ctx);
+      let raw;
+      try {
+        raw = await ctx.generateQuietPrompt(prompt, false, false);
+      } catch (err) {
+        throw new Error(`\u0413\u0435\u043D\u0435\u0440\u0430\u0446\u0438\u044F \u0437\u0430\u0432\u0435\u0440\u0448\u0438\u043B\u0430\u0441\u044C \u0441 \u043E\u0448\u0438\u0431\u043A\u043E\u0439: ${err?.message || err}`);
+      }
+      onProgress("\u0420\u0430\u0437\u0431\u0438\u0440\u0430\u044E \u043E\u0442\u0432\u0435\u0442\u2026");
+      const data = this._parse(raw);
+      if (!data) throw new Error("\u041C\u043E\u0434\u0435\u043B\u044C \u0432\u0435\u0440\u043D\u0443\u043B\u0430 \u043D\u0435\u043A\u043E\u0440\u0440\u0435\u043A\u0442\u043D\u044B\u0439 JSON. \u041F\u043E\u043F\u0440\u043E\u0431\u0443\u0439 \u0435\u0449\u0451 \u0440\u0430\u0437 (/seed-contacts).");
+      this._apply(data);
+      onProgress("\u0413\u043E\u0442\u043E\u0432\u043E");
+      return { ok: true, contacts: data.contacts?.length ?? 0 };
+    }
+    /* ─────────────────────────── prompt ─────────────────────────── */
+    _buildPrompt(ctx) {
+      const charName = ctx.name2 || "\u041F\u0435\u0440\u0441\u043E\u043D\u0430\u0436";
+      const userName = ctx.name1 || "\u041F\u043E\u043B\u044C\u0437\u043E\u0432\u0430\u0442\u0435\u043B\u044C";
+      const char = ctx.characters?.[ctx.characterId];
+      const charDesc = this._trim(char?.description || char?.personality || "", 600);
+      const charScenario = this._trim(char?.scenario || "", 400);
+      const persona = ctx.personas?.[ctx.user_persona] || ctx.persona || {};
+      const personaDesc = this._trim(persona?.description || "", 400);
+      const personaName = persona?.name || userName;
+      return `You are a creative writer preparing background lore for an interactive roleplay.
+The main character is: ${charName}${charDesc ? `
+Character description: ${charDesc}` : ""}${charScenario ? `
+Scenario: ${charScenario}` : ""}
+The user's persona is: ${personaName}${personaDesc ? `
+Persona description: ${personaDesc}` : ""}
+
+Generate a realistic set of pre-existing phone contacts and message threads for ${personaName}'s smartphone, fitting the character's world and relationships with ${charName}. Include contacts from ${charName}'s world \u2014 friends, colleagues, rivals, or other relevant characters.
+
+IMPORTANT: reply with ONLY a valid JSON object and nothing else. No markdown, no explanation, no code fences.
+
+Schema:
+{
+  "contacts": [
+    {
+      "name": "Contact Name",
+      "role": "brief relationship to the user/character (e.g. 'best friend', 'manager', 'ex')",
+      "messages": [
+        {
+          "from": "them",
+          "text": "message text",
+          "minutesAgo": 45
+        },
+        {
+          "from": "me",
+          "text": "reply text",
+          "minutesAgo": 40
+        }
+      ]
+    }
+  ]
+}
+
+Rules:
+- Generate 3 to 5 contacts.
+- Each contact must have 2 to 5 messages, alternating naturally.
+- Messages must feel authentic, casual, and contextually appropriate for the scenario.
+- "from" is either "them" (contact speaking) or "me" (user/persona speaking).
+- minutesAgo counts back from now; higher = older. Range: 5 to 10080 (one week).
+- Keep messages concise (under 120 chars each).
+- Match the tone and setting of the character's world (fantasy, modern, sci-fi, etc).
+- Write messages in the same language as the character card language.`;
+    }
+    /* ─────────────────────────── parse ─────────────────────────── */
+    _parse(raw) {
+      const text = String(raw || "").trim();
+      const cleaned = text.replace(/^```(?:json)?\s*/i, "").replace(/\s*```$/, "").trim();
+      const start = cleaned.indexOf("{");
+      const end = cleaned.lastIndexOf("}");
+      if (start === -1 || end === -1) return null;
+      try {
+        const obj = JSON.parse(cleaned.slice(start, end + 1));
+        if (!Array.isArray(obj?.contacts)) return null;
+        return obj;
+      } catch {
+        return null;
+      }
+    }
+    /* ─────────────────────────── apply ─────────────────────────── */
+    _apply(data) {
+      const now = Date.now();
+      const newMessages = [];
+      for (const contact of data.contacts || []) {
+        const name = String(contact.name || "").trim();
+        if (!name) continue;
+        for (const msg of contact.messages || []) {
+          const from = String(msg.from || "them");
+          const text = String(msg.text || "").trim();
+          if (!text) continue;
+          const minutesAgo = Math.max(1, Number(msg.minutesAgo) || 10);
+          newMessages.push({
+            id: `seed_${Date.now()}_${Math.random().toString(36).slice(2, 7)}`,
+            character: name,
+            role: String(contact.role || ""),
+            text,
+            from,
+            // 'them' | 'me'
+            isIncoming: from === "them",
+            timestamp: now - minutesAgo * 6e4,
+            seeded: true
+          });
+        }
+      }
+      newMessages.sort((a, b) => a.timestamp - b.timestamp);
+      const state = this.storage.getState();
+      const existing = Array.isArray(state.messages) ? state.messages : [];
+      const kept = existing.filter((m) => !m.seeded);
+      state.messages = [...newMessages, ...kept];
+      state.seeded = true;
+      this.storage.save();
+    }
+    /* ─────────────────────────── utils ─────────────────────────── */
+    _trim(str, max) {
+      const s = String(str || "").trim().replace(/\s+/g, " ");
+      return s.length > max ? s.slice(0, max) + "\u2026" : s;
+    }
+  };
+
   // index.js
   var MODULE_NAME = "astral-phone";
   var EVENT_TAG_RE = /<phone-event\b([^>]*?)\/?>/gi;
@@ -2907,6 +3113,7 @@ ${prompt}
   var core = null;
   var storage = null;
   var imageGen = null;
+  var seeder = null;
   var initialized = false;
   var PROMPT_BLOCK = `[Astral Phone \u2014 \u0438\u043D\u0442\u0435\u0440\u0444\u0435\u0439\u0441 \u0442\u0435\u043B\u0435\u0444\u043E\u043D\u0430 \u043F\u0435\u0440\u0441\u043E\u043D\u0430\u0436\u0430]
 
@@ -2932,6 +3139,7 @@ description \u043F\u0438\u0448\u0438 \u043A\u0430\u043A \u043F\u0440\u043E\u043C
     storage = new PhoneStorage(context);
     imageGen = new ImageGenerator(context);
     core = new PhoneCore(context, storage, imageGen);
+    seeder = new ContactSeeder(context, storage);
     window.__astralPhoneCore = core;
     injectLauncher();
     const apps = [
@@ -2955,6 +3163,7 @@ description \u043F\u0438\u0448\u0438 \u043A\u0430\u043A \u043F\u0440\u043E\u043C
       ["slash commands", registerSlashCommands],
       ["event fallback", registerEventTagFallback],
       ["chat switch", registerChatSwitchHandler],
+      ["contact seeder", registerContactSeeder],
       ["prompt block", injectPromptBlock]
     ]) {
       try {
@@ -3121,6 +3330,48 @@ description \u043F\u0438\u0448\u0438 \u043A\u0430\u043A \u043F\u0440\u043E\u043C
     }
   }
   __name(injectPromptBlock, "injectPromptBlock");
+  function registerContactSeeder(context) {
+    const origOpen = core.open.bind(core);
+    core.open = function(...args) {
+      origOpen(...args);
+      if (!seeder.isSeeded()) {
+        _runSeed(false).catch((err) => console.warn("[Astral Phone] auto-seed failed:", err));
+      }
+    };
+    const origSwitch = core._onChatSwitch?.bind(core) || null;
+    const ctx = context;
+    ctx.eventSource?.on?.(ctx.event_types?.CHAT_CHANGED, () => {
+      setTimeout(() => {
+        if (!seeder.isSeeded()) {
+          _runSeed(false).catch(() => {
+          });
+        }
+      }, 800);
+    });
+  }
+  __name(registerContactSeeder, "registerContactSeeder");
+  async function _runSeed(force = false) {
+    const toast = /* @__PURE__ */ __name((msg, kind = "info") => {
+      try {
+        (window.toastr?.[kind] || window.toastr?.info)?.(msg);
+      } catch {
+      }
+    }, "toast");
+    try {
+      const res = await seeder.seed({
+        force,
+        onProgress: /* @__PURE__ */ __name((msg) => console.debug("[Astral Phone] seed:", msg), "onProgress")
+      });
+      if (res.skipped) return;
+      toast(`\u0422\u0435\u043B\u0435\u0444\u043E\u043D \u0437\u0430\u043F\u043E\u043B\u043D\u0435\u043D: ${res.contacts} \u043A\u043E\u043D\u0442\u0430\u043A\u0442(\u043E\u0432)`, "success");
+      if (core.isOpen && core.currentAppId === "messages") {
+        core.openApp("messages");
+      }
+    } catch (err) {
+      console.warn("[Astral Phone] seed error:", err.message);
+    }
+  }
+  __name(_runSeed, "_runSeed");
   function registerSlashCommands(context) {
     if (typeof context.registerSlashCommand !== "function") return;
     context.registerSlashCommand(
@@ -3154,6 +3405,38 @@ description \u043F\u0438\u0448\u0438 \u043A\u0430\u043A \u043F\u0440\u043E\u043C
       },
       [],
       '\u041E\u0442\u043A\u0440\u044B\u0442\u044C \u0442\u0435\u043B\u0435\u0444\u043E\u043D \u043F\u0435\u0440\u0441\u043E\u043D\u0430\u0436\u0430. /phone open | close | reset | event {"type":"photo_taken",...}',
+      true,
+      true
+    );
+    context.registerSlashCommand(
+      "seed-contacts",
+      async (args) => {
+        const force = String(args || "").trim() === "force";
+        const toast = /* @__PURE__ */ __name((msg, kind = "info") => {
+          try {
+            (window.toastr?.[kind] || window.toastr?.info)?.(msg);
+          } catch {
+          }
+        }, "toast");
+        try {
+          toast("\u0413\u0435\u043D\u0435\u0440\u0438\u0440\u0443\u044E \u043A\u043E\u043D\u0442\u0430\u043A\u0442\u044B\u2026");
+          const res = await seeder.seed({
+            force,
+            onProgress: /* @__PURE__ */ __name((msg) => toast(msg), "onProgress")
+          });
+          if (res.skipped) {
+            toast("\u041A\u043E\u043D\u0442\u0430\u043A\u0442\u044B \u0443\u0436\u0435 \u0441\u0433\u0435\u043D\u0435\u0440\u0438\u0440\u043E\u0432\u0430\u043D\u044B. \u0418\u0441\u043F\u043E\u043B\u044C\u0437\u0443\u0439 /seed-contacts force \u0434\u043B\u044F \u043F\u043E\u0432\u0442\u043E\u0440\u043D\u043E\u0439 \u0433\u0435\u043D\u0435\u0440\u0430\u0446\u0438\u0438.");
+          } else {
+            toast(`\u0413\u043E\u0442\u043E\u0432\u043E: ${res.contacts} \u043A\u043E\u043D\u0442\u0430\u043A\u0442(\u043E\u0432) \u0434\u043E\u0431\u0430\u0432\u043B\u0435\u043D\u043E`, "success");
+            if (core.isOpen && core.currentAppId === "messages") core.openApp("messages");
+          }
+        } catch (err) {
+          toast(`\u041E\u0448\u0438\u0431\u043A\u0430: ${err.message}`, "error");
+        }
+        return "";
+      },
+      [],
+      "\u0417\u0430\u043F\u043E\u043B\u043D\u0438\u0442\u044C \u0442\u0435\u043B\u0435\u0444\u043E\u043D \u043A\u043E\u043D\u0442\u0430\u043A\u0442\u0430\u043C\u0438 \u0438 \u0441\u043E\u043E\u0431\u0449\u0435\u043D\u0438\u044F\u043C\u0438 \u043D\u0430 \u043E\u0441\u043D\u043E\u0432\u0435 \u043F\u0435\u0440\u0441\u043E\u043D\u0430\u0436\u0430. /seed-contacts [force]",
       true,
       true
     );
