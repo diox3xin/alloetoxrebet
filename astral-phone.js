@@ -34,33 +34,46 @@
                 </div>
             </div>
             
+            <button class="astral-lockscreen-close" id="astral-lockscreen-close" title="\u0417\u0430\u043A\u0440\u044B\u0442\u044C \u0442\u0435\u043B\u0435\u0444\u043E\u043D">\u2715</button>
+
             <div class="astral-lockscreen-hint">
                 <div class="astral-swipe-indicator">
                     <svg viewBox="0 0 24 24" width="24" height="24">
                         <path d="M12 2v14M19 9l-7-7-7 7"/>
                     </svg>
                 </div>
+                <button class="astral-lockscreen-unlock" id="astral-lockscreen-unlock">\u041E\u0442\u043A\u0440\u044B\u0442\u044C</button>
             </div>
         `;
       this.overlay = overlay;
       this.clockEl = overlay.querySelector("#astral-lockscreen-time");
       this.dateEl = overlay.querySelector("#astral-lockscreen-date");
+      this.locked = true;
       overlay.addEventListener("touchstart", (e) => {
-        this.swipeStart = e.touches[0].clientY;
-      });
+        this.swipeStart = e.touches[0]?.clientY ?? 0;
+      }, { passive: true });
       overlay.addEventListener("touchmove", (e) => {
-        const current = e.touches[0].clientY;
-        const diff = this.swipeStart - current;
-        if (diff > 80) {
+        const current = e.touches[0]?.clientY ?? 0;
+        if (this.swipeStart - current > 70) this.unlock();
+      }, { passive: true });
+      overlay.addEventListener("wheel", (e) => {
+        if (e.deltaY > 30) this.unlock();
+      }, { passive: true });
+      overlay.addEventListener("click", (e) => {
+        if (e.target === overlay || e.target.closest(".astral-lockscreen-hint") || e.target.closest(".astral-lockscreen-bg")) {
           this.unlock();
         }
       });
-      overlay.addEventListener("click", (e) => {
-        if (e.target === overlay || e.target.closest(".astral-lockscreen-hint")) {
-          this.unlock();
-        }
+      overlay.querySelector("#astral-lockscreen-unlock")?.addEventListener("click", (e) => {
+        e.stopPropagation();
+        this.unlock();
+      });
+      overlay.querySelector("#astral-lockscreen-close")?.addEventListener("click", (e) => {
+        e.stopPropagation();
+        this.onCloseRequest?.();
       });
       this._updateTime();
+      clearInterval(this._clockInterval);
       this._clockInterval = setInterval(() => this._updateTime(), 2e4);
       return overlay;
     }
@@ -120,7 +133,15 @@
       clearInterval(this._clockInterval);
       setTimeout(() => {
         this.overlay?.remove();
-      }, 400);
+        this.overlay = null;
+      }, 300);
+    }
+    /** Убрать локскрин немедленно (при закрытии телефона). */
+    destroy() {
+      clearInterval(this._clockInterval);
+      this.overlay?.remove();
+      this.overlay = null;
+      this.locked = true;
     }
     _esc(str) {
       return String(str ?? "").replace(/[&<>\"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" })[c]);
@@ -271,17 +292,58 @@
     }
     /* ─────────────────────────── open / close ─────────────────────────── */
     open() {
-      if (!this.overlay) {
-        const lockEl = this.lockScreen.build();
-        document.body.appendChild(lockEl);
-        this._build();
-      }
+      if (!this.overlay) this._build();
+      this._ensureOnTop();
       this.overlay.classList.add("active");
       this.isOpen = true;
       this.showHome();
       this._startClock();
       document.addEventListener("keydown", this._onKeyDown);
       document.body.style.overflow = "hidden";
+      this._showLockScreen();
+    }
+    /**
+     * Держит оверлей последним ребёнком body и блокирует прокрутку страницы.
+     *
+     * На мобильном ST встречаются два эффекта: (1) оверлей остаётся внутри
+     * контейнера с transform — тогда fixed считается от него, и «телефон»
+     * занимает часть экрана; (2) другие элементы перекрывают его по z-index.
+     * Перенос в конец body решает оба.
+     */
+    _ensureOnTop() {
+      try {
+        const el = this.overlay;
+        if (!el) return;
+        if (el.parentElement !== document.body) {
+          document.body.appendChild(el);
+        } else if (document.body.lastElementChild !== el) {
+          document.body.appendChild(el);
+        }
+      } catch (err) {
+        console.warn("[Astral Phone] could not reattach overlay:", err);
+      }
+    }
+    /** Показать локскрин в рамке устройства. */
+    _showLockScreen() {
+      try {
+        this._removeLockScreen();
+        const phone = this.overlay?.querySelector(".astral-phone");
+        if (!phone) return;
+        this.lockScreen.onCloseRequest = () => this.close();
+        const lockEl = this.lockScreen.build();
+        lockEl.classList.add("astral-lockscreen--in-frame");
+        phone.appendChild(lockEl);
+      } catch (err) {
+        console.warn("[Astral Phone] lockscreen failed, skipping:", err);
+      }
+    }
+    /** Убрать локскрин, если он есть. */
+    _removeLockScreen() {
+      try {
+        this.lockScreen.destroy?.();
+      } catch (_) {
+      }
+      this.overlay?.querySelector("#astral-phone-lockscreen")?.remove();
     }
     close() {
       if (!this.isOpen) return;
@@ -290,6 +352,7 @@
       } catch (err) {
         console.warn("[Astral Phone] flush failed:", err);
       }
+      this._removeLockScreen();
       this.overlay.classList.remove("active");
       this.isOpen = false;
       this._stopClock();
@@ -378,6 +441,67 @@
       overlay.addEventListener("click", (e) => {
         if (e.target === overlay) this.close();
       });
+      this._bindCloseGestures(overlay);
+    }
+    /**
+     * Жесты закрытия для тача.
+     *
+     * Кнопка ✕ на мобильном может оказаться под системной панелью, поэтому
+     * добавляем два привычных способа: свайп вниз по шапке и свайп вправо по
+     * левому краю (как «назад» в iOS).
+     */
+    _bindCloseGestures(overlay) {
+      const header = overlay.querySelector(".astral-phone-header");
+      if (!header) return;
+      let startY = 0;
+      let startX = 0;
+      let tracking = false;
+      const onStart = /* @__PURE__ */ __name((e) => {
+        const t = e.touches?.[0];
+        if (!t) return;
+        tracking = true;
+        startY = t.clientY;
+        startX = t.clientX;
+      }, "onStart");
+      const onMove = /* @__PURE__ */ __name((e) => {
+        if (!tracking) return;
+        const t = e.touches?.[0];
+        if (!t) return;
+        const dy = t.clientY - startY;
+        const dx = t.clientX - startX;
+        if (dy > 90 && Math.abs(dx) < 70) {
+          tracking = false;
+          this.close();
+        }
+      }, "onMove");
+      const onEnd = /* @__PURE__ */ __name(() => {
+        tracking = false;
+      }, "onEnd");
+      header.addEventListener("touchstart", onStart, { passive: true });
+      header.addEventListener("touchmove", onMove, { passive: true });
+      header.addEventListener("touchend", onEnd, { passive: true });
+      const phone = overlay.querySelector(".astral-phone");
+      if (!phone) return;
+      let edgeX = 0;
+      let edgeTracking = false;
+      phone.addEventListener("touchstart", (e) => {
+        const t = e.touches?.[0];
+        if (!t) return;
+        edgeTracking = t.clientX < 32;
+        edgeX = t.clientX;
+      }, { passive: true });
+      phone.addEventListener("touchmove", (e) => {
+        if (!edgeTracking) return;
+        const t = e.touches?.[0];
+        if (!t) return;
+        if (t.clientX - edgeX > 70) {
+          edgeTracking = false;
+          this.close();
+        }
+      }, { passive: true });
+      phone.addEventListener("touchend", () => {
+        edgeTracking = false;
+      }, { passive: true });
     }
     _renderHome() {
       const grid = document.createElement("div");

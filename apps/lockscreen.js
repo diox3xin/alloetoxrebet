@@ -33,43 +33,67 @@ export class LockScreen {
                 </div>
             </div>
             
+            <button class="astral-lockscreen-close" id="astral-lockscreen-close" title="Закрыть телефон">✕</button>
+
             <div class="astral-lockscreen-hint">
                 <div class="astral-swipe-indicator">
                     <svg viewBox="0 0 24 24" width="24" height="24">
                         <path d="M12 2v14M19 9l-7-7-7 7"/>
                     </svg>
                 </div>
+                <button class="astral-lockscreen-unlock" id="astral-lockscreen-unlock">Открыть</button>
             </div>
         `;
         
         this.overlay = overlay;
         this.clockEl = overlay.querySelector('#astral-lockscreen-time');
         this.dateEl = overlay.querySelector('#astral-lockscreen-date');
-        
-        // Свайп
+
+        // ── разблокировка ──
+        // Локскрин живёт ВНУТРИ рамки телефона, поэтому вариантов должно быть
+        // несколько: свайп вверх, тап по подсказке и явная кнопка. Иначе на
+        // устройствах без нормального touch-свайпа экран нечем закрыть.
+        this.locked = true;
+
         overlay.addEventListener('touchstart', (e) => {
-            this.swipeStart = e.touches[0].clientY;
-        });
-        
+            this.swipeStart = e.touches[0]?.clientY ?? 0;
+        }, { passive: true });
+
         overlay.addEventListener('touchmove', (e) => {
-            const current = e.touches[0].clientY;
-            const diff = this.swipeStart - current;
-            
-            if (diff > 80) {
-                this.unlock();
-            }
-        });
-        
-        // Клик тоже разблокирует (для удобства на десктопе)
+            const current = e.touches[0]?.clientY ?? 0;
+            if (this.swipeStart - current > 70) this.unlock();
+        }, { passive: true });
+
+        // колесо мыши тоже разблокирует — на десктопе свайпа нет
+        overlay.addEventListener('wheel', (e) => {
+            if (e.deltaY > 30) this.unlock();
+        }, { passive: true });
+
+        // тап по пустому месту или по подсказке
         overlay.addEventListener('click', (e) => {
-            if (e.target === overlay || e.target.closest('.astral-lockscreen-hint')) {
+            if (e.target === overlay
+                || e.target.closest('.astral-lockscreen-hint')
+                || e.target.closest('.astral-lockscreen-bg')) {
                 this.unlock();
             }
         });
-        
+
+        // видимая кнопка — гарантированный путь на любом устройстве
+        overlay.querySelector('#astral-lockscreen-unlock')?.addEventListener('click', (e) => {
+            e.stopPropagation();
+            this.unlock();
+        });
+
+        // кнопка закрытия телефона с локскрина
+        overlay.querySelector('#astral-lockscreen-close')?.addEventListener('click', (e) => {
+            e.stopPropagation();
+            this.onCloseRequest?.();
+        });
+
         this._updateTime();
+        clearInterval(this._clockInterval);
         this._clockInterval = setInterval(() => this._updateTime(), 20000);
-        
+
         return overlay;
     }
 
@@ -140,10 +164,19 @@ export class LockScreen {
         this.locked = false;
         this.overlay?.classList.add('astral-lockscreen-unlocked');
         clearInterval(this._clockInterval);
-        
+
         setTimeout(() => {
             this.overlay?.remove();
-        }, 400);
+            this.overlay = null;
+        }, 300);
+    }
+
+    /** Убрать локскрин немедленно (при закрытии телефона). */
+    destroy() {
+        clearInterval(this._clockInterval);
+        this.overlay?.remove();
+        this.overlay = null;
+        this.locked = true;
     }
 
     _esc(str) {
