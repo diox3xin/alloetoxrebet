@@ -377,6 +377,31 @@ function registerActivityCounter(context) {
     const { eventSource, event_types } = context;
     if (!eventSource || !event_types) return;
 
+    let castRunning = false;
+
+    /**
+     * Раз в N сообщений модель обновляет анкеты персонажей.
+     * Сам счётчик и настройка интервала живут в cast-profiles.
+     */
+    const maybeAnalyseCast = () => {
+        if (castRunning) return;
+        if (analysisInterval() === 0) return;
+
+        castRunning = true;
+        // пауза: даём сообщению осесть в контексте чата
+        setTimeout(() => {
+            analyseCast(context, storage, { silent: true })
+                .then(result => {
+                    if (result.updated) {
+                        console.log(`[Astral Phone] анкеты обновлены: ${result.names.join(', ')}`);
+                        refreshPhonePrompt(storage);
+                    }
+                })
+                .catch(err => console.warn('[Astral Phone] cast analysis failed:', err?.message || err))
+                .finally(() => { castRunning = false; });
+        }, 1200);
+    };
+
     const onMessage = () => {
         try {
             const state = storage.getState();
@@ -386,6 +411,7 @@ function registerActivityCounter(context) {
             console.warn('[Astral Phone] counter update failed:', err);
         }
         refreshPhonePrompt(storage);
+        maybeAnalyseCast();
     };
 
     for (const name of ['MESSAGE_SENT', 'MESSAGE_RECEIVED']) {
@@ -644,6 +670,13 @@ function injectSettingsPanel() {
         <div id="astral-api-status" class="notes"></div>
 
         <hr />
+        <b>Анкеты персонажей</b>
+        <small class="notes">Модель перечитывает сцену и обновляет короткие карточки: кто это, как относится к тебе, что скрывает. 0 — выключить.</small>
+        <label for="astral-cast-interval">Анализировать каждые N сообщений</label>
+        <input type="number" id="astral-cast-interval" class="text_pole" min="0" max="50" step="1" value="5" />
+        <div id="astral-cast-status" class="notes"></div>
+
+        <hr />
         <b>Справочник внешности</b>
         <div id="astral-charbook-host"></div>
 
@@ -814,6 +847,28 @@ function injectSettingsPanel() {
             fillProfiles();
             fillFields();
             refreshStatus();
+        });
+
+        // ── анкеты персонажей ──
+        const castInterval = document.getElementById('astral-cast-interval');
+        const castStatus = document.getElementById('astral-cast-status');
+
+        const refreshCastStatus = () => {
+            if (!castStatus) return;
+            const cast = loadCast(storage);
+            const names = Object.keys(cast);
+            const n = analysisInterval();
+            castStatus.textContent = n === 0
+                ? 'Анализ выключен'
+                : `Каждые ${n} сообщений · карточек: ${names.length}${names.length ? ` (${names.slice(0, 4).join(', ')}${names.length > 4 ? '…' : ''})` : ''}`;
+        };
+
+        if (castInterval) castInterval.value = analysisInterval();
+        refreshCastStatus();
+
+        castInterval?.addEventListener('change', () => {
+            setAnalysisInterval(Number(castInterval.value) || 0);
+            refreshCastStatus();
         });
 
         // Character book editor

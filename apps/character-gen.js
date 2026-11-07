@@ -186,37 +186,47 @@ export async function generateNotes(ctx, opts = {}) {
     const kind = kinds.includes(opts.kind) ? opts.kind : 'diary';
     const count = Math.max(1, Math.min(3, Number(opts.count) || 1));
 
-    const { charName } = collectCast(ctx);
+    const { charName, userName } = collectCast(ctx);
     const scene = sceneContext(ctx);
 
-    const kindBrief = {
-        diary: 'a private diary entry — how they feel about what happened',
-        plan: 'a private plan — what they intend to do next, steps, intentions',
-        secret: 'a private secret — something they hide from others',
-        note: 'a short private note — a passing thought, an observation',
-    }[kind];
+    /*
+     * Заметка всегда ПРО юзера — иначе модель уходит в абстрактные
+     * размышления о себе. Угол задаётся по типу записи, и {{user}}
+     * подставляется в инструкцию явно, чтобы он был в каждом варианте.
+     */
+    const angles = {
+        diary: `What ${userName} means to ${charName} right now — what ${charName} felt about ${userName} today, what ${userName} said or did that stuck.`,
+        plan: `What ${charName} plans to do about ${userName} — what ${charName} intends to tell, ask or do to ${userName} next.`,
+        secret: `What ${charName} hides from ${userName} — something ${charName} would never say to ${userName} out loud.`,
+        note: `What ${charName} thinks about ${userName} in this exact minute — a passing thought about ${userName}.`,
+    };
 
-    const prompt = `You write PRIVATE notes in the voice of ${charName}.
+    const prompt = `You write a PRIVATE note in the voice of ${charName}.
 
-These notes are never seen by anyone. ${charName} writes them honestly, for themselves only.
+Nobody will ever read this. ${charName} writes it for ${charName} alone.
 
 SCENE (what is happening right now):
 ${scene}
 
-TASK: write ${count} ${kindBrief}.
+ANGLE FOR THIS NOTE:
+${angles[kind]}
+
+TASK: write ${count === 1 ? 'this note' : `${count} variants of this note`} about ${userName}.
 
 RULES:
+- ${userName} MUST be the subject. Every sentence should be about ${userName} or addressed to ${userName}.
+- Refer to ${userName} by name (${userName}) or as "you" if writing it like a letter.
 - Write in the SAME LANGUAGE as the scene. Russian scene → Russian note.
 - First person, ${charName}'s own voice and vocabulary.
-- Honest and specific: reference actual things from the scene, not generic feelings.
-- Each note is 1-4 sentences. ${count > 1 ? 'They should differ in focus.' : ''}
-- ${kind === 'secret' ? 'This is hidden — write what they would never say out loud.' : 'Private, but not necessarily dark.'}
+- Be concrete: reference what ${userName} actually said or did in the scene, not generic feelings.
+- 1-4 sentences per note. ${count > 1 ? 'Variants must differ in what they focus on.' : ''}
+- ${kind === 'secret' ? `This is hidden — write what ${charName} would never tell ${userName}.` : `Honest, but not necessarily dark.`}
 - No labels, no quotes, no bullet points, no explanation.
 
 Return ONLY the ${count > 1 ? 'notes separated by a line containing only ---' : 'note text'}.`;
 
     const raw = await ask(prompt, {
-        system: 'You write private in-character notes. You never explain or add commentary.',
+        system: `You write private in-character notes about the player character. You never explain or add commentary.`,
         responseLength: 500,
     });
 

@@ -134,10 +134,16 @@ export class MessagesApp {
             const isOut = this._isOut(msg);
             const bubble = document.createElement('div');
             bubble.className = `astral-bubble ${isOut ? 'astral-bubble--out' : 'astral-bubble--in'}`;
+            bubble.dataset.msgId = msg.id || '';
             bubble.innerHTML = `
                 <div class="astral-bubble-text">${this._esc(msg.text)}</div>
                 <div class="astral-bubble-time">${this._time(msg.timestamp, true)}</div>
             `;
+
+            // Удаление доступно для ЛЮБОГО сообщения, включая реплики персонажа:
+            // это инструмент редактирования сцены, а не «моя переписка».
+            this._bindDeleteGesture(bubble, msg, character);
+
             wrap.appendChild(bubble);
         }
 
@@ -186,6 +192,62 @@ export class MessagesApp {
         composer.querySelector('#astral-msg-reply-btn').addEventListener('click', () => {
             this._requestCharacterReply(character);
         });
+    }
+
+    /**
+     * Долгое нажатие (тач) или правый клик (мышь) — удалить сообщение.
+     * Просто клик по пузырю не удаляет: иначе легко снести текст случайно.
+     */
+    _bindDeleteGesture(bubble, msg, character) {
+        let holdTimer = null;
+        let moved = false;
+
+        const start = () => {
+            moved = false;
+            holdTimer = setTimeout(() => {
+                if (!moved) this._confirmDelete(msg, character);
+            }, 520);
+        };
+
+        const cancel = () => {
+            if (holdTimer) clearTimeout(holdTimer);
+            holdTimer = null;
+        };
+
+        bubble.addEventListener('touchstart', start, { passive: true });
+        bubble.addEventListener('touchmove', () => { moved = true; cancel(); }, { passive: true });
+        bubble.addEventListener('touchend', cancel, { passive: true });
+        bubble.addEventListener('touchcancel', cancel, { passive: true });
+
+        bubble.addEventListener('contextmenu', (e) => {
+            e.preventDefault();
+            this._confirmDelete(msg, character);
+        });
+
+        // мышь: удержание левой кнопки тоже работает
+        bubble.addEventListener('mousedown', start);
+        bubble.addEventListener('mouseup', cancel);
+        bubble.addEventListener('mouseleave', cancel);
+    }
+
+    _confirmDelete(msg, character) {
+        const preview = String(msg.text || '').slice(0, 60);
+        if (!confirm(`Удалить сообщение?\n\n«${preview}${preview.length >= 60 ? '…' : ''}»`)) return;
+
+        const state = this.storage.getState();
+        const before = (state.messages || []).length;
+
+        state.messages = (state.messages || []).filter(m => {
+            if (msg.id) return m.id !== msg.id;
+            // старые сообщения без id — сверяем по содержимому и времени
+            return !(m.character === msg.character && m.text === msg.text && m.timestamp === msg.timestamp);
+        });
+
+        if (state.messages.length === before) return;
+
+        this.storage.save();
+        this._toast('Сообщение удалено');
+        this.render(document.querySelector('.astral-phone-body'), { character });
     }
 
     /**

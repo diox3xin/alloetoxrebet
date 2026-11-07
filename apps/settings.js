@@ -9,6 +9,7 @@ import {
     listProfiles, addProfile, activateProfile, removeProfile, renameProfile,
     testConnection, cachedModels,
 } from './prompt-llm.js';
+import { loadCast, analysisInterval } from './cast-profiles.js';
 
 export class SettingsApp {
     constructor(context, storage, accountManager) {
@@ -82,6 +83,11 @@ export class SettingsApp {
                         <input type="number" id="astral-api-temp" min="0" max="2" step="0.1" value="0.7" />
                     </div>
                     <div class="astral-api-note" id="astral-api-status"></div>
+                </div>
+
+                <div class="astral-settings-section astral-cast-section">
+                    <h3 class="astral-section-title">Персонажи в сцене</h3>
+                    <div id="astral-cast-list"></div>
                 </div>
 
                 <div class="astral-settings-section">
@@ -266,6 +272,34 @@ export class SettingsApp {
             fillFields();
             refresh();
         });
+
+        // ── анкеты персонажей из анализа РП ──
+        const castHost = container.querySelector('#astral-cast-list');
+        if (castHost) {
+            const cast = loadCast(this.storage);
+            const rows = Object.values(cast).sort((a, b) => (b.updatedAt || 0) - (a.updatedAt || 0));
+
+            if (!rows.length) {
+                const n = analysisInterval();
+                castHost.innerHTML = `<div class="astral-cast-empty">${
+                    n === 0 ? 'Анализ выключен в настройках расширения'
+                            : `Появятся после ${n} сообщений в чате`
+                }</div>`;
+            } else {
+                castHost.innerHTML = rows.map(c => `
+                    <div class="astral-cast-card">
+                        <div class="astral-cast-head">
+                            <span class="astral-cast-name">${this._esc(c.name)}</span>
+                            ${c.role ? `<span class="astral-cast-role">${this._esc(c.role)}</span>` : ''}
+                        </div>
+                        ${c.attitude ? `<div class="astral-cast-line"><b>к тебе:</b> ${this._esc(c.attitude)}</div>` : ''}
+                        ${c.wants ? `<div class="astral-cast-line"><b>хочет:</b> ${this._esc(c.wants)}</div>` : ''}
+                        ${c.state ? `<div class="astral-cast-line"><b>сейчас:</b> ${this._esc(c.state)}</div>` : ''}
+                        ${c.secret ? `<div class="astral-cast-line"><b>скрывает:</b> ${this._esc(c.secret)}</div>` : ''}
+                    </div>
+                `).join('');
+            }
+        }
 
         // Справочник внешности — работает независимо от аккаунта
         const bookHost = container.querySelector('#astral-app-charbook');

@@ -7,6 +7,7 @@
  */
 
 import { buildNotesPromptBlock } from './notes.js';
+import { buildCastPromptBlock } from './cast-profiles.js';
 
 /** Message is outgoing if it came from the user, either field works. */
 function isOutgoing(m) {
@@ -20,7 +21,7 @@ function isOutgoing(m) {
  * @param {object} state phone state (messages, sinceEvent)
  * @returns {string}
  */
-export function buildPhoneContext(state) {
+export function buildPhoneContext(state, storageRef) {
     const msgs = Array.isArray(state?.messages) ? state.messages : [];
     const recent = msgs.slice(-24);
 
@@ -47,6 +48,13 @@ export function buildPhoneContext(state) {
         if (notesBlock) parts.push(notesBlock);
     } catch (_) { /* ignore */ }
 
+    // Анкеты персонажей: модель видит, кем были побочные лица, даже если
+    // их нет в карточке — иначе она выдумывает их заново каждый раз.
+    try {
+        const castBlock = buildCastPromptBlock(storageRef);
+        if (castBlock) parts.push(castBlock);
+    } catch (_) { /* ignore */ }
+
     return parts.join('\n\n');
 }
 
@@ -62,7 +70,7 @@ export function refreshPhonePrompt(storage) {
         const state = storage.getState();
         context.setExtensionPrompt(
             'astral-phone-context',
-            buildPhoneContext(state),
+            buildPhoneContext(state, storage),
             context.extension_prompt_types?.IN_CHAT ?? 1,
             2,
             false,

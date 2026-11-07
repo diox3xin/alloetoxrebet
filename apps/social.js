@@ -200,6 +200,11 @@ export class SocialApp {
                     </svg>
                     <span>${Array.isArray(post.likedBy) ? post.likedBy.length || '' : ''}</span>
                 </button>
+                <button class="astral-social-act astral-social-act--del" data-act="delete" title="Удалить пост">
+                    <svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="1.9">
+                        <path d="M3 6h18M8 6V4a2 2 0 012-2h4a2 2 0 012 2v2m3 0v14a2 2 0 01-2 2H7a2 2 0 01-2-2V6h14zM10 11v6M14 11v6"/>
+                    </svg>
+                </button>
             </div>
 
             ${replies.length ? `
@@ -229,6 +234,23 @@ export class SocialApp {
         card.querySelector('[data-act="reply"]').addEventListener('click', (e) => {
             e.stopPropagation();
             this._openReply(post.id, container);
+        });
+
+        // удалять можно любой пост, включая чужие: это чистка ленты
+        card.querySelector('[data-act="delete"]').addEventListener('click', (e) => {
+            e.stopPropagation();
+            const preview = String(post.text || '').slice(0, 60);
+            const who = post.author ? `${post.author}: ` : '';
+            if (!confirm(`Удалить пост?\n\n${who}«${preview}${preview.length >= 60 ? '…' : ''}»`)) return;
+
+            const state = this.storage.getState();
+            const before = (state.social || []).length;
+            state.social = (state.social || []).filter(p => p.id !== post.id);
+            if (state.social.length === before) return;
+
+            this.storage.save();
+            this._toast('Пост удалён');
+            this.render(container);
         });
 
         return card;

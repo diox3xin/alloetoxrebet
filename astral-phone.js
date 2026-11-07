@@ -3105,34 +3105,39 @@ ${requested ? "TEXT:" : "AUTHOR: <name>\nTEXT:"}`;
     const kinds = ["diary", "plan", "secret", "note"];
     const kind = kinds.includes(opts.kind) ? opts.kind : "diary";
     const count = Math.max(1, Math.min(3, Number(opts.count) || 1));
-    const { charName } = collectCast(ctx);
+    const { charName, userName } = collectCast(ctx);
     const scene = sceneContext(ctx);
-    const kindBrief = {
-      diary: "a private diary entry \u2014 how they feel about what happened",
-      plan: "a private plan \u2014 what they intend to do next, steps, intentions",
-      secret: "a private secret \u2014 something they hide from others",
-      note: "a short private note \u2014 a passing thought, an observation"
-    }[kind];
-    const prompt2 = `You write PRIVATE notes in the voice of ${charName}.
+    const angles = {
+      diary: `What ${userName} means to ${charName} right now \u2014 what ${charName} felt about ${userName} today, what ${userName} said or did that stuck.`,
+      plan: `What ${charName} plans to do about ${userName} \u2014 what ${charName} intends to tell, ask or do to ${userName} next.`,
+      secret: `What ${charName} hides from ${userName} \u2014 something ${charName} would never say to ${userName} out loud.`,
+      note: `What ${charName} thinks about ${userName} in this exact minute \u2014 a passing thought about ${userName}.`
+    };
+    const prompt2 = `You write a PRIVATE note in the voice of ${charName}.
 
-These notes are never seen by anyone. ${charName} writes them honestly, for themselves only.
+Nobody will ever read this. ${charName} writes it for ${charName} alone.
 
 SCENE (what is happening right now):
 ${scene}
 
-TASK: write ${count} ${kindBrief}.
+ANGLE FOR THIS NOTE:
+${angles[kind]}
+
+TASK: write ${count === 1 ? "this note" : `${count} variants of this note`} about ${userName}.
 
 RULES:
+- ${userName} MUST be the subject. Every sentence should be about ${userName} or addressed to ${userName}.
+- Refer to ${userName} by name (${userName}) or as "you" if writing it like a letter.
 - Write in the SAME LANGUAGE as the scene. Russian scene \u2192 Russian note.
 - First person, ${charName}'s own voice and vocabulary.
-- Honest and specific: reference actual things from the scene, not generic feelings.
-- Each note is 1-4 sentences. ${count > 1 ? "They should differ in focus." : ""}
-- ${kind === "secret" ? "This is hidden \u2014 write what they would never say out loud." : "Private, but not necessarily dark."}
+- Be concrete: reference what ${userName} actually said or did in the scene, not generic feelings.
+- 1-4 sentences per note. ${count > 1 ? "Variants must differ in what they focus on." : ""}
+- ${kind === "secret" ? `This is hidden \u2014 write what ${charName} would never tell ${userName}.` : `Honest, but not necessarily dark.`}
 - No labels, no quotes, no bullet points, no explanation.
 
 Return ONLY the ${count > 1 ? "notes separated by a line containing only ---" : "note text"}.`;
     const raw = await ask(prompt2, {
-      system: "You write private in-character notes. You never explain or add commentary.",
+      system: `You write private in-character notes about the player character. You never explain or add commentary.`,
       responseLength: 500
     });
     const chunks = String(raw).split(/^\s*---\s*$/m).map((c) => cleanOutput(c, 600)).filter(Boolean);
@@ -3307,10 +3312,12 @@ MESSAGE:`;
         const isOut = this._isOut(msg);
         const bubble = document.createElement("div");
         bubble.className = `astral-bubble ${isOut ? "astral-bubble--out" : "astral-bubble--in"}`;
+        bubble.dataset.msgId = msg.id || "";
         bubble.innerHTML = `
                 <div class="astral-bubble-text">${this._esc(msg.text)}</div>
                 <div class="astral-bubble-time">${this._time(msg.timestamp, true)}</div>
             `;
+        this._bindDeleteGesture(bubble, msg, character);
         wrap.appendChild(bubble);
       }
       container.appendChild(wrap);
@@ -3355,6 +3362,54 @@ MESSAGE:`;
       composer.querySelector("#astral-msg-reply-btn").addEventListener("click", () => {
         this._requestCharacterReply(character);
       });
+    }
+    /**
+     * Долгое нажатие (тач) или правый клик (мышь) — удалить сообщение.
+     * Просто клик по пузырю не удаляет: иначе легко снести текст случайно.
+     */
+    _bindDeleteGesture(bubble, msg, character) {
+      let holdTimer = null;
+      let moved = false;
+      const start = /* @__PURE__ */ __name(() => {
+        moved = false;
+        holdTimer = setTimeout(() => {
+          if (!moved) this._confirmDelete(msg, character);
+        }, 520);
+      }, "start");
+      const cancel = /* @__PURE__ */ __name(() => {
+        if (holdTimer) clearTimeout(holdTimer);
+        holdTimer = null;
+      }, "cancel");
+      bubble.addEventListener("touchstart", start, { passive: true });
+      bubble.addEventListener("touchmove", () => {
+        moved = true;
+        cancel();
+      }, { passive: true });
+      bubble.addEventListener("touchend", cancel, { passive: true });
+      bubble.addEventListener("touchcancel", cancel, { passive: true });
+      bubble.addEventListener("contextmenu", (e) => {
+        e.preventDefault();
+        this._confirmDelete(msg, character);
+      });
+      bubble.addEventListener("mousedown", start);
+      bubble.addEventListener("mouseup", cancel);
+      bubble.addEventListener("mouseleave", cancel);
+    }
+    _confirmDelete(msg, character) {
+      const preview = String(msg.text || "").slice(0, 60);
+      if (!confirm(`\u0423\u0434\u0430\u043B\u0438\u0442\u044C \u0441\u043E\u043E\u0431\u0449\u0435\u043D\u0438\u0435?
+
+\xAB${preview}${preview.length >= 60 ? "\u2026" : ""}\xBB`)) return;
+      const state = this.storage.getState();
+      const before = (state.messages || []).length;
+      state.messages = (state.messages || []).filter((m) => {
+        if (msg.id) return m.id !== msg.id;
+        return !(m.character === msg.character && m.text === msg.text && m.timestamp === msg.timestamp);
+      });
+      if (state.messages.length === before) return;
+      this.storage.save();
+      this._toast("\u0421\u043E\u043E\u0431\u0449\u0435\u043D\u0438\u0435 \u0443\u0434\u0430\u043B\u0435\u043D\u043E");
+      this.render(document.querySelector(".astral-phone-body"), { character });
     }
     /**
      * Попросить модель написать сообщение от персонажа.
@@ -4819,6 +4874,44 @@ REPLY (text only):`;
     }
   };
 
+  // apps/cast-profiles.js
+  var DEFAULT_INTERVAL = 5;
+  function analysisInterval2() {
+    try {
+      const ctx = globalThis.SillyTavern?.getContext?.();
+      const bag = ctx?.extensionSettings || globalThis.extension_settings;
+      const raw = bag?.["astral-phone"]?.castInterval;
+      const n = Number(raw);
+      if (Number.isFinite(n) && n >= 0) return n;
+    } catch (_) {
+    }
+    return DEFAULT_INTERVAL;
+  }
+  __name(analysisInterval2, "analysisInterval");
+  function loadCast2(storage2) {
+    const state = storage2?.getState?.() || {};
+    const cast = state.castProfiles;
+    return cast && typeof cast === "object" ? cast : {};
+  }
+  __name(loadCast2, "loadCast");
+  function buildCastPromptBlock(storage2, limit = 8) {
+    const cast = loadCast2(storage2);
+    const rows = Object.values(cast).filter((c) => c && c.name).sort((a, b) => (b.updatedAt || 0) - (a.updatedAt || 0)).slice(0, limit);
+    if (!rows.length) return "";
+    const lines = rows.map((c) => {
+      const bits = [];
+      if (c.role) bits.push(c.role);
+      if (c.attitude) bits.push(`\u2192 user: ${c.attitude}`);
+      if (c.wants) bits.push(`\u0445\u043E\u0447\u0435\u0442: ${c.wants}`);
+      if (c.state) bits.push(`\u0441\u0435\u0439\u0447\u0430\u0441: ${c.state}`);
+      if (c.secret) bits.push(`\u0441\u043A\u0440\u044B\u0432\u0430\u0435\u0442: ${c.secret}`);
+      return `- ${c.name}${bits.length ? ` \u2014 ${bits.join("; ")}` : ""}`;
+    });
+    return `[Astral Phone \u2014 \u043A\u0430\u0440\u0442\u043E\u0447\u043A\u0438 \u043F\u0435\u0440\u0441\u043E\u043D\u0430\u0436\u0435\u0439]
+${lines.join("\n")}`;
+  }
+  __name(buildCastPromptBlock, "buildCastPromptBlock");
+
   // apps/settings.js
   var SettingsApp = class {
     static {
@@ -4893,6 +4986,11 @@ REPLY (text only):`;
                         <input type="number" id="astral-api-temp" min="0" max="2" step="0.1" value="0.7" />
                     </div>
                     <div class="astral-api-note" id="astral-api-status"></div>
+                </div>
+
+                <div class="astral-settings-section astral-cast-section">
+                    <h3 class="astral-section-title">\u041F\u0435\u0440\u0441\u043E\u043D\u0430\u0436\u0438 \u0432 \u0441\u0446\u0435\u043D\u0435</h3>
+                    <div id="astral-cast-list"></div>
                 </div>
 
                 <div class="astral-settings-section">
@@ -5062,6 +5160,28 @@ REPLY (text only):`;
         fillFields();
         refresh();
       });
+      const castHost = container.querySelector("#astral-cast-list");
+      if (castHost) {
+        const cast = loadCast2(this.storage);
+        const rows = Object.values(cast).sort((a, b) => (b.updatedAt || 0) - (a.updatedAt || 0));
+        if (!rows.length) {
+          const n = analysisInterval2();
+          castHost.innerHTML = `<div class="astral-cast-empty">${n === 0 ? "\u0410\u043D\u0430\u043B\u0438\u0437 \u0432\u044B\u043A\u043B\u044E\u0447\u0435\u043D \u0432 \u043D\u0430\u0441\u0442\u0440\u043E\u0439\u043A\u0430\u0445 \u0440\u0430\u0441\u0448\u0438\u0440\u0435\u043D\u0438\u044F" : `\u041F\u043E\u044F\u0432\u044F\u0442\u0441\u044F \u043F\u043E\u0441\u043B\u0435 ${n} \u0441\u043E\u043E\u0431\u0449\u0435\u043D\u0438\u0439 \u0432 \u0447\u0430\u0442\u0435`}</div>`;
+        } else {
+          castHost.innerHTML = rows.map((c) => `
+                    <div class="astral-cast-card">
+                        <div class="astral-cast-head">
+                            <span class="astral-cast-name">${this._esc(c.name)}</span>
+                            ${c.role ? `<span class="astral-cast-role">${this._esc(c.role)}</span>` : ""}
+                        </div>
+                        ${c.attitude ? `<div class="astral-cast-line"><b>\u043A \u0442\u0435\u0431\u0435:</b> ${this._esc(c.attitude)}</div>` : ""}
+                        ${c.wants ? `<div class="astral-cast-line"><b>\u0445\u043E\u0447\u0435\u0442:</b> ${this._esc(c.wants)}</div>` : ""}
+                        ${c.state ? `<div class="astral-cast-line"><b>\u0441\u0435\u0439\u0447\u0430\u0441:</b> ${this._esc(c.state)}</div>` : ""}
+                        ${c.secret ? `<div class="astral-cast-line"><b>\u0441\u043A\u0440\u044B\u0432\u0430\u0435\u0442:</b> ${this._esc(c.secret)}</div>` : ""}
+                    </div>
+                `).join("");
+        }
+      }
       const bookHost = container.querySelector("#astral-app-charbook");
       if (bookHost) {
         bookHost.innerHTML = renderCharacterBookHTML();
@@ -5605,6 +5725,11 @@ ${lines.join("\n")}`;
                     </svg>
                     <span>${Array.isArray(post.likedBy) ? post.likedBy.length || "" : ""}</span>
                 </button>
+                <button class="astral-social-act astral-social-act--del" data-act="delete" title="\u0423\u0434\u0430\u043B\u0438\u0442\u044C \u043F\u043E\u0441\u0442">
+                    <svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="1.9">
+                        <path d="M3 6h18M8 6V4a2 2 0 012-2h4a2 2 0 012 2v2m3 0v14a2 2 0 01-2 2H7a2 2 0 01-2-2V6h14zM10 11v6M14 11v6"/>
+                    </svg>
+                </button>
             </div>
 
             ${replies.length ? `
@@ -5631,6 +5756,21 @@ ${lines.join("\n")}`;
       card.querySelector('[data-act="reply"]').addEventListener("click", (e) => {
         e.stopPropagation();
         this._openReply(post.id, container);
+      });
+      card.querySelector('[data-act="delete"]').addEventListener("click", (e) => {
+        e.stopPropagation();
+        const preview = String(post.text || "").slice(0, 60);
+        const who = post.author ? `${post.author}: ` : "";
+        if (!confirm(`\u0423\u0434\u0430\u043B\u0438\u0442\u044C \u043F\u043E\u0441\u0442?
+
+${who}\xAB${preview}${preview.length >= 60 ? "\u2026" : ""}\xBB`)) return;
+        const state2 = this.storage.getState();
+        const before = (state2.social || []).length;
+        state2.social = (state2.social || []).filter((p) => p.id !== post.id);
+        if (state2.social.length === before) return;
+        this.storage.save();
+        this._toast("\u041F\u043E\u0441\u0442 \u0443\u0434\u0430\u043B\u0451\u043D");
+        this.render(container);
       });
       return card;
     }
@@ -6088,7 +6228,7 @@ Rules:
     return Boolean(m.fromUser);
   }
   __name(isOutgoing, "isOutgoing");
-  function buildPhoneContext(state) {
+  function buildPhoneContext(state, storageRef) {
     const msgs = Array.isArray(state?.messages) ? state.messages : [];
     const recent = msgs.slice(-24);
     const lines = recent.map((m) => {
@@ -6107,6 +6247,11 @@ ${body}`];
       if (notesBlock) parts.push(notesBlock);
     } catch (_) {
     }
+    try {
+      const castBlock = buildCastPromptBlock(storageRef);
+      if (castBlock) parts.push(castBlock);
+    } catch (_) {
+    }
     return parts.join("\n\n");
   }
   __name(buildPhoneContext, "buildPhoneContext");
@@ -6117,7 +6262,7 @@ ${body}`];
       const state = storage2.getState();
       context.setExtensionPrompt(
         "astral-phone-context",
-        buildPhoneContext(state),
+        buildPhoneContext(state, storage2),
         context.extension_prompt_types?.IN_CHAT ?? 1,
         2,
         false
@@ -6417,6 +6562,22 @@ description \u043F\u0438\u0448\u0438 \u043A\u0430\u043A \u043F\u0440\u043E\u043C
   function registerActivityCounter(context) {
     const { eventSource, event_types } = context;
     if (!eventSource || !event_types) return;
+    let castRunning = false;
+    const maybeAnalyseCast = /* @__PURE__ */ __name(() => {
+      if (castRunning) return;
+      if (analysisInterval() === 0) return;
+      castRunning = true;
+      setTimeout(() => {
+        analyseCast(context, storage, { silent: true }).then((result) => {
+          if (result.updated) {
+            console.log(`[Astral Phone] \u0430\u043D\u043A\u0435\u0442\u044B \u043E\u0431\u043D\u043E\u0432\u043B\u0435\u043D\u044B: ${result.names.join(", ")}`);
+            refreshPhonePrompt(storage);
+          }
+        }).catch((err) => console.warn("[Astral Phone] cast analysis failed:", err?.message || err)).finally(() => {
+          castRunning = false;
+        });
+      }, 1200);
+    }, "maybeAnalyseCast");
     const onMessage = /* @__PURE__ */ __name(() => {
       try {
         const state = storage.getState();
@@ -6426,6 +6587,7 @@ description \u043F\u0438\u0448\u0438 \u043A\u0430\u043A \u043F\u0440\u043E\u043C
         console.warn("[Astral Phone] counter update failed:", err);
       }
       refreshPhonePrompt(storage);
+      maybeAnalyseCast();
     }, "onMessage");
     for (const name of ["MESSAGE_SENT", "MESSAGE_RECEIVED"]) {
       const type = event_types[name];
@@ -6648,6 +6810,13 @@ description \u043F\u0438\u0448\u0438 \u043A\u0430\u043A \u043F\u0440\u043E\u043C
         <div id="astral-api-status" class="notes"></div>
 
         <hr />
+        <b>\u0410\u043D\u043A\u0435\u0442\u044B \u043F\u0435\u0440\u0441\u043E\u043D\u0430\u0436\u0435\u0439</b>
+        <small class="notes">\u041C\u043E\u0434\u0435\u043B\u044C \u043F\u0435\u0440\u0435\u0447\u0438\u0442\u044B\u0432\u0430\u0435\u0442 \u0441\u0446\u0435\u043D\u0443 \u0438 \u043E\u0431\u043D\u043E\u0432\u043B\u044F\u0435\u0442 \u043A\u043E\u0440\u043E\u0442\u043A\u0438\u0435 \u043A\u0430\u0440\u0442\u043E\u0447\u043A\u0438: \u043A\u0442\u043E \u044D\u0442\u043E, \u043A\u0430\u043A \u043E\u0442\u043D\u043E\u0441\u0438\u0442\u0441\u044F \u043A \u0442\u0435\u0431\u0435, \u0447\u0442\u043E \u0441\u043A\u0440\u044B\u0432\u0430\u0435\u0442. 0 \u2014 \u0432\u044B\u043A\u043B\u044E\u0447\u0438\u0442\u044C.</small>
+        <label for="astral-cast-interval">\u0410\u043D\u0430\u043B\u0438\u0437\u0438\u0440\u043E\u0432\u0430\u0442\u044C \u043A\u0430\u0436\u0434\u044B\u0435 N \u0441\u043E\u043E\u0431\u0449\u0435\u043D\u0438\u0439</label>
+        <input type="number" id="astral-cast-interval" class="text_pole" min="0" max="50" step="1" value="5" />
+        <div id="astral-cast-status" class="notes"></div>
+
+        <hr />
         <b>\u0421\u043F\u0440\u0430\u0432\u043E\u0447\u043D\u0438\u043A \u0432\u043D\u0435\u0448\u043D\u043E\u0441\u0442\u0438</b>
         <div id="astral-charbook-host"></div>
 
@@ -6793,6 +6962,21 @@ description \u043F\u0438\u0448\u0438 \u043A\u0430\u043A \u043F\u0440\u043E\u043C
         fillProfiles();
         fillFields();
         refreshStatus();
+      });
+      const castInterval = document.getElementById("astral-cast-interval");
+      const castStatus = document.getElementById("astral-cast-status");
+      const refreshCastStatus = /* @__PURE__ */ __name(() => {
+        if (!castStatus) return;
+        const cast = loadCast(storage);
+        const names = Object.keys(cast);
+        const n = analysisInterval();
+        castStatus.textContent = n === 0 ? "\u0410\u043D\u0430\u043B\u0438\u0437 \u0432\u044B\u043A\u043B\u044E\u0447\u0435\u043D" : `\u041A\u0430\u0436\u0434\u044B\u0435 ${n} \u0441\u043E\u043E\u0431\u0449\u0435\u043D\u0438\u0439 \xB7 \u043A\u0430\u0440\u0442\u043E\u0447\u0435\u043A: ${names.length}${names.length ? ` (${names.slice(0, 4).join(", ")}${names.length > 4 ? "\u2026" : ""})` : ""}`;
+      }, "refreshCastStatus");
+      if (castInterval) castInterval.value = analysisInterval();
+      refreshCastStatus();
+      castInterval?.addEventListener("change", () => {
+        setAnalysisInterval(Number(castInterval.value) || 0);
+        refreshCastStatus();
       });
       const bookHost = document.getElementById("astral-charbook-host");
       if (bookHost) {
