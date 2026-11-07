@@ -5,6 +5,7 @@
  */
 
 import { ICONS } from './phone-core.js';
+import { showTyping, generateMessage } from './character-gen.js';
 
 export class MessagesApp {
     constructor(context, storage, imageGen) {
@@ -187,29 +188,26 @@ export class MessagesApp {
         });
     }
 
-    /** Ask the model to generate a reply from the character. */
+    /**
+     * Попросить модель написать сообщение от персонажа.
+     * Пока идёт генерация, в треде видно «<имя> печатает…».
+     */
     async _requestCharacterReply(character) {
-        try {
-            const ctx = globalThis.SillyTavern?.getContext?.();
-            if (typeof ctx?.generateQuietPrompt !== 'function') {
-                alert('generateQuietPrompt недоступен — обновите SillyTavern.');
-                return;
-            }
+        const stopTyping = showTyping(character);
 
-            // Find the last unread message from this character, or pick the latest
+        try {
+            const ctx = globalThis.SillyTavern?.getContext?.() || {};
             const state = this.storage.getState();
             const thread = (state.messages || []).filter(m => m.character === character);
-            const lastMsg = thread[thread.length - 1];
-            const prompt = this._buildReplyPrompt(character, lastMsg, state);
 
-            const result = await ctx.generateQuietPrompt(prompt, false, false);
-            const text = String(result || '').trim();
+            const text = await generateMessage(ctx, { character, thread });
+            stopTyping();
+
             if (!text) {
-                alert('Персонаж молчит');
+                this._toast('Персонаж промолчал', 'error');
                 return;
             }
 
-            // Add as incoming message
             state.messages.push({
                 id: `reply_${Date.now()}_${Math.random().toString(36).slice(2, 7)}`,
                 character,
@@ -220,13 +218,14 @@ export class MessagesApp {
                 fromUser: false,
                 timestamp: Date.now(),
             });
+
             this.storage.save();
             try { globalThis.__astralRefreshPrompt?.(); } catch { /* ignore */ }
             this.render(document.querySelector('.astral-phone-body'), { character });
         } catch (err) {
+            stopTyping();
             console.error('[Astral Phone] reply generation failed:', err);
-            console.error('Full error:', err);
-            alert(`Ошибка: ${err.message}`);
+            this._toast(`Ошибка: ${err.message}`, 'error');
         }
     }
 

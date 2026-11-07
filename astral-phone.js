@@ -2652,283 +2652,6 @@ ${prompt2}
     }
   };
 
-  // apps/messages.js
-  var MessagesApp = class {
-    static {
-      __name(this, "MessagesApp");
-    }
-    constructor(context, storage2, imageGen2) {
-      this.context = context;
-      this.storage = storage2;
-      this.imageGen = imageGen2;
-      this.id = "messages";
-      this.title = "Messages";
-      this.icon = ICONS.messages;
-      this._thread = null;
-    }
-    render(container, params = {}) {
-      if (params.character !== void 0) this._thread = params.character || null;
-      if (this._thread) {
-        this._renderThread(container, this._thread);
-      } else {
-        this._renderList(container);
-      }
-    }
-    /* ─────────────────────────── thread list ─────────────────────────── */
-    _renderList(container) {
-      const state = this.storage.getState();
-      const messages = state.messages || [];
-      container.innerHTML = "";
-      if (messages.length === 0) {
-        const seeding = globalThis.__astralSeeding === true;
-        container.innerHTML = seeding ? `
-                <div class="astral-empty-state astral-seeding">
-                    <div class="astral-seeding-dots"><span></span><span></span><span></span></div>
-                    <div>\u041D\u0430\u0431\u0438\u0440\u0430\u044E \u043F\u0435\u0440\u0435\u043F\u0438\u0441\u043A\u0443\u2026</div>
-                    <div class="astral-empty-hint">\u041F\u0435\u0440\u0441\u043E\u043D\u0430\u0436\u0438 \u043F\u0440\u0438\u0434\u0443\u043C\u044B\u0432\u0430\u044E\u0442, \u0447\u0442\u043E \u0442\u0435\u0431\u0435 \u043D\u0430\u043F\u0438\u0441\u0430\u0442\u044C</div>
-                </div>` : `
-                <div class="astral-empty-state">
-                    <div class="astral-empty-state-icon">${ICONS.messages}</div>
-                    <div>\u041D\u0435\u0442 \u043F\u0435\u0440\u0435\u043F\u0438\u0441\u043A\u0438</div>
-                    <div class="astral-empty-hint">\u041F\u0435\u0440\u0435\u043F\u0438\u0441\u043A\u0430 \u043F\u043E\u044F\u0432\u0438\u0442\u0441\u044F, \u043A\u043E\u0433\u0434\u0430 \u043E\u0442\u043A\u0440\u043E\u0435\u0448\u044C \u044D\u0442\u043E\u0442 \u044D\u043A\u0440\u0430\u043D \u0432\u043F\u0435\u0440\u0432\u044B\u0435</div>
-                </div>`;
-        return;
-      }
-      const threads = /* @__PURE__ */ new Map();
-      for (const msg of messages) {
-        const key = msg.character || "\u041D\u0435\u0438\u0437\u0432\u0435\u0441\u0442\u043D\u044B\u0439";
-        const entry = threads.get(key);
-        if (!entry || msg.timestamp > entry.last.timestamp) {
-          threads.set(key, { last: msg, role: msg.role || entry?.role || "" });
-        } else if (!entry.role && msg.role) {
-          entry.role = msg.role;
-        }
-      }
-      const list = document.createElement("div");
-      list.className = "astral-thread-list";
-      for (const [char, { last, role }] of threads) {
-        const item = document.createElement("div");
-        item.className = "astral-msg-item";
-        const isOut = this._isOut(last);
-        item.innerHTML = `
-                <div class="astral-msg-avatar">${this._esc((char[0] || "?").toUpperCase())}</div>
-                <div class="astral-msg-content">
-                    <div class="astral-msg-name-row">
-                        <span class="astral-msg-name">${this._esc(char)}</span>
-                        ${role ? `<span class="astral-msg-role">${this._esc(role)}</span>` : ""}
-                    </div>
-                    <div class="astral-msg-preview ${isOut ? "astral-msg-preview--out" : ""}">
-                        ${isOut ? "\u2192 " : ""}${this._esc(this._truncate(last.text, 48))}
-                    </div>
-                </div>
-                <div class="astral-msg-time">${this._time(last.timestamp)}</div>
-            `;
-        item.addEventListener("click", () => {
-          this._thread = char;
-          this.render(document.querySelector(".astral-phone-body"));
-        });
-        list.appendChild(item);
-      }
-      container.appendChild(list);
-    }
-    /* ─────────────────────────── single thread ─────────────────────────── */
-    _renderThread(container, character) {
-      const state = this.storage.getState();
-      const msgs = (state.messages || []).filter((m) => m.character === character);
-      const role = msgs.find((m) => m.role)?.role || "";
-      container.innerHTML = "";
-      const header = document.createElement("div");
-      header.className = "astral-thread-header";
-      header.innerHTML = `
-            <button class="astral-back-btn" id="astral-thread-back">
-                <svg viewBox="0 0 24 24" width="16" height="16" stroke="currentColor" fill="none" stroke-width="2.2">
-                    <path d="M19 12H5M5 12l7-7M5 12l7 7"/>
-                </svg>
-            </button>
-            <div class="astral-thread-avatar">${this._esc((character[0] || "?").toUpperCase())}</div>
-            <div class="astral-thread-info">
-                <div class="astral-thread-name">${this._esc(character)}</div>
-                ${role ? `<div class="astral-thread-role">${this._esc(role)}</div>` : ""}
-            </div>
-        `;
-      container.appendChild(header);
-      const wrap = document.createElement("div");
-      wrap.className = "astral-thread";
-      if (msgs.length === 0) {
-        wrap.innerHTML = `<div class="astral-empty-state"><div>\u041F\u0443\u0441\u0442\u043E</div></div>`;
-      }
-      for (const msg of msgs) {
-        const isOut = this._isOut(msg);
-        const bubble = document.createElement("div");
-        bubble.className = `astral-bubble ${isOut ? "astral-bubble--out" : "astral-bubble--in"}`;
-        bubble.innerHTML = `
-                <div class="astral-bubble-text">${this._esc(msg.text)}</div>
-                <div class="astral-bubble-time">${this._time(msg.timestamp, true)}</div>
-            `;
-        wrap.appendChild(bubble);
-      }
-      container.appendChild(wrap);
-      wrap.scrollTop = wrap.scrollHeight;
-      header.querySelector("#astral-thread-back").addEventListener("click", () => {
-        this._thread = null;
-        this.render(document.querySelector(".astral-phone-body"));
-      });
-      const composer = document.createElement("div");
-      composer.className = "astral-msg-composer";
-      composer.innerHTML = `
-            <input class="astral-msg-input" id="astral-msg-input" type="text"
-                   placeholder="\u0421\u043E\u043E\u0431\u0449\u0435\u043D\u0438\u0435\u2026" autocomplete="off">
-            <button class="astral-msg-send" id="astral-msg-send" title="\u041E\u0442\u043F\u0440\u0430\u0432\u0438\u0442\u044C">
-                <svg viewBox="0 0 24 24" width="17" height="17" stroke="currentColor"
-                     fill="none" stroke-width="2.2" stroke-linecap="round">
-                    <path d="M22 2L11 13M22 2l-7 20-4-9-9-4z"/>
-                </svg>
-            </button>
-            <button class="astral-msg-reply-btn" id="astral-msg-reply-btn" title="\u041E\u0442\u0432\u0435\u0442\u0438\u0442\u044C \u043E\u0442 \u043F\u0435\u0440\u0441\u043E\u043D\u0430\u0436\u0430">
-                <svg viewBox="0 0 24 24" width="17" height="17" stroke="currentColor"
-                     fill="none" stroke-width="2.2">
-                    <path d="M20 15a2 2 0 0 1-2 2H4l-5 5V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/>
-                </svg>
-            </button>
-        `;
-      container.appendChild(composer);
-      const input = composer.querySelector("#astral-msg-input");
-      const send = /* @__PURE__ */ __name(() => {
-        const text = input.value.trim();
-        if (!text) return;
-        input.value = "";
-        this._sendMessage(character, text);
-      }, "send");
-      composer.querySelector("#astral-msg-send").addEventListener("click", send);
-      input.addEventListener("keydown", (e) => {
-        if (e.key === "Enter" && !e.shiftKey) {
-          e.preventDefault();
-          send();
-        }
-      });
-      composer.querySelector("#astral-msg-reply-btn").addEventListener("click", () => {
-        this._requestCharacterReply(character);
-      });
-    }
-    /** Ask the model to generate a reply from the character. */
-    async _requestCharacterReply(character) {
-      try {
-        const ctx = globalThis.SillyTavern?.getContext?.();
-        if (typeof ctx?.generateQuietPrompt !== "function") {
-          alert("generateQuietPrompt \u043D\u0435\u0434\u043E\u0441\u0442\u0443\u043F\u0435\u043D \u2014 \u043E\u0431\u043D\u043E\u0432\u0438\u0442\u0435 SillyTavern.");
-          return;
-        }
-        const state = this.storage.getState();
-        const thread = (state.messages || []).filter((m) => m.character === character);
-        const lastMsg = thread[thread.length - 1];
-        const prompt2 = this._buildReplyPrompt(character, lastMsg, state);
-        const result = await ctx.generateQuietPrompt(prompt2, false, false);
-        const text = String(result || "").trim();
-        if (!text) {
-          alert("\u041F\u0435\u0440\u0441\u043E\u043D\u0430\u0436 \u043C\u043E\u043B\u0447\u0438\u0442");
-          return;
-        }
-        state.messages.push({
-          id: `reply_${Date.now()}_${Math.random().toString(36).slice(2, 7)}`,
-          character,
-          role: thread.find((m) => m.role)?.role || "",
-          text,
-          from: "them",
-          isIncoming: true,
-          fromUser: false,
-          timestamp: Date.now()
-        });
-        this.storage.save();
-        try {
-          globalThis.__astralRefreshPrompt?.();
-        } catch {
-        }
-        this.render(document.querySelector(".astral-phone-body"), { character });
-      } catch (err) {
-        console.error("[Astral Phone] reply generation failed:", err);
-        console.error("Full error:", err);
-        alert(`\u041E\u0448\u0438\u0431\u043A\u0430: ${err.message}`);
-      }
-    }
-    /** Build a prompt asking the character to respond. */
-    _buildReplyPrompt(character, lastMsg, state) {
-      const ctx = this.context || globalThis.SillyTavern?.getContext?.() || {};
-      const charName = ctx.name2 || "\u043F\u0435\u0440\u0441\u043E\u043D\u0430\u0436";
-      const userName = ctx.name1 || "\u0442\u044B";
-      const thread = (state.messages || []).filter((m) => m.character === character).slice(-8).map((m) => `${m.from === "me" ? "\u0422\u044B" : "\u041F\u0435\u0440\u0441\u043E\u043D\u0430\u0436"}: ${m.text}`).join("\n");
-      return `[MESSAGE_REPLY] Character: ${charName}
-
-You are ${charName} messaging ${userName} on the phone. The last thing they wrote was: "${lastMsg?.text || "(no message)"}".
-
-Write a SHORT, natural TEXT REPLY from ${charName}'s perspective \u2014 one sentence or a few casual words. Keep it in character.
-
-REPLY (text only):`;
-    }
-    /** Append an outgoing message to the thread and persist it. */
-    _sendMessage(character, text) {
-      const state = this.storage.getState();
-      if (!Array.isArray(state.messages)) state.messages = [];
-      const role = state.messages.find((m) => m.character === character && m.role)?.role || "";
-      state.messages.push({
-        id: `me_${Date.now()}_${Math.random().toString(36).slice(2, 7)}`,
-        character,
-        role,
-        text,
-        from: "me",
-        isIncoming: false,
-        fromUser: true,
-        timestamp: Date.now()
-      });
-      this.storage.save();
-      try {
-        globalThis.__astralRefreshPrompt?.();
-      } catch {
-      }
-      this.render(document.querySelector(".astral-phone-body"), { character });
-    }
-    /* ─────────────────────────── event handler ─────────────────────────── */
-    async handleEvent(eventData) {
-      const state = this.storage.getState();
-      if (!Array.isArray(state.messages)) state.messages = [];
-      state.messages.push({
-        character: eventData.character || this.context.name2 || "",
-        text: eventData.description || "",
-        timestamp: Date.now(),
-        fromUser: false,
-        from: "them",
-        isIncoming: true
-      });
-      this.storage.save();
-      try {
-        globalThis.__astralRefreshPrompt?.();
-      } catch {
-      }
-      return { success: true, message: "\u0421\u043E\u043E\u0431\u0449\u0435\u043D\u0438\u0435 \u0434\u043E\u0431\u0430\u0432\u043B\u0435\u043D\u043E" };
-    }
-    /* ─────────────────────────── utils ─────────────────────────── */
-    /** Unified check: supports both old `fromUser` flag and new `from` field. */
-    _isOut(msg) {
-      if (msg.from === "me") return true;
-      if (msg.from === "them") return false;
-      return Boolean(msg.fromUser);
-    }
-    _truncate(str, max) {
-      const s = String(str ?? "");
-      return s.length > max ? s.slice(0, max) + "\u2026" : s;
-    }
-    _time(ts, short = false) {
-      const d = new Date(ts);
-      const today = (/* @__PURE__ */ new Date()).toDateString() === d.toDateString();
-      if (short || today) {
-        return d.toLocaleTimeString("ru-RU", { hour: "2-digit", minute: "2-digit" });
-      }
-      return d.toLocaleDateString("ru-RU", { day: "numeric", month: "short" });
-    }
-    _esc(str) {
-      return String(str ?? "").replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" })[c]);
-    }
-  };
-
   // apps/prompt-llm.js
   var MODULE3 = "[AstralLLM]";
   var SETTINGS_KEY2 = "astral-phone";
@@ -3273,6 +2996,482 @@ PROMPT:`;
     return `${st}, ${text}`;
   }
   __name(ensureStyle, "ensureStyle");
+
+  // apps/character-gen.js
+  function collectCast(ctx) {
+    const charName = resolveName(ctx, "char");
+    const userName = resolveName(ctx, "user");
+    const known = /* @__PURE__ */ new Set();
+    if (charName) known.add(charName);
+    if (userName) known.add(userName);
+    try {
+      const card = ctx?.characters?.[ctx?.characterId] || {};
+      const text = `${card.description || ""} ${card.scenario || ""} ${card.personality || ""}`;
+      for (const m of text.matchAll(/\b([A-ZА-ЯЁ][a-zа-яё]{2,15})\b/g)) {
+        const name = m[1];
+        if (/^(Она|Он|Оно|Это|Тот|Эта|Все|Они|Ты|Вы|The|And|But|She|He|They)$/i.test(name)) continue;
+        known.add(name);
+      }
+    } catch (_) {
+    }
+    try {
+      const state = globalThis.__astralPhoneCore?.storage?.getState?.() || {};
+      for (const m of state.messages || []) {
+        if (m.character) known.add(String(m.character).trim());
+      }
+    } catch (_) {
+    }
+    const cast = [...known].map((n) => String(n).trim()).filter((n) => n && n.length <= 24).filter((n) => !/sillytavern/i.test(n)).filter((n, i, arr) => arr.findIndex((x) => x.toLowerCase() === n.toLowerCase()) === i);
+    return { charName, userName, cast };
+  }
+  __name(collectCast, "collectCast");
+  function resolveName(ctx, which) {
+    if (which === "char") {
+      const fromCard = String(ctx?.characters?.[ctx?.characterId]?.name || "").trim();
+      const fallback = String(ctx?.name2 || "").trim();
+      const pick2 = fromCard || fallback;
+      if (!pick2 || /sillytavern/i.test(pick2)) return fromCard || "\u041F\u0435\u0440\u0441\u043E\u043D\u0430\u0436";
+      return pick2;
+    }
+    const pick = String(ctx?.name1 || "").trim();
+    return !pick || /sillytavern/i.test(pick) ? "\u0422\u044B" : pick;
+  }
+  __name(resolveName, "resolveName");
+  function sceneContext(ctx, limit = 4, chars = 500) {
+    const chat = Array.isArray(ctx?.chat) ? ctx.chat : [];
+    const lines = chat.filter((m) => m && !m.is_system && typeof m.mes === "string").slice(-limit).map((m) => {
+      const who = m.is_user ? resolveName(ctx, "user") : m.name || resolveName(ctx, "char");
+      const text = String(m.mes).replace(/<[^>]+>/g, " ").replace(/\s+/g, " ").trim().slice(0, chars);
+      return `${who}: ${text}`;
+    }).filter(Boolean);
+    return lines.join("\n") || "(\u0441\u0446\u0435\u043D\u0430 \u0442\u043E\u043B\u044C\u043A\u043E \u043D\u0430\u0447\u0438\u043D\u0430\u0435\u0442\u0441\u044F)";
+  }
+  __name(sceneContext, "sceneContext");
+  function cleanOutput(raw, maxLen = 400) {
+    let text = String(raw || "").trim();
+    if (!text) return "";
+    text = text.replace(/```[a-z]*\n?/gi, "").trim();
+    text = text.replace(/<[^>]*>/g, "");
+    text = text.replace(/^\[[A-Z_]{3,}[^\]]*\]\s*/g, "");
+    text = text.replace(/^(пост|заметка|запись|сообщение|text|post|note|output|answer)\s*[:：]\s*/i, "");
+    text = text.replace(/^["'«„]/, "").replace(/["'»“]$/, "");
+    text = text.replace(/\s*[—–-]\s*[A-ZА-ЯЁ][\wА-Яа-яЁё]{1,15}\s*$/, "");
+    return text.trim().slice(0, maxLen);
+  }
+  __name(cleanOutput, "cleanOutput");
+  async function generateSocialPost(ctx, opts = {}) {
+    const { charName, userName, cast } = collectCast(ctx);
+    const scene = sceneContext(ctx);
+    const others = cast.filter((n) => n !== userName);
+    const requested = String(opts.author || "").trim();
+    const whoRule = requested ? `Write the post as "${requested}".` : `Pick ONE character from this cast who would plausibly post right now: ${others.join(", ")}.
+Prefer someone whose current state in the scene makes a post natural. Return their name in the first line of your answer as "${"AUTHOR"}: name".`;
+    const prompt2 = `You write social-media posts for a roleplay.
+
+SCENE (what is happening right now):
+${scene}
+
+${whoRule}
+
+RULES:
+- Write in the SAME LANGUAGE as the scene. Russian scene \u2192 Russian post.
+- 1-3 short sentences. Casual, first person, like a real tweet.
+- In character: their voice, their mood, their preoccupations.
+- No hashtags unless they fit, no emoji spam (max one).
+- No quotes around the text, no "Post:" label, no explanation.
+- Do NOT mention that this is a roleplay, phone, or app.
+
+${requested ? "TEXT:" : "AUTHOR: <name>\nTEXT:"}`;
+    const raw = await ask(prompt2, {
+      system: "You write short in-character social media posts. You never explain or narrate.",
+      responseLength: 300
+    });
+    let author = requested;
+    let body = String(raw);
+    const authorLine = String(raw).match(/^\s*AUTHOR\s*[:：]\s*(.+)$/im);
+    if (authorLine) {
+      body = String(raw).replace(authorLine[0], "");
+      if (!requested) {
+        const parsed = cleanOutput(authorLine[1], 40).replace(/[,.].*$/, "").trim();
+        const match = cast.find((n) => n.toLowerCase() === parsed.toLowerCase());
+        author = match || others[0] || charName;
+      }
+    }
+    if (!author) author = others[0] || charName;
+    return { author, text: cleanOutput(body, 400) };
+  }
+  __name(generateSocialPost, "generateSocialPost");
+  async function generateNotes(ctx, opts = {}) {
+    const kinds = ["diary", "plan", "secret", "note"];
+    const kind = kinds.includes(opts.kind) ? opts.kind : "diary";
+    const count = Math.max(1, Math.min(3, Number(opts.count) || 1));
+    const { charName } = collectCast(ctx);
+    const scene = sceneContext(ctx);
+    const kindBrief = {
+      diary: "a private diary entry \u2014 how they feel about what happened",
+      plan: "a private plan \u2014 what they intend to do next, steps, intentions",
+      secret: "a private secret \u2014 something they hide from others",
+      note: "a short private note \u2014 a passing thought, an observation"
+    }[kind];
+    const prompt2 = `You write PRIVATE notes in the voice of ${charName}.
+
+These notes are never seen by anyone. ${charName} writes them honestly, for themselves only.
+
+SCENE (what is happening right now):
+${scene}
+
+TASK: write ${count} ${kindBrief}.
+
+RULES:
+- Write in the SAME LANGUAGE as the scene. Russian scene \u2192 Russian note.
+- First person, ${charName}'s own voice and vocabulary.
+- Honest and specific: reference actual things from the scene, not generic feelings.
+- Each note is 1-4 sentences. ${count > 1 ? "They should differ in focus." : ""}
+- ${kind === "secret" ? "This is hidden \u2014 write what they would never say out loud." : "Private, but not necessarily dark."}
+- No labels, no quotes, no bullet points, no explanation.
+
+Return ONLY the ${count > 1 ? "notes separated by a line containing only ---" : "note text"}.`;
+    const raw = await ask(prompt2, {
+      system: "You write private in-character notes. You never explain or add commentary.",
+      responseLength: 500
+    });
+    const chunks = String(raw).split(/^\s*---\s*$/m).map((c) => cleanOutput(c, 600)).filter(Boolean);
+    const texts = chunks.length ? chunks : [cleanOutput(raw, 600)];
+    return texts.slice(0, count).map((text) => ({
+      kind,
+      title: "",
+      text
+    }));
+  }
+  __name(generateNotes, "generateNotes");
+  async function generateMessage(ctx, opts = {}) {
+    const character = String(opts.character || "").trim() || collectCast(ctx).charName;
+    const thread = (opts.thread || []).slice(-8).map((m) => `${m.from === "me" ? "\u0422\u044B" : character}: ${m.text}`).join("\n");
+    const prompt2 = `You write a text message from ${character} to the user.
+
+${thread ? `RECENT CONVERSATION:
+${thread}
+` : ""}
+SCENE (broader context):
+${sceneContext(ctx, 3, 300)}
+
+TASK: write ONE short message ${character} sends right now.
+
+RULES:
+- Same language as the scene.
+- 1-2 sentences, casual, like a real text.
+- In character \u2014 their way of typing, their mood.
+- No quotes, no name prefix, no explanation.
+
+MESSAGE:`;
+    const raw = await ask(prompt2, {
+      system: "You write short in-character text messages. You never explain.",
+      responseLength: 200
+    });
+    return cleanOutput(raw, 300);
+  }
+  __name(generateMessage, "generateMessage");
+  function showTyping(name, opts = {}) {
+    const host = opts.container || document.querySelector(".astral-phone-body") || document.querySelector(".astral-phone");
+    if (!host) return () => {
+    };
+    const el = document.createElement("div");
+    el.className = "astral-typing";
+    el.dataset.typing = "1";
+    el.innerHTML = `
+        <span class="astral-typing-name">${escapeHtml(name)}</span>
+        <span class="astral-typing-word">\u043F\u0435\u0447\u0430\u0442\u0430\u0435\u0442</span>
+        <span class="astral-typing-dots"><i></i><i></i><i></i></span>
+    `;
+    host.appendChild(el);
+    let stopped = false;
+    return () => {
+      if (stopped) return;
+      stopped = true;
+      el.classList.add("astral-typing--out");
+      setTimeout(() => el.remove(), 220);
+    };
+  }
+  __name(showTyping, "showTyping");
+  function escapeHtml(str) {
+    return String(str ?? "").replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" })[c]);
+  }
+  __name(escapeHtml, "escapeHtml");
+
+  // apps/messages.js
+  var MessagesApp = class {
+    static {
+      __name(this, "MessagesApp");
+    }
+    constructor(context, storage2, imageGen2) {
+      this.context = context;
+      this.storage = storage2;
+      this.imageGen = imageGen2;
+      this.id = "messages";
+      this.title = "Messages";
+      this.icon = ICONS.messages;
+      this._thread = null;
+    }
+    render(container, params = {}) {
+      if (params.character !== void 0) this._thread = params.character || null;
+      if (this._thread) {
+        this._renderThread(container, this._thread);
+      } else {
+        this._renderList(container);
+      }
+    }
+    /* ─────────────────────────── thread list ─────────────────────────── */
+    _renderList(container) {
+      const state = this.storage.getState();
+      const messages = state.messages || [];
+      container.innerHTML = "";
+      if (messages.length === 0) {
+        const seeding = globalThis.__astralSeeding === true;
+        container.innerHTML = seeding ? `
+                <div class="astral-empty-state astral-seeding">
+                    <div class="astral-seeding-dots"><span></span><span></span><span></span></div>
+                    <div>\u041D\u0430\u0431\u0438\u0440\u0430\u044E \u043F\u0435\u0440\u0435\u043F\u0438\u0441\u043A\u0443\u2026</div>
+                    <div class="astral-empty-hint">\u041F\u0435\u0440\u0441\u043E\u043D\u0430\u0436\u0438 \u043F\u0440\u0438\u0434\u0443\u043C\u044B\u0432\u0430\u044E\u0442, \u0447\u0442\u043E \u0442\u0435\u0431\u0435 \u043D\u0430\u043F\u0438\u0441\u0430\u0442\u044C</div>
+                </div>` : `
+                <div class="astral-empty-state">
+                    <div class="astral-empty-state-icon">${ICONS.messages}</div>
+                    <div>\u041D\u0435\u0442 \u043F\u0435\u0440\u0435\u043F\u0438\u0441\u043A\u0438</div>
+                    <div class="astral-empty-hint">\u041F\u0435\u0440\u0435\u043F\u0438\u0441\u043A\u0430 \u043F\u043E\u044F\u0432\u0438\u0442\u0441\u044F, \u043A\u043E\u0433\u0434\u0430 \u043E\u0442\u043A\u0440\u043E\u0435\u0448\u044C \u044D\u0442\u043E\u0442 \u044D\u043A\u0440\u0430\u043D \u0432\u043F\u0435\u0440\u0432\u044B\u0435</div>
+                </div>`;
+        return;
+      }
+      const threads = /* @__PURE__ */ new Map();
+      for (const msg of messages) {
+        const key = msg.character || "\u041D\u0435\u0438\u0437\u0432\u0435\u0441\u0442\u043D\u044B\u0439";
+        const entry = threads.get(key);
+        if (!entry || msg.timestamp > entry.last.timestamp) {
+          threads.set(key, { last: msg, role: msg.role || entry?.role || "" });
+        } else if (!entry.role && msg.role) {
+          entry.role = msg.role;
+        }
+      }
+      const list = document.createElement("div");
+      list.className = "astral-thread-list";
+      for (const [char, { last, role }] of threads) {
+        const item = document.createElement("div");
+        item.className = "astral-msg-item";
+        const isOut = this._isOut(last);
+        item.innerHTML = `
+                <div class="astral-msg-avatar">${this._esc((char[0] || "?").toUpperCase())}</div>
+                <div class="astral-msg-content">
+                    <div class="astral-msg-name-row">
+                        <span class="astral-msg-name">${this._esc(char)}</span>
+                        ${role ? `<span class="astral-msg-role">${this._esc(role)}</span>` : ""}
+                    </div>
+                    <div class="astral-msg-preview ${isOut ? "astral-msg-preview--out" : ""}">
+                        ${isOut ? "\u2192 " : ""}${this._esc(this._truncate(last.text, 48))}
+                    </div>
+                </div>
+                <div class="astral-msg-time">${this._time(last.timestamp)}</div>
+            `;
+        item.addEventListener("click", () => {
+          this._thread = char;
+          this.render(document.querySelector(".astral-phone-body"));
+        });
+        list.appendChild(item);
+      }
+      container.appendChild(list);
+    }
+    /* ─────────────────────────── single thread ─────────────────────────── */
+    _renderThread(container, character) {
+      const state = this.storage.getState();
+      const msgs = (state.messages || []).filter((m) => m.character === character);
+      const role = msgs.find((m) => m.role)?.role || "";
+      container.innerHTML = "";
+      const header = document.createElement("div");
+      header.className = "astral-thread-header";
+      header.innerHTML = `
+            <button class="astral-back-btn" id="astral-thread-back">
+                <svg viewBox="0 0 24 24" width="16" height="16" stroke="currentColor" fill="none" stroke-width="2.2">
+                    <path d="M19 12H5M5 12l7-7M5 12l7 7"/>
+                </svg>
+            </button>
+            <div class="astral-thread-avatar">${this._esc((character[0] || "?").toUpperCase())}</div>
+            <div class="astral-thread-info">
+                <div class="astral-thread-name">${this._esc(character)}</div>
+                ${role ? `<div class="astral-thread-role">${this._esc(role)}</div>` : ""}
+            </div>
+        `;
+      container.appendChild(header);
+      const wrap = document.createElement("div");
+      wrap.className = "astral-thread";
+      if (msgs.length === 0) {
+        wrap.innerHTML = `<div class="astral-empty-state"><div>\u041F\u0443\u0441\u0442\u043E</div></div>`;
+      }
+      for (const msg of msgs) {
+        const isOut = this._isOut(msg);
+        const bubble = document.createElement("div");
+        bubble.className = `astral-bubble ${isOut ? "astral-bubble--out" : "astral-bubble--in"}`;
+        bubble.innerHTML = `
+                <div class="astral-bubble-text">${this._esc(msg.text)}</div>
+                <div class="astral-bubble-time">${this._time(msg.timestamp, true)}</div>
+            `;
+        wrap.appendChild(bubble);
+      }
+      container.appendChild(wrap);
+      wrap.scrollTop = wrap.scrollHeight;
+      header.querySelector("#astral-thread-back").addEventListener("click", () => {
+        this._thread = null;
+        this.render(document.querySelector(".astral-phone-body"));
+      });
+      const composer = document.createElement("div");
+      composer.className = "astral-msg-composer";
+      composer.innerHTML = `
+            <input class="astral-msg-input" id="astral-msg-input" type="text"
+                   placeholder="\u0421\u043E\u043E\u0431\u0449\u0435\u043D\u0438\u0435\u2026" autocomplete="off">
+            <button class="astral-msg-send" id="astral-msg-send" title="\u041E\u0442\u043F\u0440\u0430\u0432\u0438\u0442\u044C">
+                <svg viewBox="0 0 24 24" width="17" height="17" stroke="currentColor"
+                     fill="none" stroke-width="2.2" stroke-linecap="round">
+                    <path d="M22 2L11 13M22 2l-7 20-4-9-9-4z"/>
+                </svg>
+            </button>
+            <button class="astral-msg-reply-btn" id="astral-msg-reply-btn" title="\u041E\u0442\u0432\u0435\u0442\u0438\u0442\u044C \u043E\u0442 \u043F\u0435\u0440\u0441\u043E\u043D\u0430\u0436\u0430">
+                <svg viewBox="0 0 24 24" width="17" height="17" stroke="currentColor"
+                     fill="none" stroke-width="2.2">
+                    <path d="M20 15a2 2 0 0 1-2 2H4l-5 5V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/>
+                </svg>
+            </button>
+        `;
+      container.appendChild(composer);
+      const input = composer.querySelector("#astral-msg-input");
+      const send = /* @__PURE__ */ __name(() => {
+        const text = input.value.trim();
+        if (!text) return;
+        input.value = "";
+        this._sendMessage(character, text);
+      }, "send");
+      composer.querySelector("#astral-msg-send").addEventListener("click", send);
+      input.addEventListener("keydown", (e) => {
+        if (e.key === "Enter" && !e.shiftKey) {
+          e.preventDefault();
+          send();
+        }
+      });
+      composer.querySelector("#astral-msg-reply-btn").addEventListener("click", () => {
+        this._requestCharacterReply(character);
+      });
+    }
+    /**
+     * Попросить модель написать сообщение от персонажа.
+     * Пока идёт генерация, в треде видно «<имя> печатает…».
+     */
+    async _requestCharacterReply(character) {
+      const stopTyping = showTyping(character);
+      try {
+        const ctx = globalThis.SillyTavern?.getContext?.() || {};
+        const state = this.storage.getState();
+        const thread = (state.messages || []).filter((m) => m.character === character);
+        const text = await generateMessage(ctx, { character, thread });
+        stopTyping();
+        if (!text) {
+          this._toast("\u041F\u0435\u0440\u0441\u043E\u043D\u0430\u0436 \u043F\u0440\u043E\u043C\u043E\u043B\u0447\u0430\u043B", "error");
+          return;
+        }
+        state.messages.push({
+          id: `reply_${Date.now()}_${Math.random().toString(36).slice(2, 7)}`,
+          character,
+          role: thread.find((m) => m.role)?.role || "",
+          text,
+          from: "them",
+          isIncoming: true,
+          fromUser: false,
+          timestamp: Date.now()
+        });
+        this.storage.save();
+        try {
+          globalThis.__astralRefreshPrompt?.();
+        } catch {
+        }
+        this.render(document.querySelector(".astral-phone-body"), { character });
+      } catch (err) {
+        stopTyping();
+        console.error("[Astral Phone] reply generation failed:", err);
+        this._toast(`\u041E\u0448\u0438\u0431\u043A\u0430: ${err.message}`, "error");
+      }
+    }
+    /** Build a prompt asking the character to respond. */
+    _buildReplyPrompt(character, lastMsg, state) {
+      const ctx = this.context || globalThis.SillyTavern?.getContext?.() || {};
+      const charName = ctx.name2 || "\u043F\u0435\u0440\u0441\u043E\u043D\u0430\u0436";
+      const userName = ctx.name1 || "\u0442\u044B";
+      const thread = (state.messages || []).filter((m) => m.character === character).slice(-8).map((m) => `${m.from === "me" ? "\u0422\u044B" : "\u041F\u0435\u0440\u0441\u043E\u043D\u0430\u0436"}: ${m.text}`).join("\n");
+      return `[MESSAGE_REPLY] Character: ${charName}
+
+You are ${charName} messaging ${userName} on the phone. The last thing they wrote was: "${lastMsg?.text || "(no message)"}".
+
+Write a SHORT, natural TEXT REPLY from ${charName}'s perspective \u2014 one sentence or a few casual words. Keep it in character.
+
+REPLY (text only):`;
+    }
+    /** Append an outgoing message to the thread and persist it. */
+    _sendMessage(character, text) {
+      const state = this.storage.getState();
+      if (!Array.isArray(state.messages)) state.messages = [];
+      const role = state.messages.find((m) => m.character === character && m.role)?.role || "";
+      state.messages.push({
+        id: `me_${Date.now()}_${Math.random().toString(36).slice(2, 7)}`,
+        character,
+        role,
+        text,
+        from: "me",
+        isIncoming: false,
+        fromUser: true,
+        timestamp: Date.now()
+      });
+      this.storage.save();
+      try {
+        globalThis.__astralRefreshPrompt?.();
+      } catch {
+      }
+      this.render(document.querySelector(".astral-phone-body"), { character });
+    }
+    /* ─────────────────────────── event handler ─────────────────────────── */
+    async handleEvent(eventData) {
+      const state = this.storage.getState();
+      if (!Array.isArray(state.messages)) state.messages = [];
+      state.messages.push({
+        character: eventData.character || this.context.name2 || "",
+        text: eventData.description || "",
+        timestamp: Date.now(),
+        fromUser: false,
+        from: "them",
+        isIncoming: true
+      });
+      this.storage.save();
+      try {
+        globalThis.__astralRefreshPrompt?.();
+      } catch {
+      }
+      return { success: true, message: "\u0421\u043E\u043E\u0431\u0449\u0435\u043D\u0438\u0435 \u0434\u043E\u0431\u0430\u0432\u043B\u0435\u043D\u043E" };
+    }
+    /* ─────────────────────────── utils ─────────────────────────── */
+    /** Unified check: supports both old `fromUser` flag and new `from` field. */
+    _isOut(msg) {
+      if (msg.from === "me") return true;
+      if (msg.from === "them") return false;
+      return Boolean(msg.fromUser);
+    }
+    _truncate(str, max) {
+      const s = String(str ?? "");
+      return s.length > max ? s.slice(0, max) + "\u2026" : s;
+    }
+    _time(ts, short = false) {
+      const d = new Date(ts);
+      const today = (/* @__PURE__ */ new Date()).toDateString() === d.toDateString();
+      if (short || today) {
+        return d.toLocaleTimeString("ru-RU", { hour: "2-digit", minute: "2-digit" });
+      }
+      return d.toLocaleDateString("ru-RU", { day: "numeric", month: "short" });
+    }
+    _esc(str) {
+      return String(str ?? "").replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" })[c]);
+    }
+  };
 
   // apps/gallery.js
   var GalleryApp = class {
@@ -4974,14 +5173,68 @@ PROMPT:`;
         }
         container.appendChild(list);
       }
+      const genBar = document.createElement("div");
+      genBar.className = "astral-note-gen";
+      for (const [kind, info] of Object.entries(NOTE_KINDS)) {
+        const btn = document.createElement("button");
+        btn.className = "astral-note-gen-btn";
+        btn.innerHTML = `<span class="astral-note-gen-mark">${info.mark}</span>${info.label}`;
+        btn.addEventListener("click", () => this._generate(kind, container, btn));
+        genBar.appendChild(btn);
+      }
+      container.appendChild(genBar);
       const bar = document.createElement("div");
       bar.className = "astral-action-bar";
       const addBtn = document.createElement("button");
-      addBtn.className = "astral-btn astral-btn-primary astral-btn-wide";
-      addBtn.textContent = "+ \u041D\u043E\u0432\u0430\u044F \u0437\u0430\u043F\u0438\u0441\u044C";
+      addBtn.className = "astral-btn astral-btn-wide";
+      addBtn.textContent = "+ \u0421\u0432\u043E\u044F \u0437\u0430\u043F\u0438\u0441\u044C";
       addBtn.addEventListener("click", () => this._openEditor(null, container));
       bar.appendChild(addBtn);
       container.appendChild(bar);
+    }
+    /** Попросить модель написать записи нужного типа от лица персонажа. */
+    async _generate(kind, container, btn) {
+      if (btn?.disabled) return;
+      if (btn) {
+        btn.disabled = true;
+        btn.classList.add("is-busy");
+      }
+      const { charName } = collectCast(this.context || {});
+      const stop = showTyping(charName);
+      try {
+        const notes = await generateNotes(this.context || {}, { kind, count: 1 });
+        stop();
+        if (!notes.length || !notes[0].text) {
+          this._toast("\u041C\u043E\u0434\u0435\u043B\u044C \u043D\u0438\u0447\u0435\u0433\u043E \u043D\u0435 \u043D\u0430\u043F\u0438\u0441\u0430\u043B\u0430", "error");
+          return;
+        }
+        const state = this.storage.getState();
+        if (!Array.isArray(state.notes)) state.notes = [];
+        for (const n of notes) {
+          state.notes.push({
+            id: `note_${Date.now()}_${Math.random().toString(36).slice(2, 7)}`,
+            kind: n.kind || kind,
+            title: n.title || "",
+            text: n.text,
+            timestamp: Date.now(),
+            author: "character",
+            character: charName
+          });
+        }
+        this.storage.save();
+        this._refreshPrompt();
+        this._toast(notes.length > 1 ? `\u0414\u043E\u0431\u0430\u0432\u043B\u0435\u043D\u043E \u0437\u0430\u043F\u0438\u0441\u0435\u0439: ${notes.length}` : "\u0417\u0430\u043F\u0438\u0441\u044C \u0434\u043E\u0431\u0430\u0432\u043B\u0435\u043D\u0430");
+        this.render(container);
+      } catch (err) {
+        stop();
+        console.error("[Notes] generation failed:", err);
+        this._toast(`\u041D\u0435 \u043F\u043E\u043B\u0443\u0447\u0438\u043B\u043E\u0441\u044C: ${err.message}`, "error");
+      } finally {
+        if (btn) {
+          btn.disabled = false;
+          btn.classList.remove("is-busy");
+        }
+      }
     }
     _buildCard(note, container) {
       const kind = NOTE_KINDS[note.kind] || NOTE_KINDS.note;
@@ -5239,9 +5492,76 @@ ${lines.join("\n")}`;
         this._filter = "following";
         this.render(container);
       });
+      const profile = document.createElement("button");
+      profile.className = "astral-social-tab astral-social-tab--icon";
+      profile.title = "\u041F\u0440\u043E\u0444\u0438\u043B\u044C";
+      profile.textContent = "\u25CD";
+      profile.addEventListener("click", () => this._openProfile(container));
       bar.appendChild(all);
       bar.appendChild(following);
+      bar.appendChild(profile);
       return bar;
+    }
+    /* ─────────────────────────── профиль персоны ─────────────────────────── */
+    _profile() {
+      const state = this.storage.getState();
+      const saved = state.socialProfile || {};
+      return {
+        displayName: String(saved.displayName || this._userName()).trim(),
+        handle: String(saved.handle || this._handle(this._userName())).trim(),
+        bio: String(saved.bio || "").trim()
+      };
+    }
+    _openProfile(container) {
+      const phone = document.querySelector(".astral-phone");
+      if (!phone) return;
+      const p = this._profile();
+      const overlay = document.createElement("div");
+      overlay.className = "astral-modal";
+      overlay.innerHTML = `
+            <div class="astral-modal-card astral-modal-card--composer">
+                <div class="astral-modal-title">\u041F\u0440\u043E\u0444\u0438\u043B\u044C</div>
+
+                <label class="astral-field-label">\u041E\u0442\u043E\u0431\u0440\u0430\u0436\u0430\u0435\u043C\u043E\u0435 \u0438\u043C\u044F</label>
+                <input type="text" class="astral-input" id="astral-profile-name"
+                       value="${this._esc(p.displayName)}" placeholder="\u041A\u0430\u043A \u0442\u0435\u0431\u044F \u0432\u0438\u0434\u044F\u0442">
+
+                <label class="astral-field-label">\u041D\u0438\u043A</label>
+                <input type="text" class="astral-input" id="astral-profile-handle"
+                       value="${this._esc(p.handle)}" placeholder="username">
+
+                <label class="astral-field-label">\u041E \u0441\u0435\u0431\u0435</label>
+                <textarea class="astral-textarea" id="astral-profile-bio" rows="3"
+                          placeholder="\u041F\u0430\u0440\u0430 \u0441\u043B\u043E\u0432 \u043E \u0441\u0435\u0431\u0435">${this._esc(p.bio)}</textarea>
+
+                <div class="astral-modal-actions">
+                    <button class="astral-btn" id="astral-profile-cancel">\u041E\u0442\u043C\u0435\u043D\u0430</button>
+                    <button class="astral-btn astral-btn-primary" id="astral-profile-save">\u0421\u043E\u0445\u0440\u0430\u043D\u0438\u0442\u044C</button>
+                </div>
+            </div>
+        `;
+      phone.appendChild(overlay);
+      const close = /* @__PURE__ */ __name(() => overlay.remove(), "close");
+      overlay.querySelector("#astral-profile-cancel").addEventListener("click", close);
+      overlay.addEventListener("click", (e) => {
+        if (e.target === overlay) close();
+      });
+      overlay.querySelector("#astral-profile-save").addEventListener("click", () => {
+        const displayName = overlay.querySelector("#astral-profile-name").value.trim();
+        const handle = overlay.querySelector("#astral-profile-handle").value.trim().replace(/^@/, "");
+        const bio = overlay.querySelector("#astral-profile-bio").value.trim();
+        const state = this.storage.getState();
+        state.socialProfile = {
+          displayName: displayName || this._userName(),
+          handle: handle || this._handle(displayName || this._userName()),
+          bio
+        };
+        this.storage.save();
+        close();
+        this._toast("\u041F\u0440\u043E\u0444\u0438\u043B\u044C \u0441\u043E\u0445\u0440\u0430\u043D\u0451\u043D");
+        this.render(container);
+      });
+      overlay.querySelector("#astral-profile-name").focus();
     }
     /* ─────────────────────────── пост ─────────────────────────── */
     _buildPost(post, state, container) {
@@ -5373,13 +5693,94 @@ ${lines.join("\n")}`;
     /* ─────────────────────────── создание поста ─────────────────────────── */
     _buildComposerBar(container) {
       const bar = document.createElement("div");
-      bar.className = "astral-action-bar";
-      const btn = document.createElement("button");
-      btn.className = "astral-btn astral-btn-primary astral-btn-wide";
-      btn.textContent = "\u270E \u041D\u0430\u043F\u0438\u0441\u0430\u0442\u044C \u043F\u043E\u0441\u0442";
-      btn.addEventListener("click", () => this._openComposer(container));
-      bar.appendChild(btn);
+      bar.className = "astral-action-bar astral-social-bar";
+      const write = document.createElement("button");
+      write.className = "astral-btn astral-btn-primary";
+      write.textContent = "\u270E \u041D\u0430\u043F\u0438\u0441\u0430\u0442\u044C";
+      write.addEventListener("click", () => this._openComposer(container));
+      bar.appendChild(write);
+      const summon = document.createElement("button");
+      summon.className = "astral-btn";
+      summon.textContent = "\u25C8 \u041F\u043E\u0441\u0442 \u043F\u0435\u0440\u0441\u043E\u043D\u0430\u0436\u0430";
+      summon.title = "\u041C\u043E\u0434\u0435\u043B\u044C \u0432\u044B\u0431\u0435\u0440\u0435\u0442, \u043A\u0442\u043E \u0438\u0437 \u0441\u0446\u0435\u043D\u044B \u043D\u0430\u043F\u0438\u0448\u0435\u0442 \u043F\u043E\u0441\u0442";
+      summon.addEventListener("click", () => this._openSummon(container));
+      bar.appendChild(summon);
       return bar;
+    }
+    /* ─────────────────────────── вызов поста персонажа ─────────────────────────── */
+    _openSummon(container) {
+      const phone = document.querySelector(".astral-phone");
+      if (!phone) return;
+      const { cast, charName, userName } = collectCast(this.context || {});
+      const candidates = cast.filter((n) => n !== userName);
+      const list = candidates.length ? candidates : [charName];
+      const overlay = document.createElement("div");
+      overlay.className = "astral-modal";
+      overlay.innerHTML = `
+            <div class="astral-modal-card">
+                <div class="astral-modal-title">\u041A\u0442\u043E \u043F\u0438\u0448\u0435\u0442 \u043F\u043E\u0441\u0442?</div>
+                <div class="astral-summon-list">
+                    <button class="astral-summon-opt astral-summon-opt--random" data-author="">
+                        <span class="astral-summon-name">\u{1F3B2} \u0420\u0430\u043D\u0434\u043E\u043C</span>
+                        <span class="astral-summon-hint">\u043C\u043E\u0434\u0435\u043B\u044C \u0432\u044B\u0431\u0435\u0440\u0435\u0442 \u043F\u043E \u0441\u0446\u0435\u043D\u0435</span>
+                    </button>
+                    ${list.map((name) => `
+                        <button class="astral-summon-opt" data-author="${this._esc(name)}">
+                            <span class="astral-summon-name">${this._esc(name)}</span>
+                        </button>
+                    `).join("")}
+                </div>
+                <div class="astral-modal-actions">
+                    <button class="astral-btn" id="astral-summon-cancel">\u041E\u0442\u043C\u0435\u043D\u0430</button>
+                </div>
+            </div>
+        `;
+      phone.appendChild(overlay);
+      const close = /* @__PURE__ */ __name(() => overlay.remove(), "close");
+      overlay.querySelector("#astral-summon-cancel").addEventListener("click", close);
+      overlay.addEventListener("click", (e) => {
+        if (e.target === overlay) close();
+      });
+      overlay.querySelectorAll(".astral-summon-opt").forEach((btn) => {
+        btn.addEventListener("click", async () => {
+          const author = btn.dataset.author || "";
+          close();
+          await this._summonPost(author, container);
+        });
+      });
+    }
+    /** Запросить пост у модели и показать «<имя> печатает…» */
+    async _summonPost(author, container) {
+      const { cast, charName, userName } = collectCast(this.context || {});
+      const guess = String(author || "").trim() || cast.find((n) => n !== userName) || charName;
+      const stopTyping = showTyping(guess);
+      try {
+        const result = await generateSocialPost(this.context || {}, { author });
+        stopTyping();
+        if (!result.text) {
+          this._toast("\u041C\u043E\u0434\u0435\u043B\u044C \u043D\u0438\u0447\u0435\u0433\u043E \u043D\u0435 \u043D\u0430\u043F\u0438\u0441\u0430\u043B\u0430", "error");
+          return;
+        }
+        const state = this.storage.getState();
+        if (!Array.isArray(state.social)) state.social = [];
+        state.social.push({
+          id: `post_${Date.now()}_${Math.random().toString(36).slice(2, 7)}`,
+          author: result.author,
+          handle: this._handle(result.author),
+          text: result.text,
+          timestamp: Date.now(),
+          likedBy: [],
+          repostedBy: [],
+          replies: []
+        });
+        this.storage.save();
+        this._toast(`${result.author}: \u043F\u043E\u0441\u0442 \u043E\u043F\u0443\u0431\u043B\u0438\u043A\u043E\u0432\u0430\u043D`);
+        this.render(container);
+      } catch (err) {
+        stopTyping();
+        console.error("[Social] summon failed:", err);
+        this._toast(`\u041D\u0435 \u043F\u043E\u043B\u0443\u0447\u0438\u043B\u043E\u0441\u044C: ${err.message}`, "error");
+      }
     }
     _openComposer(container) {
       const phone = document.querySelector(".astral-phone");
@@ -5411,7 +5812,7 @@ ${lines.join("\n")}`;
         state.social.push({
           id: `post_${Date.now()}_${Math.random().toString(36).slice(2, 7)}`,
           author: this._userName(),
-          handle: this._handle(this._userName()),
+          handle: this._myHandle(),
           text,
           timestamp: Date.now(),
           mine: true,
@@ -5447,10 +5848,20 @@ ${lines.join("\n")}`;
       return { success: true, message: "\u041F\u043E\u0441\u0442 \u043E\u043F\u0443\u0431\u043B\u0438\u043A\u043E\u0432\u0430\u043D" };
     }
     /* ─────────────────────────── утилиты ─────────────────────────── */
+    /** Имя для своих постов — из профиля соцсети, иначе из персоны. */
     _userName() {
+      const state = this.storage?.getState?.() || {};
+      const saved = String(state.socialProfile?.displayName || "").trim();
+      if (saved) return saved;
       const ctx = this.context || {};
       const name = String(ctx.name1 || "").trim();
       return !name || /sillytavern/i.test(name) ? "\u0422\u044B" : name;
+    }
+    /** Ник для своих постов — из профиля, иначе сгенерированный. */
+    _myHandle() {
+      const state = this.storage?.getState?.() || {};
+      const saved = String(state.socialProfile?.handle || "").trim();
+      return saved || this._handle(this._userName());
     }
     _handle(name) {
       return String(name || "user").toLowerCase().replace(/\s+/g, "_").replace(/[^a-z0-9_]/g, "").slice(0, 18) || "user";
@@ -5619,6 +6030,47 @@ Rules:
       const existing = Array.isArray(state.messages) ? state.messages : [];
       const kept = existing.filter((m) => !m.seeded);
       state.messages = [...newMessages, ...kept];
+      if (Array.isArray(data.posts) && data.posts.length) {
+        if (!Array.isArray(state.social)) state.social = [];
+        const keptPosts = state.social.filter((p) => !p.seeded);
+        const seededPosts = data.posts.map((post) => {
+          const text = String(post.text || "").trim();
+          const author = String(post.author || "").trim();
+          if (!text || !author) return null;
+          const minutesAgo = Math.max(1, Number(post.minutesAgo) || 60);
+          return {
+            id: `seed_post_${Date.now()}_${Math.random().toString(36).slice(2, 7)}`,
+            author,
+            handle: author.toLowerCase().replace(/\s+/g, "_").replace(/[^a-z0-9_]/g, "").slice(0, 18) || "user",
+            text,
+            timestamp: now - minutesAgo * 6e4,
+            likedBy: [],
+            repostedBy: [],
+            replies: [],
+            seeded: true
+          };
+        }).filter(Boolean).sort((a, b) => a.timestamp - b.timestamp);
+        state.social = [...seededPosts, ...keptPosts];
+      }
+      if (Array.isArray(data.notes) && data.notes.length) {
+        if (!Array.isArray(state.notes)) state.notes = [];
+        const keptNotes = state.notes.filter((n) => !n.seeded);
+        const kinds = ["diary", "plan", "secret", "note"];
+        const seededNotes = data.notes.map((note, i) => {
+          const text = String(note.text || "").trim();
+          if (!text) return null;
+          return {
+            id: `seed_note_${Date.now()}_${Math.random().toString(36).slice(2, 7)}`,
+            kind: kinds.includes(note.kind) ? note.kind : "diary",
+            title: "",
+            text,
+            timestamp: now - (i + 1) * 36e5 * 6,
+            author: "character",
+            seeded: true
+          };
+        }).filter(Boolean);
+        state.notes = [...keptNotes, ...seededNotes];
+      }
       state.seeded = true;
       this.storage.save();
     }

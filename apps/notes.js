@@ -10,6 +10,7 @@
  */
 
 import { ICONS } from './phone-core.js';
+import { generateNotes, showTyping, collectCast } from './character-gen.js';
 
 /** Типы записей — задают цвет и иконку. */
 const NOTE_KINDS = {
@@ -94,14 +95,72 @@ export class NotesApp {
             container.appendChild(list);
         }
 
+        // ── генерация записей от лица персонажа ──
+        const genBar = document.createElement('div');
+        genBar.className = 'astral-note-gen';
+
+        for (const [kind, info] of Object.entries(NOTE_KINDS)) {
+            const btn = document.createElement('button');
+            btn.className = 'astral-note-gen-btn';
+            btn.innerHTML = `<span class="astral-note-gen-mark">${info.mark}</span>${info.label}`;
+            btn.addEventListener('click', () => this._generate(kind, container, btn));
+            genBar.appendChild(btn);
+        }
+        container.appendChild(genBar);
+
         const bar = document.createElement('div');
         bar.className = 'astral-action-bar';
         const addBtn = document.createElement('button');
-        addBtn.className = 'astral-btn astral-btn-primary astral-btn-wide';
-        addBtn.textContent = '+ Новая запись';
+        addBtn.className = 'astral-btn astral-btn-wide';
+        addBtn.textContent = '+ Своя запись';
         addBtn.addEventListener('click', () => this._openEditor(null, container));
         bar.appendChild(addBtn);
         container.appendChild(bar);
+    }
+
+    /** Попросить модель написать записи нужного типа от лица персонажа. */
+    async _generate(kind, container, btn) {
+        if (btn?.disabled) return;
+        if (btn) { btn.disabled = true; btn.classList.add('is-busy'); }
+
+        const { charName } = collectCast(this.context || {});
+        const stop = showTyping(charName);
+
+        try {
+            const notes = await generateNotes(this.context || {}, { kind, count: 1 });
+            stop();
+
+            if (!notes.length || !notes[0].text) {
+                this._toast('Модель ничего не написала', 'error');
+                return;
+            }
+
+            const state = this.storage.getState();
+            if (!Array.isArray(state.notes)) state.notes = [];
+
+            for (const n of notes) {
+                state.notes.push({
+                    id: `note_${Date.now()}_${Math.random().toString(36).slice(2, 7)}`,
+                    kind: n.kind || kind,
+                    title: n.title || '',
+                    text: n.text,
+                    timestamp: Date.now(),
+                    author: 'character',
+                    character: charName,
+                });
+            }
+
+            this.storage.save();
+            this._refreshPrompt();
+            this._toast(notes.length > 1 ? `Добавлено записей: ${notes.length}` : 'Запись добавлена');
+            this.render(container);
+        } catch (err) {
+            stop();
+            console.error('[Notes] generation failed:', err);
+            this._toast(`Не получилось: ${err.message}`, 'error');
+        } finally {
+            if (btn) { btn.disabled = false; btn.classList.remove('is-busy'); }
+        }
     }
 
     _buildCard(note, container) {

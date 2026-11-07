@@ -10,6 +10,7 @@
  */
 
 import { ICONS } from './phone-core.js';
+import { generateSocialPost, showTyping, collectCast } from './character-gen.js';
 
 export class SocialApp {
     constructor(context, storage, imageGen) {
@@ -73,9 +74,85 @@ export class SocialApp {
         following.textContent = 'Подписки';
         following.addEventListener('click', () => { this._filter = 'following'; this.render(container); });
 
+        const profile = document.createElement('button');
+        profile.className = 'astral-social-tab astral-social-tab--icon';
+        profile.title = 'Профиль';
+        profile.textContent = '◍';
+        profile.addEventListener('click', () => this._openProfile(container));
+
         bar.appendChild(all);
         bar.appendChild(following);
+        bar.appendChild(profile);
         return bar;
+    }
+
+    /* ─────────────────────────── профиль персоны ─────────────────────────── */
+
+    _profile() {
+        const state = this.storage.getState();
+        const saved = state.socialProfile || {};
+        return {
+            displayName: String(saved.displayName || this._userName()).trim(),
+            handle: String(saved.handle || this._handle(this._userName())).trim(),
+            bio: String(saved.bio || '').trim(),
+        };
+    }
+
+    _openProfile(container) {
+        const phone = document.querySelector('.astral-phone');
+        if (!phone) return;
+
+        const p = this._profile();
+
+        const overlay = document.createElement('div');
+        overlay.className = 'astral-modal';
+        overlay.innerHTML = `
+            <div class="astral-modal-card astral-modal-card--composer">
+                <div class="astral-modal-title">Профиль</div>
+
+                <label class="astral-field-label">Отображаемое имя</label>
+                <input type="text" class="astral-input" id="astral-profile-name"
+                       value="${this._esc(p.displayName)}" placeholder="Как тебя видят">
+
+                <label class="astral-field-label">Ник</label>
+                <input type="text" class="astral-input" id="astral-profile-handle"
+                       value="${this._esc(p.handle)}" placeholder="username">
+
+                <label class="astral-field-label">О себе</label>
+                <textarea class="astral-textarea" id="astral-profile-bio" rows="3"
+                          placeholder="Пара слов о себе">${this._esc(p.bio)}</textarea>
+
+                <div class="astral-modal-actions">
+                    <button class="astral-btn" id="astral-profile-cancel">Отмена</button>
+                    <button class="astral-btn astral-btn-primary" id="astral-profile-save">Сохранить</button>
+                </div>
+            </div>
+        `;
+
+        phone.appendChild(overlay);
+        const close = () => overlay.remove();
+
+        overlay.querySelector('#astral-profile-cancel').addEventListener('click', close);
+        overlay.addEventListener('click', (e) => { if (e.target === overlay) close(); });
+
+        overlay.querySelector('#astral-profile-save').addEventListener('click', () => {
+            const displayName = overlay.querySelector('#astral-profile-name').value.trim();
+            const handle = overlay.querySelector('#astral-profile-handle').value.trim().replace(/^@/, '');
+            const bio = overlay.querySelector('#astral-profile-bio').value.trim();
+
+            const state = this.storage.getState();
+            state.socialProfile = {
+                displayName: displayName || this._userName(),
+                handle: handle || this._handle(displayName || this._userName()),
+                bio,
+            };
+            this.storage.save();
+            close();
+            this._toast('Профиль сохранён');
+            this.render(container);
+        });
+
+        overlay.querySelector('#astral-profile-name').focus();
     }
 
     /* ─────────────────────────── пост ─────────────────────────── */
@@ -225,15 +302,113 @@ export class SocialApp {
 
     _buildComposerBar(container) {
         const bar = document.createElement('div');
-        bar.className = 'astral-action-bar';
+        bar.className = 'astral-action-bar astral-social-bar';
 
-        const btn = document.createElement('button');
-        btn.className = 'astral-btn astral-btn-primary astral-btn-wide';
-        btn.textContent = '✎ Написать пост';
-        btn.addEventListener('click', () => this._openComposer(container));
-        bar.appendChild(btn);
+        const write = document.createElement('button');
+        write.className = 'astral-btn astral-btn-primary';
+        write.textContent = '✎ Написать';
+        write.addEventListener('click', () => this._openComposer(container));
+        bar.appendChild(write);
+
+        const summon = document.createElement('button');
+        summon.className = 'astral-btn';
+        summon.textContent = '◈ Пост персонажа';
+        summon.title = 'Модель выберет, кто из сцены напишет пост';
+        summon.addEventListener('click', () => this._openSummon(container));
+        bar.appendChild(summon);
 
         return bar;
+    }
+
+    /* ─────────────────────────── вызов поста персонажа ─────────────────────────── */
+
+    _openSummon(container) {
+        const phone = document.querySelector('.astral-phone');
+        if (!phone) return;
+
+        const { cast, charName, userName } = collectCast(this.context || {});
+        const candidates = cast.filter(n => n !== userName);
+        const list = candidates.length ? candidates : [charName];
+
+        const overlay = document.createElement('div');
+        overlay.className = 'astral-modal';
+        overlay.innerHTML = `
+            <div class="astral-modal-card">
+                <div class="astral-modal-title">Кто пишет пост?</div>
+                <div class="astral-summon-list">
+                    <button class="astral-summon-opt astral-summon-opt--random" data-author="">
+                        <span class="astral-summon-name">🎲 Рандом</span>
+                        <span class="astral-summon-hint">модель выберет по сцене</span>
+                    </button>
+                    ${list.map(name => `
+                        <button class="astral-summon-opt" data-author="${this._esc(name)}">
+                            <span class="astral-summon-name">${this._esc(name)}</span>
+                        </button>
+                    `).join('')}
+                </div>
+                <div class="astral-modal-actions">
+                    <button class="astral-btn" id="astral-summon-cancel">Отмена</button>
+                </div>
+            </div>
+        `;
+
+        phone.appendChild(overlay);
+        const close = () => overlay.remove();
+
+        overlay.querySelector('#astral-summon-cancel').addEventListener('click', close);
+        overlay.addEventListener('click', (e) => { if (e.target === overlay) close(); });
+
+        overlay.querySelectorAll('.astral-summon-opt').forEach(btn => {
+            btn.addEventListener('click', async () => {
+                const author = btn.dataset.author || '';
+                close();
+                await this._summonPost(author, container);
+            });
+        });
+    }
+
+    /** Запросить пост у модели и показать «<имя> печатает…» */
+    async _summonPost(author, container) {
+        // имя для индикатора: если рандом — показываем первого кандидата сцены,
+        // после ответа индикатор заменится реальным постом
+        const { cast, charName, userName } = collectCast(this.context || {});
+        const guess = String(author || '').trim()
+            || cast.find(n => n !== userName)
+            || charName;
+
+        const stopTyping = showTyping(guess);
+
+        try {
+            const result = await generateSocialPost(this.context || {}, { author });
+            stopTyping();
+
+            if (!result.text) {
+                this._toast('Модель ничего не написала', 'error');
+                return;
+            }
+
+            const state = this.storage.getState();
+            if (!Array.isArray(state.social)) state.social = [];
+
+            state.social.push({
+                id: `post_${Date.now()}_${Math.random().toString(36).slice(2, 7)}`,
+                author: result.author,
+                handle: this._handle(result.author),
+                text: result.text,
+                timestamp: Date.now(),
+                likedBy: [],
+                repostedBy: [],
+                replies: [],
+            });
+
+            this.storage.save();
+            this._toast(`${result.author}: пост опубликован`);
+            this.render(container);
+        } catch (err) {
+            stopTyping();
+            console.error('[Social] summon failed:', err);
+            this._toast(`Не получилось: ${err.message}`, 'error');
+        }
     }
 
     _openComposer(container) {
@@ -270,7 +445,7 @@ export class SocialApp {
             state.social.push({
                 id: `post_${Date.now()}_${Math.random().toString(36).slice(2, 7)}`,
                 author: this._userName(),
-                handle: this._handle(this._userName()),
+                handle: this._myHandle(),
                 text,
                 timestamp: Date.now(),
                 mine: true,
@@ -316,10 +491,22 @@ export class SocialApp {
 
     /* ─────────────────────────── утилиты ─────────────────────────── */
 
+    /** Имя для своих постов — из профиля соцсети, иначе из персоны. */
     _userName() {
+        const state = this.storage?.getState?.() || {};
+        const saved = String(state.socialProfile?.displayName || '').trim();
+        if (saved) return saved;
+
         const ctx = this.context || {};
         const name = String(ctx.name1 || '').trim();
         return (!name || /sillytavern/i.test(name)) ? 'Ты' : name;
+    }
+
+    /** Ник для своих постов — из профиля, иначе сгенерированный. */
+    _myHandle() {
+        const state = this.storage?.getState?.() || {};
+        const saved = String(state.socialProfile?.handle || '').trim();
+        return saved || this._handle(this._userName());
     }
 
     _handle(name) {

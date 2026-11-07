@@ -182,6 +182,61 @@ Rules:
         // Drop old seeded messages so re-seeding is clean
         const kept = existing.filter(m => !m.seeded);
         state.messages = [...newMessages, ...kept];
+
+        // ── посты в соцсети: лента существует до начала сюжета ──
+        if (Array.isArray(data.posts) && data.posts.length) {
+            if (!Array.isArray(state.social)) state.social = [];
+            const keptPosts = state.social.filter(p => !p.seeded);
+
+            const seededPosts = data.posts
+                .map(post => {
+                    const text = String(post.text || '').trim();
+                    const author = String(post.author || '').trim();
+                    if (!text || !author) return null;
+                    const minutesAgo = Math.max(1, Number(post.minutesAgo) || 60);
+                    return {
+                        id: `seed_post_${Date.now()}_${Math.random().toString(36).slice(2, 7)}`,
+                        author,
+                        handle: author.toLowerCase().replace(/\s+/g, '_').replace(/[^a-z0-9_]/g, '').slice(0, 18) || 'user',
+                        text,
+                        timestamp: now - minutesAgo * 60_000,
+                        likedBy: [],
+                        repostedBy: [],
+                        replies: [],
+                        seeded: true,
+                    };
+                })
+                .filter(Boolean)
+                .sort((a, b) => a.timestamp - b.timestamp);
+
+            state.social = [...seededPosts, ...keptPosts];
+        }
+
+        // ── приватные заметки персонажа ──
+        if (Array.isArray(data.notes) && data.notes.length) {
+            if (!Array.isArray(state.notes)) state.notes = [];
+            const keptNotes = state.notes.filter(n => !n.seeded);
+            const kinds = ['diary', 'plan', 'secret', 'note'];
+
+            const seededNotes = data.notes
+                .map((note, i) => {
+                    const text = String(note.text || '').trim();
+                    if (!text) return null;
+                    return {
+                        id: `seed_note_${Date.now()}_${Math.random().toString(36).slice(2, 7)}`,
+                        kind: kinds.includes(note.kind) ? note.kind : 'diary',
+                        title: '',
+                        text,
+                        timestamp: now - (i + 1) * 3600_000 * 6,
+                        author: 'character',
+                        seeded: true,
+                    };
+                })
+                .filter(Boolean);
+
+            state.notes = [...keptNotes, ...seededNotes];
+        }
+
         state.seeded = true;
 
         this.storage.save();
