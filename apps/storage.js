@@ -66,6 +66,9 @@ export class PhoneStorage {
         return {
             messages: [],
             gallery: [],
+            notes: [],
+            social: [],
+            socialFollowing: [],
             spicy: [],
             creator: {
                 posts: [],
@@ -74,7 +77,7 @@ export class PhoneStorage {
                 fans: [],
             },
             /** Unread counters per app — drive the home-screen badges. */
-            unread: { messages: 0, gallery: 0, spicy: 0, creator: 0 },
+            unread: { messages: 0, gallery: 0, notes: 0, social: 0, spicy: 0, creator: 0 },
             /** Latest RP events for the lock screen (newest last, capped). */
             notifications: [],
             /** How many chat messages have passed since the last phone_event. */
@@ -105,7 +108,13 @@ export class PhoneStorage {
         if (!Array.isArray(root.state.creator.fans)) root.state.creator.fans = [];
         if (!Array.isArray(root.state.notifications)) root.state.notifications = [];
         if (!root.state.unread || typeof root.state.unread !== 'object') {
-            root.state.unread = { messages: 0, gallery: 0, spicy: 0, creator: 0 };
+            root.state.unread = { messages: 0, gallery: 0, notes: 0, social: 0, spicy: 0, creator: 0 };
+        }
+        if (!Array.isArray(root.state.notes)) root.state.notes = [];
+        if (!Array.isArray(root.state.social)) root.state.social = [];
+        if (!Array.isArray(root.state.socialFollowing)) root.state.socialFollowing = [];
+        for (const key of ['messages', 'gallery', 'notes', 'social', 'spicy', 'creator']) {
+            if (typeof root.state.unread[key] !== 'number') root.state.unread[key] = 0;
         }
         if (typeof root.state.sinceEvent !== 'number') root.state.sinceEvent = 0;
 

@@ -249,6 +249,8 @@
     gallery: `<svg viewBox="0 0 24 24"><rect x="3.2" y="5.4" width="17.6" height="13.2" rx="3"/><circle cx="12" cy="12" r="3.6"/><path d="M17.4 8.4h.01" stroke-width="2.4"/></svg>`,
     spicy: `<svg viewBox="0 0 24 24"><path d="M12 21c3.6 0 6.4-2.6 6.4-6.2 0-4.4-4.3-6.6-4.3-10.8-2.2 1-3.3 3-3.3 5.2 0 1.4.4 2.2.4 2.2-1.4-.6-2.4-2-2.4-3.6-1.6 1.6-2.6 3.9-2.6 6.4C6.2 18.2 8.6 21 12 21z"/></svg>`,
     creator: `<svg viewBox="0 0 24 24"><path d="M12 2.8l3.1 5.9 6.3 1-4.6 4.4 1.1 6.4-5.9-3.2-5.9 3.2 1.1-6.4L2.6 9.7l6.3-1z"/></svg>`,
+    notes: `<svg viewBox="0 0 24 24"><path d="M5 3.5h11l4 4v13a1 1 0 0 1-1 1H5a1 1 0 0 1-1-1v-16a1 1 0 0 1 1-1z"/><path d="M15.5 3.5V8h4.5M8.5 12h7M8.5 16h4.5"/></svg>`,
+    social: `<svg viewBox="0 0 24 24"><circle cx="6" cy="6" r="2.6"/><circle cx="18" cy="6" r="2.6"/><circle cx="12" cy="18" r="2.6"/><path d="M8.4 7.2l3.2 8.6M15.6 7.2l-3.2 8.6M8.6 6h6.8"/></svg>`,
     settings: `<svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="3"/><path d="M12 1v6m0 6v6M5.64 5.64l4.24 4.24m4.24 4.24l4.24 4.24M1 12h6m6 0h6M5.64 18.36l4.24-4.24m4.24-4.24l4.24-4.24"/></svg>`
   };
   var PhoneCore = class {
@@ -547,7 +549,9 @@
         content_posted: "creator",
         donation_received: "creator",
         subscriber_joined: "creator",
-        spicy_posted: "spicy"
+        spicy_posted: "spicy",
+        note_written: "notes",
+        social_post: "social"
       };
       const appId = routing[type];
       if (!appId) return { success: false, error: `Unknown event type: ${type}` };
@@ -683,6 +687,9 @@
       return {
         messages: [],
         gallery: [],
+        notes: [],
+        social: [],
+        socialFollowing: [],
         spicy: [],
         creator: {
           posts: [],
@@ -691,7 +698,7 @@
           fans: []
         },
         /** Unread counters per app — drive the home-screen badges. */
-        unread: { messages: 0, gallery: 0, spicy: 0, creator: 0 },
+        unread: { messages: 0, gallery: 0, notes: 0, social: 0, spicy: 0, creator: 0 },
         /** Latest RP events for the lock screen (newest last, capped). */
         notifications: [],
         /** How many chat messages have passed since the last phone_event. */
@@ -720,7 +727,13 @@
       if (!Array.isArray(root.state.creator.fans)) root.state.creator.fans = [];
       if (!Array.isArray(root.state.notifications)) root.state.notifications = [];
       if (!root.state.unread || typeof root.state.unread !== "object") {
-        root.state.unread = { messages: 0, gallery: 0, spicy: 0, creator: 0 };
+        root.state.unread = { messages: 0, gallery: 0, notes: 0, social: 0, spicy: 0, creator: 0 };
+      }
+      if (!Array.isArray(root.state.notes)) root.state.notes = [];
+      if (!Array.isArray(root.state.social)) root.state.social = [];
+      if (!Array.isArray(root.state.socialFollowing)) root.state.socialFollowing = [];
+      for (const key of ["messages", "gallery", "notes", "social", "spicy", "creator"]) {
+        if (typeof root.state.unread[key] !== "number") root.state.unread[key] = 0;
       }
       if (typeof root.state.sinceEvent !== "number") root.state.sinceEvent = 0;
       return root.state;
@@ -4891,6 +4904,576 @@ PROMPT:`;
     }
   };
 
+  // apps/notes.js
+  var NOTE_KINDS = {
+    diary: { label: "\u0414\u043D\u0435\u0432\u043D\u0438\u043A", mark: "\u2766" },
+    plan: { label: "\u041F\u043B\u0430\u043D", mark: "\u25C8" },
+    secret: { label: "\u0421\u0435\u043A\u0440\u0435\u0442", mark: "\u2726" },
+    note: { label: "\u0417\u0430\u043C\u0435\u0442\u043A\u0430", mark: "\xB7" }
+  };
+  var NotesApp = class {
+    static {
+      __name(this, "NotesApp");
+    }
+    constructor(context, storage2, imageGen2) {
+      this.context = context;
+      this.storage = storage2;
+      this.imageGen = imageGen2;
+      this.id = "notes";
+      this.title = "Notes";
+      this.icon = ICONS.notes;
+      this._openId = null;
+      this._filter = "all";
+    }
+    render(container) {
+      if (this._openId) {
+        this._renderSingle(container);
+        return;
+      }
+      this._renderList(container);
+    }
+    /* ─────────────────────────── список ─────────────────────────── */
+    _renderList(container) {
+      const state = this.storage.getState();
+      const all = Array.isArray(state.notes) ? [...state.notes] : [];
+      const counts = { all: all.length };
+      for (const key of Object.keys(NOTE_KINDS)) {
+        counts[key] = all.filter((n) => (n.kind || "note") === key).length;
+      }
+      const filtered = this._filter === "all" ? all : all.filter((n) => (n.kind || "note") === this._filter);
+      filtered.sort((a, b) => (b.timestamp || 0) - (a.timestamp || 0));
+      container.innerHTML = "";
+      const tabs = document.createElement("div");
+      tabs.className = "astral-note-tabs";
+      for (const [key, label] of [["all", "\u0412\u0441\u0435"], ...Object.entries(NOTE_KINDS).map(([k, v]) => [k, v.label])]) {
+        const count = counts[key] || 0;
+        if (key !== "all" && count === 0) continue;
+        const tab = document.createElement("button");
+        tab.className = `astral-note-tab ${this._filter === key ? "active" : ""}`;
+        tab.textContent = count ? `${label} ${count}` : label;
+        tab.addEventListener("click", () => {
+          this._filter = key;
+          this.render(container);
+        });
+        tabs.appendChild(tab);
+      }
+      container.appendChild(tabs);
+      if (filtered.length === 0) {
+        const empty = document.createElement("div");
+        empty.className = "astral-empty-state";
+        empty.innerHTML = `
+                <div class="astral-empty-state-icon">${ICONS.notes}</div>
+                <div>\u0417\u0430\u043F\u0438\u0441\u0435\u0439 \u043D\u0435\u0442</div>
+                <div class="astral-empty-hint">\u041F\u0435\u0440\u0441\u043E\u043D\u0430\u0436 \u043F\u0438\u0448\u0435\u0442 \u0438\u0445 \u0441\u0430\u043C, \u0438\u043B\u0438 \u0434\u043E\u0431\u0430\u0432\u044C \u0441\u0432\u043E\u044E \u043A\u043D\u043E\u043F\u043A\u043E\u0439 \u043D\u0438\u0436\u0435</div>`;
+        container.appendChild(empty);
+      } else {
+        const list = document.createElement("div");
+        list.className = "astral-note-list";
+        for (const note of filtered) {
+          list.appendChild(this._buildCard(note, container));
+        }
+        container.appendChild(list);
+      }
+      const bar = document.createElement("div");
+      bar.className = "astral-action-bar";
+      const addBtn = document.createElement("button");
+      addBtn.className = "astral-btn astral-btn-primary astral-btn-wide";
+      addBtn.textContent = "+ \u041D\u043E\u0432\u0430\u044F \u0437\u0430\u043F\u0438\u0441\u044C";
+      addBtn.addEventListener("click", () => this._openEditor(null, container));
+      bar.appendChild(addBtn);
+      container.appendChild(bar);
+    }
+    _buildCard(note, container) {
+      const kind = NOTE_KINDS[note.kind] || NOTE_KINDS.note;
+      const card = document.createElement("div");
+      card.className = `astral-note-card astral-note-card--${note.kind || "note"}`;
+      card.innerHTML = `
+            <div class="astral-note-head">
+                <span class="astral-note-mark">${kind.mark}</span>
+                <span class="astral-note-kind">${this._esc(kind.label)}</span>
+                <span class="astral-note-time">${this._time(note.timestamp)}</span>
+            </div>
+            ${note.title ? `<div class="astral-note-title">${this._esc(note.title)}</div>` : ""}
+            <div class="astral-note-excerpt">${this._esc(this._excerpt(note.text))}</div>
+        `;
+      card.addEventListener("click", () => {
+        this._openId = note.id;
+        this.render(container);
+      });
+      return card;
+    }
+    /* ─────────────────────────── одна заметка ─────────────────────────── */
+    _renderSingle(container) {
+      const state = this.storage.getState();
+      const note = (state.notes || []).find((n) => n.id === this._openId);
+      if (!note) {
+        this._openId = null;
+        this._renderList(container);
+        return;
+      }
+      const kind = NOTE_KINDS[note.kind] || NOTE_KINDS.note;
+      container.innerHTML = `
+            <div class="astral-note-open">
+                <div class="astral-note-open-head">
+                    <button class="astral-note-back">\u2039 \u041D\u0430\u0437\u0430\u0434</button>
+                    <span class="astral-note-kind">${this._esc(kind.label)}</span>
+                    <span class="astral-note-time">${this._time(note.timestamp)}</span>
+                </div>
+                ${note.title ? `<h2 class="astral-note-open-title">${this._esc(note.title)}</h2>` : ""}
+                <div class="astral-note-open-text">${this._esc(note.text).replace(/\n/g, "<br>")}</div>
+                <div class="astral-action-bar">
+                    <button class="astral-btn" id="astral-note-edit">\u0420\u0435\u0434\u0430\u043A\u0442\u0438\u0440\u043E\u0432\u0430\u0442\u044C</button>
+                    <button class="astral-btn astral-btn-danger" id="astral-note-del">\u0423\u0434\u0430\u043B\u0438\u0442\u044C</button>
+                </div>
+            </div>
+        `;
+      container.querySelector(".astral-note-back").addEventListener("click", () => {
+        this._openId = null;
+        this.render(container);
+      });
+      container.querySelector("#astral-note-edit").addEventListener("click", () => {
+        this._openEditor(note, container);
+      });
+      container.querySelector("#astral-note-del").addEventListener("click", () => {
+        if (!confirm("\u0423\u0434\u0430\u043B\u0438\u0442\u044C \u0437\u0430\u043F\u0438\u0441\u044C?")) return;
+        const st = this.storage.getState();
+        st.notes = (st.notes || []).filter((n) => n.id !== note.id);
+        this.storage.save();
+        this._openId = null;
+        this._toast("\u0417\u0430\u043F\u0438\u0441\u044C \u0443\u0434\u0430\u043B\u0435\u043D\u0430");
+        this.render(container);
+      });
+    }
+    /* ─────────────────────────── редактор ─────────────────────────── */
+    _openEditor(note, container) {
+      const isNew = !note;
+      const phone = document.querySelector(".astral-phone");
+      if (!phone) return;
+      const overlay = document.createElement("div");
+      overlay.className = "astral-modal";
+      overlay.innerHTML = `
+            <div class="astral-modal-card astral-modal-card--composer">
+                <div class="astral-modal-title">${isNew ? "\u041D\u043E\u0432\u0430\u044F \u0437\u0430\u043F\u0438\u0441\u044C" : "\u0420\u0435\u0434\u0430\u043A\u0442\u0438\u0440\u043E\u0432\u0430\u0442\u044C"}</div>
+
+                <label class="astral-field-label">\u0422\u0438\u043F</label>
+                <select class="astral-select" id="astral-note-kind">
+                    ${Object.entries(NOTE_KINDS).map(
+        ([k, v]) => `<option value="${k}" ${(note?.kind || "diary") === k ? "selected" : ""}>${v.label}</option>`
+      ).join("")}
+                </select>
+
+                <label class="astral-field-label">\u0417\u0430\u0433\u043E\u043B\u043E\u0432\u043E\u043A</label>
+                <input type="text" class="astral-input" id="astral-note-title"
+                       value="${this._esc(note?.title || "")}" placeholder="\u041D\u0435\u043E\u0431\u044F\u0437\u0430\u0442\u0435\u043B\u044C\u043D\u043E">
+
+                <label class="astral-field-label">\u0422\u0435\u043A\u0441\u0442</label>
+                <textarea class="astral-textarea" id="astral-note-text"
+                          rows="6" placeholder="\u041E \u0447\u0451\u043C \u0437\u0430\u043F\u0438\u0441\u044C\u2026">${this._esc(note?.text || "")}</textarea>
+
+                <div class="astral-modal-actions">
+                    <button class="astral-btn" id="astral-note-cancel">\u041E\u0442\u043C\u0435\u043D\u0430</button>
+                    <button class="astral-btn astral-btn-primary" id="astral-note-save">\u0421\u043E\u0445\u0440\u0430\u043D\u0438\u0442\u044C</button>
+                </div>
+            </div>
+        `;
+      phone.appendChild(overlay);
+      const close = /* @__PURE__ */ __name(() => overlay.remove(), "close");
+      overlay.querySelector("#astral-note-cancel").addEventListener("click", close);
+      overlay.addEventListener("click", (e) => {
+        if (e.target === overlay) close();
+      });
+      overlay.querySelector("#astral-note-save").addEventListener("click", () => {
+        const kind = overlay.querySelector("#astral-note-kind").value;
+        const title = overlay.querySelector("#astral-note-title").value.trim();
+        const text = overlay.querySelector("#astral-note-text").value.trim();
+        if (!text) return;
+        const state = this.storage.getState();
+        if (!Array.isArray(state.notes)) state.notes = [];
+        if (isNew) {
+          state.notes.push({
+            id: `note_${Date.now()}_${Math.random().toString(36).slice(2, 7)}`,
+            kind,
+            title,
+            text,
+            timestamp: Date.now(),
+            author: "user"
+          });
+        } else {
+          const target = state.notes.find((n) => n.id === note.id);
+          if (target) {
+            Object.assign(target, { kind, title, text, edited: Date.now() });
+          }
+        }
+        this.storage.save();
+        close();
+        this._openId = isNew ? null : this._openId;
+        this._toast(isNew ? "\u0417\u0430\u043F\u0438\u0441\u044C \u0434\u043E\u0431\u0430\u0432\u043B\u0435\u043D\u0430" : "\u0417\u0430\u043F\u0438\u0441\u044C \u043E\u0431\u043D\u043E\u0432\u043B\u0435\u043D\u0430");
+        this.render(document.querySelector(".astral-phone-body"));
+        this._refreshPrompt();
+      });
+      overlay.querySelector("#astral-note-text").focus();
+    }
+    /* ─────────────────────────── события ─────────────────────────── */
+    async handleEvent(eventData) {
+      const state = this.storage.getState();
+      if (!Array.isArray(state.notes)) state.notes = [];
+      const text = String(eventData.description || eventData.text || "").trim();
+      if (!text) return { success: false, message: "\u041F\u0443\u0441\u0442\u0430\u044F \u0437\u0430\u043F\u0438\u0441\u044C" };
+      const meta = eventData.metadata || {};
+      const kind = [eventData.kind, meta.kind].find((k) => ["diary", "plan", "secret", "note"].includes(k)) || "diary";
+      const title = String(eventData.title || meta.title || "").trim();
+      state.notes.push({
+        id: `note_${Date.now()}_${Math.random().toString(36).slice(2, 7)}`,
+        kind,
+        title,
+        text,
+        timestamp: Date.now(),
+        author: "character",
+        character: eventData.character || ""
+      });
+      this.storage.save();
+      this._refreshPrompt();
+      return { success: true, message: "\u0417\u0430\u043F\u0438\u0441\u044C \u0434\u043E\u0431\u0430\u0432\u043B\u0435\u043D\u0430" };
+    }
+    /* ─────────────────────────── утилиты ─────────────────────────── */
+    _excerpt(text) {
+      const src = String(text || "").replace(/\s+/g, " ").trim();
+      return src.length > 110 ? `${src.slice(0, 110)}\u2026` : src;
+    }
+    _refreshPrompt() {
+      try {
+        globalThis.__astralRefreshPrompt?.();
+      } catch {
+      }
+    }
+    _toast(text, kind = "info") {
+      if (window.toastr) (toastr[kind] || toastr.info)(text);
+      else console.log(`[Notes] ${text}`);
+    }
+    _time(ts) {
+      if (!ts) return "";
+      return new Date(ts).toLocaleString("ru-RU", {
+        day: "numeric",
+        month: "short",
+        hour: "2-digit",
+        minute: "2-digit"
+      });
+    }
+    _esc(str) {
+      return String(str ?? "").replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" })[c]);
+    }
+  };
+  function buildNotesPromptBlock(state, limit = 5) {
+    const notes = Array.isArray(state?.notes) ? state.notes : [];
+    if (!notes.length) return "";
+    const recent = [...notes].sort((a, b) => (b.timestamp || 0) - (a.timestamp || 0)).slice(0, limit).reverse();
+    const lines = recent.map((n) => {
+      const kind = NOTE_KINDS[n.kind] || NOTE_KINDS.note;
+      const title = n.title ? `${n.title}: ` : "";
+      return `- [${kind.label}] ${title}${String(n.text || "").replace(/\s+/g, " ").slice(0, 180)}`;
+    });
+    return `[Astral Phone \u2014 \u043B\u0438\u0447\u043D\u044B\u0435 \u0437\u0430\u043C\u0435\u0442\u043A\u0438]
+\u041F\u0435\u0440\u0441\u043E\u043D\u0430\u0436 \u0432\u0435\u0434\u0451\u0442 \u0438\u0445 \u0441\u0430\u043C, \u044D\u0442\u043E \u0435\u0433\u043E \u043F\u0440\u0438\u0432\u0430\u0442\u043D\u044B\u0435 \u043C\u044B\u0441\u043B\u0438:
+${lines.join("\n")}`;
+  }
+  __name(buildNotesPromptBlock, "buildNotesPromptBlock");
+
+  // apps/social.js
+  var SocialApp = class {
+    static {
+      __name(this, "SocialApp");
+    }
+    constructor(context, storage2, imageGen2) {
+      this.context = context;
+      this.storage = storage2;
+      this.imageGen = imageGen2;
+      this.id = "social";
+      this.title = "Social";
+      this.icon = ICONS.social;
+      this._replyTo = null;
+      this._filter = "all";
+    }
+    render(container) {
+      const state = this.storage.getState();
+      const posts = this._sortedPosts(state);
+      container.innerHTML = "";
+      container.appendChild(this._buildTopBar(container));
+      if (posts.length === 0) {
+        const empty = document.createElement("div");
+        empty.className = "astral-empty-state";
+        empty.innerHTML = `
+                <div class="astral-empty-state-icon">${ICONS.social}</div>
+                <div>\u041B\u0435\u043D\u0442\u0430 \u043F\u0443\u0441\u0442\u0430</div>
+                <div class="astral-empty-hint">\u041F\u0435\u0440\u0441\u043E\u043D\u0430\u0436\u0438 \u043D\u0430\u0447\u043D\u0443\u0442 \u043F\u0438\u0441\u0430\u0442\u044C, \u043A\u043E\u0433\u0434\u0430 \u0432 \u0441\u0446\u0435\u043D\u0435 \u0447\u0442\u043E-\u0442\u043E \u043F\u0440\u043E\u0438\u0437\u043E\u0439\u0434\u0451\u0442</div>`;
+        container.appendChild(empty);
+      } else {
+        const feed = document.createElement("div");
+        feed.className = "astral-social-feed";
+        for (const post of posts) feed.appendChild(this._buildPost(post, state, container));
+        container.appendChild(feed);
+      }
+      container.appendChild(this._buildComposerBar(container));
+    }
+    _sortedPosts(state) {
+      const posts = Array.isArray(state.social) ? [...state.social] : [];
+      if (this._filter === "following") {
+        const following = new Set(state.socialFollowing || []);
+        return posts.filter((p) => following.has(p.author)).sort((a, b) => (b.timestamp || 0) - (a.timestamp || 0));
+      }
+      return posts.sort((a, b) => (b.timestamp || 0) - (a.timestamp || 0));
+    }
+    _buildTopBar(container) {
+      const bar = document.createElement("div");
+      bar.className = "astral-social-top";
+      const all = document.createElement("button");
+      all.className = `astral-social-tab ${this._filter === "all" ? "active" : ""}`;
+      all.textContent = "\u0412\u0441\u0435";
+      all.addEventListener("click", () => {
+        this._filter = "all";
+        this.render(container);
+      });
+      const following = document.createElement("button");
+      following.className = `astral-social-tab ${this._filter === "following" ? "active" : ""}`;
+      following.textContent = "\u041F\u043E\u0434\u043F\u0438\u0441\u043A\u0438";
+      following.addEventListener("click", () => {
+        this._filter = "following";
+        this.render(container);
+      });
+      bar.appendChild(all);
+      bar.appendChild(following);
+      return bar;
+    }
+    /* ─────────────────────────── пост ─────────────────────────── */
+    _buildPost(post, state, container) {
+      const card = document.createElement("div");
+      card.className = "astral-social-post";
+      const liked = Array.isArray(post.likedBy) && post.likedBy.includes("me");
+      const reposted = Array.isArray(post.repostedBy) && post.repostedBy.includes("me");
+      const replies = Array.isArray(post.replies) ? post.replies : [];
+      const avatarLetter = (post.author || "?")[0].toUpperCase();
+      card.innerHTML = `
+            <div class="astral-social-head">
+                <div class="astral-social-avatar">${this._esc(avatarLetter)}</div>
+                <div class="astral-social-who">
+                    <span class="astral-social-name">${this._esc(post.author || "\u041D\u0435\u0438\u0437\u0432\u0435\u0441\u0442\u043D\u044B\u0439")}</span>
+                    ${post.handle ? `<span class="astral-social-handle">@${this._esc(post.handle)}</span>` : ""}
+                    <span class="astral-social-dot">\xB7</span>
+                    <span class="astral-social-time">${this._ago(post.timestamp)}</span>
+                </div>
+            </div>
+
+            <div class="astral-social-body">${this._esc(post.text || "").replace(/\n/g, "<br>")}</div>
+
+            ${post.imageUrl ? `<div class="astral-social-media"><img src="${post.imageUrl}" alt="" loading="lazy"></div>` : ""}
+
+            <div class="astral-social-actions">
+                <button class="astral-social-act ${replies.length ? "has-count" : ""}" data-act="reply">
+                    <svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="1.9">
+                        <path d="M21 11.5a8.4 8.4 0 0 1-9 8.4 9 9 0 0 1-3.7-.8L3 21l1.9-4.7A8.4 8.4 0 0 1 12 3.1a8.4 8.4 0 0 1 9 8.4z"/>
+                    </svg>
+                    <span>${replies.length || ""}</span>
+                </button>
+                <button class="astral-social-act ${reposted ? "active" : ""}" data-act="repost">
+                    <svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="1.9">
+                        <path d="M17 2l4 4-4 4M3 11V9a4 4 0 0 1 4-4h14M7 22l-4-4 4-4M21 13v2a4 4 0 0 1-4 4H3"/>
+                    </svg>
+                    <span>${Array.isArray(post.repostedBy) ? post.repostedBy.length || "" : ""}</span>
+                </button>
+                <button class="astral-social-act ${liked ? "active astral-social-act--liked" : ""}" data-act="like">
+                    <svg viewBox="0 0 24 24" width="15" height="15" fill="${liked ? "currentColor" : "none"}" stroke="currentColor" stroke-width="1.9">
+                        <path d="M12 21s-7.2-4.5-9.4-8.6A5.3 5.3 0 0 1 12 6.4a5.3 5.3 0 0 1 9.4 6c-2.2 4.1-9.4 8.6-9.4 8.6z"/>
+                    </svg>
+                    <span>${Array.isArray(post.likedBy) ? post.likedBy.length || "" : ""}</span>
+                </button>
+            </div>
+
+            ${replies.length ? `
+                <div class="astral-social-replies">
+                    ${replies.slice(-3).map((r) => `
+                        <div class="astral-social-reply">
+                            <span class="astral-social-reply-name">${this._esc(r.author || "")}</span>
+                            <span class="astral-social-reply-text">${this._esc(r.text || "")}</span>
+                        </div>
+                    `).join("")}
+                    ${replies.length > 3 ? `<div class="astral-social-more">\u0435\u0449\u0451 ${replies.length - 3}\u2026</div>` : ""}
+                </div>` : ""}
+        `;
+      card.querySelector('[data-act="like"]').addEventListener("click", (e) => {
+        e.stopPropagation();
+        this._toggle(post.id, "likedBy");
+        this.render(container);
+      });
+      card.querySelector('[data-act="repost"]').addEventListener("click", (e) => {
+        e.stopPropagation();
+        this._toggle(post.id, "repostedBy");
+        this.render(container);
+      });
+      card.querySelector('[data-act="reply"]').addEventListener("click", (e) => {
+        e.stopPropagation();
+        this._openReply(post.id, container);
+      });
+      return card;
+    }
+    _toggle(postId, field) {
+      const state = this.storage.getState();
+      const post = (state.social || []).find((p) => p.id === postId);
+      if (!post) return;
+      if (!Array.isArray(post[field])) post[field] = [];
+      const i = post[field].indexOf("me");
+      if (i >= 0) post[field].splice(i, 1);
+      else post[field].push("me");
+      this.storage.save();
+    }
+    /* ─────────────────────────── ответ ─────────────────────────── */
+    _openReply(postId, container) {
+      const phone = document.querySelector(".astral-phone");
+      if (!phone) return;
+      const overlay = document.createElement("div");
+      overlay.className = "astral-modal";
+      overlay.innerHTML = `
+            <div class="astral-modal-card">
+                <div class="astral-modal-title">\u041E\u0442\u0432\u0435\u0442\u0438\u0442\u044C</div>
+                <textarea class="astral-textarea" id="astral-social-reply-text" rows="3"
+                          placeholder="\u0422\u0432\u043E\u0439 \u043E\u0442\u0432\u0435\u0442\u2026"></textarea>
+                <div class="astral-modal-actions">
+                    <button class="astral-btn" id="astral-social-reply-cancel">\u041E\u0442\u043C\u0435\u043D\u0430</button>
+                    <button class="astral-btn astral-btn-primary" id="astral-social-reply-go">\u041E\u0442\u043F\u0440\u0430\u0432\u0438\u0442\u044C</button>
+                </div>
+            </div>
+        `;
+      phone.appendChild(overlay);
+      const close = /* @__PURE__ */ __name(() => overlay.remove(), "close");
+      overlay.querySelector("#astral-social-reply-cancel").addEventListener("click", close);
+      overlay.addEventListener("click", (e) => {
+        if (e.target === overlay) close();
+      });
+      overlay.querySelector("#astral-social-reply-go").addEventListener("click", () => {
+        const text = overlay.querySelector("#astral-social-reply-text").value.trim();
+        if (!text) return;
+        const state = this.storage.getState();
+        const post = (state.social || []).find((p) => p.id === postId);
+        if (!post) {
+          close();
+          return;
+        }
+        if (!Array.isArray(post.replies)) post.replies = [];
+        post.replies.push({
+          author: this._userName(),
+          text,
+          timestamp: Date.now(),
+          mine: true
+        });
+        this.storage.save();
+        close();
+        this._toast("\u041E\u0442\u0432\u0435\u0442 \u0434\u043E\u0431\u0430\u0432\u043B\u0435\u043D");
+        this.render(container);
+      });
+      overlay.querySelector("#astral-social-reply-text").focus();
+    }
+    /* ─────────────────────────── создание поста ─────────────────────────── */
+    _buildComposerBar(container) {
+      const bar = document.createElement("div");
+      bar.className = "astral-action-bar";
+      const btn = document.createElement("button");
+      btn.className = "astral-btn astral-btn-primary astral-btn-wide";
+      btn.textContent = "\u270E \u041D\u0430\u043F\u0438\u0441\u0430\u0442\u044C \u043F\u043E\u0441\u0442";
+      btn.addEventListener("click", () => this._openComposer(container));
+      bar.appendChild(btn);
+      return bar;
+    }
+    _openComposer(container) {
+      const phone = document.querySelector(".astral-phone");
+      if (!phone) return;
+      const overlay = document.createElement("div");
+      overlay.className = "astral-modal";
+      overlay.innerHTML = `
+            <div class="astral-modal-card astral-modal-card--composer">
+                <div class="astral-modal-title">\u041D\u043E\u0432\u044B\u0439 \u043F\u043E\u0441\u0442</div>
+                <textarea class="astral-textarea" id="astral-social-text" rows="5"
+                          placeholder="\u0427\u0442\u043E \u043F\u0440\u043E\u0438\u0441\u0445\u043E\u0434\u0438\u0442?"></textarea>
+                <div class="astral-modal-actions">
+                    <button class="astral-btn" id="astral-social-cancel">\u041E\u0442\u043C\u0435\u043D\u0430</button>
+                    <button class="astral-btn astral-btn-primary" id="astral-social-go">\u041E\u043F\u0443\u0431\u043B\u0438\u043A\u043E\u0432\u0430\u0442\u044C</button>
+                </div>
+            </div>
+        `;
+      phone.appendChild(overlay);
+      const close = /* @__PURE__ */ __name(() => overlay.remove(), "close");
+      overlay.querySelector("#astral-social-cancel").addEventListener("click", close);
+      overlay.addEventListener("click", (e) => {
+        if (e.target === overlay) close();
+      });
+      overlay.querySelector("#astral-social-go").addEventListener("click", () => {
+        const text = overlay.querySelector("#astral-social-text").value.trim();
+        if (!text) return;
+        const state = this.storage.getState();
+        if (!Array.isArray(state.social)) state.social = [];
+        state.social.push({
+          id: `post_${Date.now()}_${Math.random().toString(36).slice(2, 7)}`,
+          author: this._userName(),
+          handle: this._handle(this._userName()),
+          text,
+          timestamp: Date.now(),
+          mine: true,
+          likedBy: [],
+          repostedBy: [],
+          replies: []
+        });
+        this.storage.save();
+        close();
+        this._toast("\u041E\u043F\u0443\u0431\u043B\u0438\u043A\u043E\u0432\u0430\u043D\u043E");
+        this.render(container);
+      });
+      overlay.querySelector("#astral-social-text").focus();
+    }
+    /* ─────────────────────────── события ─────────────────────────── */
+    async handleEvent(eventData) {
+      const state = this.storage.getState();
+      if (!Array.isArray(state.social)) state.social = [];
+      const text = String(eventData.description || eventData.text || "").trim();
+      if (!text) return { success: false, message: "\u041F\u0443\u0441\u0442\u043E\u0439 \u043F\u043E\u0441\u0442" };
+      const author = String(eventData.character || this.context?.name2 || "").trim() || "\u041D\u0435\u0438\u0437\u0432\u0435\u0441\u0442\u043D\u044B\u0439";
+      state.social.push({
+        id: `post_${Date.now()}_${Math.random().toString(36).slice(2, 7)}`,
+        author,
+        handle: this._handle(author),
+        text,
+        timestamp: Date.now(),
+        likedBy: [],
+        repostedBy: [],
+        replies: []
+      });
+      this.storage.save();
+      return { success: true, message: "\u041F\u043E\u0441\u0442 \u043E\u043F\u0443\u0431\u043B\u0438\u043A\u043E\u0432\u0430\u043D" };
+    }
+    /* ─────────────────────────── утилиты ─────────────────────────── */
+    _userName() {
+      const ctx = this.context || {};
+      const name = String(ctx.name1 || "").trim();
+      return !name || /sillytavern/i.test(name) ? "\u0422\u044B" : name;
+    }
+    _handle(name) {
+      return String(name || "user").toLowerCase().replace(/\s+/g, "_").replace(/[^a-z0-9_]/g, "").slice(0, 18) || "user";
+    }
+    _ago(ts) {
+      if (!ts) return "";
+      const diff = Math.max(0, Date.now() - ts);
+      const m = Math.floor(diff / 6e4);
+      if (m < 1) return "\u0441\u0435\u0439\u0447\u0430\u0441";
+      if (m < 60) return `${m}\u043C`;
+      const h = Math.floor(m / 60);
+      if (h < 24) return `${h}\u0447`;
+      return `${Math.floor(h / 24)}\u0434`;
+    }
+    _toast(text, kind = "info") {
+      if (window.toastr) (toastr[kind] || toastr.info)(text);
+      else console.log(`[Social] ${text}`);
+    }
+    _esc(str) {
+      return String(str ?? "").replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" })[c]);
+    }
+  };
+
   // apps/contact-seeder.js
   var ContactSeeder = class {
     static {
@@ -5065,8 +5648,14 @@ Rules:
 \u0422\u0435\u043B\u0435\u0444\u043E\u043D \u043C\u043E\u043B\u0447\u0438\u0442 \u0443\u0436\u0435 ${sinceEvent} \u0441\u043E\u043E\u0431\u0449\u0435\u043D\u0438\u0439 \u2014 \u0443\u043C\u0435\u0441\u0442\u043D\u043E \u0434\u043E\u0431\u0430\u0432\u0438\u0442\u044C \u0441\u043E\u0431\u044B\u0442\u0438\u0435.` : "";
     const body = lines.length ? `\u041F\u043E\u0441\u043B\u0435\u0434\u043D\u0438\u0435 \u0441\u043E\u043E\u0431\u0449\u0435\u043D\u0438\u044F \u0432 \u0442\u0435\u043B\u0435\u0444\u043E\u043D\u0435 (\u0441\u0442\u0430\u0440\u044B\u0435 \u0432\u044B\u0448\u0435):
 ${lines.join("\n")}${nudge}` : `\u041F\u0435\u0440\u0435\u043F\u0438\u0441\u043A\u0438 \u043F\u043E\u043A\u0430 \u043D\u0435\u0442.${nudge}`;
-    return `[Astral Phone \u2014 \u043F\u0435\u0440\u0435\u043F\u0438\u0441\u043A\u0430]
-${body}`;
+    const parts = [`[Astral Phone \u2014 \u043F\u0435\u0440\u0435\u043F\u0438\u0441\u043A\u0430]
+${body}`];
+    try {
+      const notesBlock = buildNotesPromptBlock(state);
+      if (notesBlock) parts.push(notesBlock);
+    } catch (_) {
+    }
+    return parts.join("\n\n");
   }
   __name(buildPhoneContext, "buildPhoneContext");
   function refreshPhonePrompt(storage2) {
@@ -5107,6 +5696,8 @@ ${body}`;
 - message_received \u2014 \u043F\u0435\u0440\u0441\u043E\u043D\u0430\u0436 \u043D\u0430\u043F\u0438\u0441\u0430\u043B \u0442\u0435\u0431\u0435 \u0441\u043E\u043E\u0431\u0449\u0435\u043D\u0438\u0435. description = \u0442\u0435\u043A\u0441\u0442 \u0441\u043E\u043E\u0431\u0449\u0435\u043D\u0438\u044F.
 - spicy_posted \u2014 \u043F\u0435\u0440\u0441\u043E\u043D\u0430\u0436 \u0432\u044B\u043B\u043E\u0436\u0438\u043B \u043E\u0442\u043A\u0440\u043E\u0432\u0435\u043D\u043D\u044B\u0439 \u0440\u043E\u043B\u0438\u043A \u0432 Spicy Hub. description = \u043D\u0430\u0437\u0432\u0430\u043D\u0438\u0435 \u0438 \u0441\u0443\u0442\u044C \u0440\u043E\u043B\u0438\u043A\u0430 \u043F\u043B\u044E\u0441 \u0432\u0438\u0437\u0443\u0430\u043B\u044C\u043D\u043E\u0435 \u043E\u043F\u0438\u0441\u0430\u043D\u0438\u0435 \u043A\u0430\u0434\u0440\u0430 \u0434\u043B\u044F \u043F\u0440\u0435\u0432\u044C\u044E.
 - content_posted \u2014 \u043F\u0435\u0440\u0441\u043E\u043D\u0430\u0436 \u0432\u044B\u043B\u043E\u0436\u0438\u043B \u043F\u043E\u0441\u0442 \u0432 Creator Studio. description = \u043F\u043E\u0434\u043F\u0438\u0441\u044C \u043A \u043F\u043E\u0441\u0442\u0443 \u043F\u043B\u044E\u0441 \u0432\u0438\u0437\u0443\u0430\u043B\u044C\u043D\u043E\u0435 \u043E\u043F\u0438\u0441\u0430\u043D\u0438\u0435 \u043A\u0430\u0434\u0440\u0430.
+- note_written \u2014 \u043F\u0435\u0440\u0441\u043E\u043D\u0430\u0436 \u0441\u0434\u0435\u043B\u0430\u043B \u043F\u0440\u0438\u0432\u0430\u0442\u043D\u0443\u044E \u0437\u0430\u043F\u0438\u0441\u044C \u0432 Notes (\u0434\u043D\u0435\u0432\u043D\u0438\u043A, \u043F\u043B\u0430\u043D, \u0441\u0435\u043A\u0440\u0435\u0442). description = \u0442\u0435\u043A\u0441\u0442 \u0437\u0430\u043F\u0438\u0441\u0438 \u043E\u0442 \u043F\u0435\u0440\u0432\u043E\u0433\u043E \u043B\u0438\u0446\u0430, \u043A\u0430\u043A \u043E\u043D \u0434\u0443\u043C\u0430\u0435\u0442. metadata.title = \u043A\u043E\u0440\u043E\u0442\u043A\u0438\u0439 \u0437\u0430\u0433\u043E\u043B\u043E\u0432\u043E\u043A, kind = diary|plan|secret|note.
+- social_post \u2014 \u043F\u0435\u0440\u0441\u043E\u043D\u0430\u0436 \u043D\u0430\u043F\u0438\u0441\u0430\u043B \u043F\u0443\u0431\u043B\u0438\u0447\u043D\u044B\u0439 \u043F\u043E\u0441\u0442 \u0432 \u0441\u043E\u0446\u0441\u0435\u0442\u0438 (Twitter). description = \u0442\u0435\u043A\u0441\u0442 \u043F\u043E\u0441\u0442\u0430, \u043A\u043E\u0440\u043E\u0442\u043A\u043E \u0438 \u0432 \u0435\u0433\u043E \u0433\u043E\u043B\u043E\u0441\u0435.
 - donation_received \u2014 \u0444\u0430\u043D\u0430\u0442 \u0437\u0430\u0434\u043E\u043D\u0430\u0442\u0438\u043B. metadata.amount = \u0441\u0443\u043C\u043C\u0430 \u0432 \u0434\u043E\u043B\u043B\u0430\u0440\u0430\u0445.
 - subscriber_joined \u2014 \u043D\u043E\u0432\u044B\u0439 \u043F\u043E\u0434\u043F\u0438\u0441\u0447\u0438\u043A. metadata.count = \u0441\u043A\u043E\u043B\u044C\u043A\u043E.
 
@@ -5134,6 +5725,8 @@ description \u043F\u0438\u0448\u0438 \u043A\u0430\u043A \u043F\u0440\u043E\u043C
       ["messages", () => new MessagesApp(context, storage, imageGen)],
       ["gallery", () => new GalleryApp(context, storage, imageGen)],
       ["spicy", () => new SpicyApp(context, storage, imageGen)],
+      ["notes", () => new NotesApp(context, storage, imageGen)],
+      ["social", () => new SocialApp(context, storage, imageGen)],
       ["creator", () => new CreatorApp(context, storage, imageGen)],
       ["settings", () => new SettingsApp(context, storage, core.accountManager)]
     ];
@@ -5246,6 +5839,8 @@ description \u043F\u0438\u0448\u0438 \u043A\u0430\u043A \u043F\u0440\u043E\u043C
               "message_received",
               "spicy_posted",
               "content_posted",
+              "note_written",
+              "social_post",
               "donation_received",
               "subscriber_joined"
             ],

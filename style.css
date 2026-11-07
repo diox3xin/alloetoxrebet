@@ -153,7 +153,7 @@
 
 .astral-phone-statusbar {
   position: relative;
-  z-index: 20;
+  z-index: 50;
   display: flex;
   align-items: center;
   justify-content: space-between;
@@ -208,7 +208,9 @@
 
 .astral-phone-header {
   position: relative;
-  z-index: 20;
+  /* выше локскрина (30): кнопка закрытия должна быть доступна всегда,
+     иначе на экране блокировки телефон выглядит «незакрываемым» */
+  z-index: 50;
   display: flex;
   align-items: center;
   gap: 11px;
@@ -1404,9 +1406,7 @@
     padding-bottom: max(24px, env(safe-area-inset-bottom, 0px));
   }
 
-  /* шапка поверх локскрина, чтобы ✕ и «назад» были доступны всегда */
-  .astral-phone-header { z-index: 50; }
-  .astral-phone-statusbar { z-index: 50; }
+  /* шапка поверх локскрина задана в базовых стилях */
 }
 
 /* Очень узкие экраны: сетка и отступы компактнее */
@@ -2384,3 +2384,300 @@
   0%, 80%, 100% { opacity: .3; transform: translateY(0); }
   40% { opacity: 1; transform: translateY(-4px); }
 }
+
+/* ═══════════════════════ Notes ═══════════════════════ */
+
+.astral-note-tabs {
+  display: flex;
+  gap: 6px;
+  flex-wrap: wrap;
+  padding: 4px 0 12px;
+}
+
+.astral-note-tab {
+  padding: 6px 12px;
+  border-radius: 14px;
+  border: 1px solid rgba(217,154,181,.22);
+  background: transparent;
+  color: var(--phone-muted);
+  font-family: inherit;
+  font-size: 10px;
+  letter-spacing: .07em;
+  cursor: pointer;
+  transition: .16s;
+}
+.astral-note-tab:hover { color: var(--phone-text); border-color: rgba(217,154,181,.45); }
+.astral-note-tab.active {
+  background: linear-gradient(150deg, rgba(229,175,197,.22), rgba(217,154,181,.08));
+  border-color: var(--phone-accent);
+  color: var(--phone-accent-light);
+}
+
+.astral-note-list {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.astral-note-card {
+  position: relative;
+  padding: 13px 15px;
+  border-radius: 13px;
+  background: linear-gradient(160deg, rgba(40,32,39,.55), rgba(23,17,22,.75));
+  border: 1px solid rgba(217,154,181,.16);
+  cursor: pointer;
+  transition: .16s;
+  overflow: hidden;
+}
+.astral-note-card::before {
+  content: '';
+  position: absolute;
+  left: 0;
+  top: 0;
+  bottom: 0;
+  width: 2px;
+  background: var(--phone-accent);
+  opacity: .55;
+}
+.astral-note-card:hover {
+  border-color: rgba(217,154,181,.4);
+  background: linear-gradient(160deg, rgba(50,40,48,.6), rgba(23,17,22,.8));
+}
+.astral-note-card:active { transform: scale(.99); }
+
+.astral-note-card--secret::before { background: #C487A6; opacity: .9; }
+.astral-note-card--plan::before { background: #9AB5D9; opacity: .8; }
+.astral-note-card--diary::before { background: var(--phone-accent-light); }
+
+.astral-note-head {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  margin-bottom: 7px;
+}
+.astral-note-mark { color: var(--phone-accent); font-size: 11px; }
+.astral-note-kind {
+  font-size: 9px;
+  letter-spacing: .1em;
+  text-transform: uppercase;
+  color: var(--phone-accent);
+  opacity: .85;
+}
+.astral-note-time {
+  margin-left: auto;
+  font-size: 9px;
+  color: var(--phone-muted);
+  opacity: .65;
+}
+.astral-note-title {
+  font-size: 13px;
+  color: var(--phone-text);
+  margin-bottom: 4px;
+  font-weight: 500;
+}
+.astral-note-excerpt {
+  font-size: 11px;
+  line-height: 1.55;
+  color: var(--phone-muted);
+}
+
+/* открытая заметка */
+.astral-note-open { padding: 4px 0 20px; }
+.astral-note-open-head {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-bottom: 16px;
+}
+.astral-note-back {
+  background: none;
+  border: 0;
+  padding: 0;
+  font: inherit;
+  font-size: 11px;
+  color: var(--phone-accent);
+  cursor: pointer;
+}
+.astral-note-back:hover { color: var(--phone-accent-light); }
+.astral-note-open-title {
+  font-size: 17px;
+  line-height: 1.35;
+  color: var(--phone-text);
+  margin: 0 0 12px;
+  font-weight: 500;
+}
+.astral-note-open-text {
+  font-size: 12px;
+  line-height: 1.75;
+  color: var(--phone-text-dim, #8E818C);
+  margin-bottom: 22px;
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+
+.astral-btn-danger {
+  color: #e07585;
+  border-color: rgba(220,53,69,.35);
+  background: rgba(220,53,69,.1);
+}
+.astral-btn-danger:hover {
+  color: #fff;
+  background: rgba(220,53,69,.25);
+  border-color: rgba(220,53,69,.6);
+}
+
+/* ═══════════════════════ Social ═══════════════════════ */
+
+.astral-social-top {
+  display: flex;
+  gap: 0;
+  border-bottom: 1px solid rgba(217,154,181,.14);
+  margin-bottom: 4px;
+}
+.astral-social-tab {
+  flex: 1;
+  padding: 11px 0;
+  background: none;
+  border: 0;
+  border-bottom: 2px solid transparent;
+  font-family: inherit;
+  font-size: 11px;
+  letter-spacing: .06em;
+  color: var(--phone-muted);
+  cursor: pointer;
+  transition: .16s;
+}
+.astral-social-tab:hover { color: var(--phone-text); }
+.astral-social-tab.active {
+  color: var(--phone-accent-light);
+  border-bottom-color: var(--phone-accent);
+}
+
+.astral-social-feed {
+  display: flex;
+  flex-direction: column;
+}
+
+.astral-social-post {
+  padding: 14px 2px;
+  border-bottom: 1px solid rgba(217,154,181,.1);
+}
+.astral-social-post:last-child { border-bottom: 0; }
+
+.astral-social-head {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  margin-bottom: 8px;
+}
+.astral-social-avatar {
+  flex: none;
+  width: 34px;
+  height: 34px;
+  border-radius: 50%;
+  display: grid;
+  place-items: center;
+  font-size: 13px;
+  font-style: italic;
+  color: var(--phone-accent-light);
+  background: radial-gradient(circle at 32% 26%, rgba(229,175,197,.35), rgba(23,17,22,.9));
+  border: 1px solid rgba(217,154,181,.35);
+}
+.astral-social-who {
+  display: flex;
+  align-items: baseline;
+  gap: 5px;
+  flex-wrap: wrap;
+  min-width: 0;
+}
+.astral-social-name {
+  font-size: 12px;
+  color: var(--phone-text);
+  font-weight: 500;
+}
+.astral-social-handle {
+  font-size: 10px;
+  color: var(--phone-muted);
+  opacity: .8;
+}
+.astral-social-dot { color: var(--phone-muted); opacity: .5; font-size: 10px; }
+.astral-social-time { font-size: 10px; color: var(--phone-muted); opacity: .7; }
+
+.astral-social-body {
+  font-size: 12px;
+  line-height: 1.6;
+  color: var(--phone-text);
+  margin-bottom: 9px;
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+
+.astral-social-media {
+  margin-bottom: 9px;
+  border-radius: 11px;
+  overflow: hidden;
+  border: 1px solid rgba(217,154,181,.2);
+}
+.astral-social-media img { display: block; width: 100%; height: auto; }
+
+.astral-social-actions {
+  display: flex;
+  gap: 18px;
+}
+.astral-social-act {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 4px 0;
+  background: none;
+  border: 0;
+  font: inherit;
+  font-size: 10.5px;
+  color: var(--phone-muted);
+  cursor: pointer;
+  transition: .15s;
+}
+.astral-social-act:hover { color: var(--phone-accent-light); }
+.astral-social-act.active { color: var(--phone-accent); }
+.astral-social-act--liked { color: #E5578C; }
+.astral-social-act.has-count { color: var(--phone-text-dim, #8E818C); }
+
+.astral-social-replies {
+  margin-top: 9px;
+  padding-left: 10px;
+  border-left: 2px solid rgba(217,154,181,.16);
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+}
+.astral-social-reply { font-size: 11px; line-height: 1.5; }
+.astral-social-reply-name {
+  color: var(--phone-accent);
+  margin-right: 5px;
+  font-weight: 500;
+}
+.astral-social-reply-text { color: var(--phone-muted); }
+.astral-social-more {
+  font-size: 10px;
+  color: var(--phone-accent);
+  opacity: .7;
+  cursor: default;
+}
+
+/* селект в редакторе заметок */
+.astral-select,
+.astral-input {
+  width: 100%;
+  box-sizing: border-box;
+  padding: 9px 11px;
+  border-radius: 9px;
+  border: 1px solid rgba(217,154,181,.2);
+  background: rgba(40,32,39,.9);
+  color: var(--phone-text);
+  font-family: inherit;
+  font-size: 12px;
+  outline: none;
+  margin-bottom: 4px;
+}
+.astral-select:focus,
+.astral-input:focus { border-color: rgba(217,154,181,.5); }

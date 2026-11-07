@@ -13,6 +13,8 @@ import { GalleryApp } from './apps/gallery.js';
 import { SpicyApp } from './apps/spicy.js';
 import { CreatorApp } from './apps/creator.js';
 import { SettingsApp } from './apps/settings.js';
+import { NotesApp } from './apps/notes.js';
+import { SocialApp } from './apps/social.js';
 import { renderCharacterBookHTML, bindCharacterBook } from './apps/character-book.js';
 import {
     loadApiSettings, saveApiSettings, isApiConfigured,
@@ -45,6 +47,8 @@ const PROMPT_BLOCK = `[Astral Phone — интерфейс телефона пе
 - message_received — персонаж написал тебе сообщение. description = текст сообщения.
 - spicy_posted — персонаж выложил откровенный ролик в Spicy Hub. description = название и суть ролика плюс визуальное описание кадра для превью.
 - content_posted — персонаж выложил пост в Creator Studio. description = подпись к посту плюс визуальное описание кадра.
+- note_written — персонаж сделал приватную запись в Notes (дневник, план, секрет). description = текст записи от первого лица, как он думает. metadata.title = короткий заголовок, kind = diary|plan|secret|note.
+- social_post — персонаж написал публичный пост в соцсети (Twitter). description = текст поста, коротко и в его голосе.
 - donation_received — фанат задонатил. metadata.amount = сумма в долларах.
 - subscriber_joined — новый подписчик. metadata.count = сколько.
 
@@ -83,6 +87,8 @@ function init() {
         ['messages', () => new MessagesApp(context, storage, imageGen)],
         ['gallery', () => new GalleryApp(context, storage, imageGen)],
         ['spicy', () => new SpicyApp(context, storage, imageGen)],
+        ['notes', () => new NotesApp(context, storage, imageGen)],
+        ['social', () => new SocialApp(context, storage, imageGen)],
         ['creator', () => new CreatorApp(context, storage, imageGen)],
         ['settings', () => new SettingsApp(context, storage, core.accountManager)],
     ];
@@ -219,6 +225,8 @@ function registerFunctionTool(context) {
                         'message_received',
                         'spicy_posted',
                         'content_posted',
+                        'note_written',
+                        'social_post',
                         'donation_received',
                         'subscriber_joined',
                     ],

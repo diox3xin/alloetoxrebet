@@ -6,6 +6,8 @@
  * whole extension (index.js has top-level side effects).
  */
 
+import { buildNotesPromptBlock } from './notes.js';
+
 /** Message is outgoing if it came from the user, either field works. */
 function isOutgoing(m) {
     if (m.from === 'me') return true;
@@ -36,7 +38,16 @@ export function buildPhoneContext(state) {
         ? `Последние сообщения в телефоне (старые выше):\n${lines.join('\n')}${nudge}`
         : `Переписки пока нет.${nudge}`;
 
-    return `[Astral Phone — переписка]\n${body}`;
+    const parts = [`[Astral Phone — переписка]\n${body}`];
+
+    // Заметки персонажа: он должен помнить, что сам записал — это его
+    // приватные мысли, и они влияют на поведение в сцене.
+    try {
+        const notesBlock = buildNotesPromptBlock(state);
+        if (notesBlock) parts.push(notesBlock);
+    } catch (_) { /* ignore */ }
+
+    return parts.join('\n\n');
 }
 
 /**
