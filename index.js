@@ -23,10 +23,10 @@ import {
 } from './apps/prompt-llm.js';
 import { ContactSeeder } from './apps/contact-seeder.js';
 import { refreshPhonePrompt } from './apps/phone-prompt.js';
+import { extractPhoneEvents, normaliseEvent } from './apps/event-parser.js';
+import { analysisInterval, analyseCast } from './apps/cast-profiles.js';
 
 const MODULE_NAME = 'astral-phone';
-const EVENT_TAG_RE = /<phone-event\b([^>]*?)\/?>/gi;
-const ATTR_RE = /(\w+)\s*=\s*"([^"]*)"/g;
 
 let core = null;
 let storage = null;
@@ -38,26 +38,34 @@ let initialized = false;
 
 const PROMPT_BLOCK = `[Astral Phone — интерфейс телефона персонажа]
 
-У персонажа есть смартфон. Приложения: Messages (переписка), Gallery (фото), Spicy Hub (анонимная лента), Creator Studio (платный контент с подписчиками и доходом).
+У персонажа есть смартфон. Приложения: Messages (переписка), Gallery (фото), Notes (личный дневник), Social (публичная лента), Spicy Hub (анонимная лента), Creator Studio (платный контент с подписчиками и доходом).
 
-Когда в сцене происходит то, что персонаж заснял бы, отправил или опубликовал — вызывай инструмент phone_event. Не описывай телефон в тексте ответа, просто вызывай инструмент.
+ПРАВИЛО ГЛАВНОЕ: телефон существует вне чата. Ты НИКОГДА не описываешь телефон словами в тексте ответа — ни «он достал телефон», ни «ты получаешь сообщение», ни «она выложила фото». Ты вызываешь инструмент phone_event, и событие само появится в нужном приложении. Если ты написал в тексте «он взял телефон» — событие не появится, потому что никто его не создал.
+
+Вызывай phone_event, когда в сцене персонаж реально что-то делает с телефоном: снял фото, отправил сообщение, выложил пост, записал мысль в дневник. На каждое такое действие — ровно один вызов.
+
+ПРИМЕР. Персонаж фотографирует тебя в окне:
+Обычный текст ответа (так делать НЕЛЬЗЯ): «Лиза достаёт телефон и щёлкает тебя на фоне заката».
+Правильно: вызов phone_event с type="photo_taken", character="Лиза", description="портрет, она в чёрной майке, стоит у окна, вечерний свет, ты в кадре со спины".
 
 Типы событий:
-- photo_taken — персонаж сфотографировал что-то или сделал селфи. description = что именно на фото, конкретно и визуально (внешность, одежда, поза, место, свет) — это пойдёт в промпт генерации картинки.
-- message_received — персонаж написал тебе сообщение. description = текст сообщения.
+- photo_taken — персонаж сфотографировал что-то или сделал селфи. description = что именно в кадре, конкретно и визуально (внешность, одежда, поза, место, свет) — это пойдёт в промпт генерации картинки.
+- message_received — персонаж написал тебе сообщение. description = текст сообщения, коротко, как реальное сообщение в чате.
 - spicy_posted — персонаж выложил откровенный ролик в Spicy Hub. description = название и суть ролика плюс визуальное описание кадра для превью.
 - content_posted — персонаж выложил пост в Creator Studio. description = подпись к посту плюс визуальное описание кадра.
 - note_written — персонаж сделал приватную запись в Notes (дневник, план, секрет). description = текст записи от первого лица, как он думает. metadata.title = короткий заголовок, kind = diary|plan|secret|note.
-- social_post — персонаж написал публичный пост в соцсети (Twitter). description = текст поста, коротко и в его голосе.
+- social_post — персонаж написал публичный пост в соцсети. description = текст поста, коротко и в его голосе.
 - donation_received — фанат задонатил. metadata.amount = сумма в долларах.
 - subscriber_joined — новый подписчик. metadata.count = сколько.
 
-Если инструменты недоступны, вместо вызова напиши тег, он будет вырезан из сообщения:
+ЕСЛИ ИНСТРУМЕНТ НЕДОСТУПЕН (нет функции phone_event в твоих инструментах) — вместо вызова напиши в конец ответа ровно такой тег, он будет вырезан из сообщения и попадёт в телефон:
 <phone-event type="photo_taken" character="Имя" description="описание" />
 
-description пиши как промпт для художника: без мета-комментариев, без слов «фото» и «картинка».
+Именно в таком виде: двойные кавычки, одно событие — один тег, атрибуты type, character, description. Ничего больше в тег не пиши.
 
-Частота: не спамь событиями. В среднем одно событие на 3–6 твоих сообщений — только когда это уместно по сцене (персонаж реально достал телефон, ему написали, он снял фото). Если ты уже отправлял событие в этом сообщении, следующее — не раньше чем через несколько реплик.
+description пиши как промпт для художника: без мета-комментариев, без слов «фото» и «картинка», без кавычек внутри.
+
+Частота: не спамь событиями. В среднем одно событие на 3–6 твоих сообщений — только когда это уместно по сцене. Если ты уже отправлял событие в этом сообщении, следующее — не раньше чем через несколько реплик.
 
 Пользователь может сам писать с телефона: в блоке [Astral Phone — переписка] сообщения от него помечены как «Ты». Если там есть его новые сообщения, на которые персонаж ещё не ответил — отреагируй на них через message_received: персонаж прочитал и ответил. Не игнорируй их.
 
@@ -249,9 +257,31 @@ function registerFunctionTool(context) {
             },
             required: ['type', 'description'],
         },
+        // Формат сообщения в чате: показываем, что персонаж сделал, а не
+        // технический JSON — иначе в ленте появляется мусор.
+        formatMessage: async (args) => {
+            const type = args?.type || 'событие';
+            const who = args?.character || 'персонаж';
+            const label = {
+                photo_taken: 'сделал фото',
+                message_received: 'написал сообщение',
+                spicy_posted: 'выложил ролик',
+                content_posted: 'выложил пост',
+                note_written: 'записал в дневнике',
+                social_post: 'написал пост',
+                donation_received: 'получил донат',
+                subscriber_joined: 'завёл подписчика',
+            }[type] || 'что-то сделал';
+            return `📱 ${who} ${label}`;
+        },
         action: async (args) => {
             try {
-                const result = await core.handleEvent(args);
+                const payload = normaliseEvent({
+                    ...args,
+                    character: args?.character || SillyTavern.getContext().name2 || '',
+                });
+                console.log('[Astral Phone] событие из инструмента:', payload.type, '—', payload.description.slice(0, 60));
+                const result = await core.handleEvent(payload);
                 return JSON.stringify(result);
             } catch (err) {
                 console.error('[Astral Phone] tool action failed:', err);
@@ -263,39 +293,74 @@ function registerFunctionTool(context) {
 
 /* ────────────────────────────── tag fallback ────────────────────────────── */
 
-function parseAttrs(str) {
-    const out = {};
-    let m;
-    ATTR_RE.lastIndex = 0;
-    while ((m = ATTR_RE.exec(str))) out[m[1]] = m[2];
-    return out;
+/**
+ * Найти сообщение в чате по id.
+ *
+ * `messageId` в MESSAGE_RECEIVED — это индекс в `context.chat`, но не
+ * всегда: ST местами отдаёт id другого вида. Поэтому ищем сначала по
+ * индексу, потом по совпадению `message_uid`/id, потом — по последнему
+ * сообщению, если в чате всего одно с тегом.
+ */
+function findMessage(live, messageId) {
+    const chat = Array.isArray(live?.chat) ? live.chat : [];
+
+    if (Number.isInteger(messageId) && chat[messageId]) return chat[messageId];
+
+    if (messageId !== undefined && messageId !== null) {
+        const asString = String(messageId);
+        const byUid = chat.find(m => m && (m.message_uid === messageId || m.id === messageId || String(m.id) === asString));
+        if (byUid) return byUid;
+    }
+
+    // Запасной путь: сообщение могло не успеть лечь в chat по индексу —
+    // берём последнее сообщение, если в нём есть наш тег.
+    for (let i = chat.length - 1; i >= 0; i--) {
+        const m = chat[i];
+        if (m && !m.is_user && typeof m.mes === 'string' && m.mes.includes('<phone-event')) return m;
+    }
+
+    return null;
 }
 
 function registerEventTagFallback(context) {
     const { eventSource, event_types } = context;
 
-    eventSource.on(event_types.MESSAGE_RECEIVED, (messageId) => {
-        try {
-            const live = SillyTavern.getContext();
-            const message = live.chat?.[messageId];
-            if (!message || message.is_user) return;
+    /** Сообщения, из которых события уже забраны — чтобы не дублировать. */
+    const processed = new Set();
 
-            const text = message.mes || '';
-            if (!text.includes('<phone-event')) return;
+    /**
+     * Обработать одно сообщение: забрать из него события и вырезать теги.
+     * @returns {number} сколько событий отправлено в телефон
+     */
+    const handleMessage = (message, messageId) => {
+        if (!message || message.is_user) return 0;
 
-            EVENT_TAG_RE.lastIndex = 0;
-            let match;
-            while ((match = EVENT_TAG_RE.exec(text))) {
-                const attrs = parseAttrs(match[1]);
-                if (!attrs.type) continue;
-                core.handleEvent({
-                    type: attrs.type,
-                    character: attrs.character || live.name2 || '',
-                    description: attrs.description || '',
-                });
-            }
+        const text = message.mes || '';
+        if (!text.includes('<phone-event')) return 0;
 
-            message.mes = text.replace(EVENT_TAG_RE, '').trim();
+        const key = `${messageId ?? 'x'}:${message.message_uid ?? ''}:${text.length}`;
+        if (processed.has(key)) return 0;
+        processed.add(key);
+
+        const { events, text: cleanText } = extractPhoneEvents(text);
+        if (!events.length) {
+            console.warn('[Astral Phone] тег <phone-event> найден, но атрибуты не разобрались:', text.slice(0, 300));
+            return 0;
+        }
+
+        const live = SillyTavern.getContext();
+        for (const event of events) {
+            const payload = normaliseEvent({
+                ...event,
+                character: event.character || live.name2 || '',
+            });
+            console.log('[Astral Phone] событие из текста:', payload.type, '—', payload.description.slice(0, 60));
+            core.handleEvent(payload);
+        }
+
+        // Тег не должен оставаться в сообщении — иначе он виден в чате.
+        if (cleanText !== text) {
+            message.mes = cleanText;
             const el = document.querySelector(`#chat .mes[mesid="${messageId}"] .mes_text`);
             if (el) {
                 el.innerHTML = live.messageFormatting(
@@ -306,10 +371,65 @@ function registerEventTagFallback(context) {
                     messageId,
                 );
             }
+        }
+
+        return events.length;
+    };
+
+    // Основной путь: сообщение от персонажа только что пришло.
+    const onReceived = (messageId) => {
+        try {
+            const live = SillyTavern.getContext();
+            const message = findMessage(live, messageId);
+            if (!message) {
+                console.warn('[Astral Phone] событие в тексте, но сообщение не найдено в чате:', messageId);
+                return;
+            }
+            handleMessage(message, messageId);
         } catch (err) {
             console.warn('[Astral Phone] tag fallback error:', err);
         }
-    });
+    };
+
+    /**
+     * Запасные пути. Событие может прийти не через MESSAGE_RECEIVED:
+     * при стриминге текст догоняет позже, при свайпе сообщение меняется,
+     * а при перезагрузке чата тег может остаться неразобранным.
+     */
+    const onUpdated = (messageId) => {
+        try {
+            const live = SillyTavern.getContext();
+            handleMessage(findMessage(live, messageId), messageId);
+        } catch (err) {
+            console.warn('[Astral Phone] tag fallback (updated) error:', err);
+        }
+    };
+
+    const onChatLoaded = () => {
+        try {
+            const live = SillyTavern.getContext();
+            const chat = Array.isArray(live?.chat) ? live.chat : [];
+            // Последние сообщения — на случай, если событие пришло в прошлом ходе.
+            for (let i = Math.max(0, chat.length - 3); i < chat.length; i++) {
+                handleMessage(chat[i], i);
+            }
+        } catch (err) {
+            console.warn('[Astral Phone] tag fallback (chat loaded) error:', err);
+        }
+    };
+
+    for (const name of ['MESSAGE_RECEIVED']) {
+        const type = event_types[name];
+        if (type) eventSource.on(type, onReceived);
+    }
+    for (const name of ['MESSAGE_UPDATED', 'CHARACTER_MESSAGE_RENDERED']) {
+        const type = event_types[name];
+        if (type) eventSource.on(type, onUpdated);
+    }
+    for (const name of ['CHAT_LOADED', 'CHAT_CHANGED']) {
+        const type = event_types[name];
+        if (type) eventSource.on(type, onChatLoaded);
+    }
 }
 
 /* ────────────────────────────── chat switch ────────────────────────────── */
@@ -955,7 +1075,53 @@ function saveSettings() {
 
 /* ────────────────────────────── boot ────────────────────────────── */
 
-jQuery(async () => {
-    const context = SillyTavern.getContext();
-    context.eventSource.on(context.event_types.APP_INITIALIZED, init);
-});
+/**
+ * Точка входа расширения.
+ *
+ * ST активирует расширение через хук `hooks.activate` из манифеста — то есть
+ * импортирует модуль и вызывает экспортированную функцию. Если её нет, ST
+ * тихо ничего не делает, и пользователь видит «расширение пропало».
+ *
+ * Дополнительно подстраховываемся событием APP_INITIALIZED и прямым вызовом:
+ * событие могло выстрелить до того, как модуль расширения загрузился, а
+ * порядок загрузки расширений и приложения не гарантирован.
+ */
+export async function onActivate() {
+    try {
+        init();
+    } catch (err) {
+        console.error('[Astral Phone] activation failed:', err);
+    }
+}
+
+function boot() {
+    try {
+        const context = SillyTavern.getContext();
+
+        // Если ST уже инициализирован, APP_INITIALIZED больше не придёт —
+        // запускаемся сразу.
+        if (initialized) return;
+
+        context.eventSource.on(context.event_types.APP_INITIALIZED, () => {
+            try { init(); } catch (err) { console.error('[Astral Phone] init failed:', err); }
+        });
+
+        // Страховка: если событие уже было — инициализируемся сразу.
+        setTimeout(() => {
+            if (!initialized) {
+                console.log('[Astral Phone] APP_INITIALIZED не пришёл — инициализируюсь напрямую');
+                init();
+            }
+        }, 1500);
+    } catch (err) {
+        console.error('[Astral Phone] boot failed:', err);
+    }
+}
+
+if (typeof jQuery === 'function') {
+    jQuery(boot);
+} else if (document.readyState === 'loading') {
+    document.addEventListener('DOMContentLoaded', boot, { once: true });
+} else {
+    boot();
+}

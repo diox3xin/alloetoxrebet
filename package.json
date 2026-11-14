@@ -4,7 +4,11 @@
   "description": "**Реалистичный телефон персонажа** с чатами, галереей, Spicy Hub и Creator Studio.   Модель генерирует события — расширение обрабатывает их и показывает результат в стеклянном интерфейсе.",
   "main": "index.js",
   "scripts": {
-    "test": "echo \"Error: no test specified\" && exit 1"
+    "build": "esbuild index.js --bundle --format=esm --outfile=astral-phone.js --platform=browser --keep-names --minify=false",
+    "test": "node test/event-flow.test.mjs && node test/bundle-smoke.test.mjs",
+    "test:unit": "node test/event-flow.test.mjs",
+    "test:bundle": "node test/bundle-smoke.test.mjs",
+    "report": "node test/build-report.mjs"
   },
   "repository": {
     "type": "git",

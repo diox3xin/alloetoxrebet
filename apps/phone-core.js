@@ -25,12 +25,15 @@ export class PhoneCore {
         this.imageGen = imageGen;
         
         this.accountManager = null;
-                try {
-                    this.accountManager = new AccountManager(context, storage);
-                    this.accountManager.getOrCreateAccount();
-                } catch (err) {
-                    console.error('[Astral Phone] AccountManager init failed (phone still usable):', err);
-                }
+        try {
+            this.accountManager = new AccountManager(context, storage);
+            // getCurrentAccount() сам создаёт и сохраняет аккаунт из персоны,
+            // если его ещё нет. Раньше здесь был вызов несуществующего
+            // getOrCreateAccount() — аккаунты молча не создавались.
+            this.accountManager.getCurrentAccount();
+        } catch (err) {
+            console.error('[Astral Phone] AccountManager init failed (phone still usable):', err);
+        }
 
         this.apps = new Map();
         this.currentAppId = null;
