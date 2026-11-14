@@ -6304,7 +6304,20 @@ ${who}\xAB${preview}${preview.length >= 60 ? "\u2026" : ""}\xBB`)) return;
       try {
         raw = await ctx.generateQuietPrompt(prompt2, false, false);
       } catch (err) {
-        throw new Error(`\u0413\u0435\u043D\u0435\u0440\u0430\u0446\u0438\u044F \u0437\u0430\u0432\u0435\u0440\u0448\u0438\u043B\u0430\u0441\u044C \u0441 \u043E\u0448\u0438\u0431\u043A\u043E\u0439: ${err?.message || err}`);
+        const message = String(err?.message || err || "");
+        if (message.includes("Not Found") || message.includes("404")) {
+          throw new Error("API endpoint \u043D\u0435 \u043D\u0430\u0439\u0434\u0435\u043D (404). \u041F\u0440\u043E\u0432\u0435\u0440\u044C\u0442\u0435 \u043D\u0430\u0441\u0442\u0440\u043E\u0439\u043A\u0438 \u043F\u043E\u0434\u043A\u043B\u044E\u0447\u0435\u043D\u0438\u044F \u0432 SillyTavern (API \u2192 Chat Completion).");
+        }
+        if (message.includes("Unauthorized") || message.includes("401")) {
+          throw new Error("\u041D\u0435\u0432\u0435\u0440\u043D\u044B\u0439 API \u043A\u043B\u044E\u0447 (401). \u041F\u0440\u043E\u0432\u0435\u0440\u044C\u0442\u0435 \u043A\u043B\u044E\u0447 \u0432 \u043D\u0430\u0441\u0442\u0440\u043E\u0439\u043A\u0430\u0445 SillyTavern.");
+        }
+        if (message.includes("Too Many Requests") || message.includes("429")) {
+          throw new Error("\u041F\u0440\u0435\u0432\u044B\u0448\u0435\u043D \u043B\u0438\u043C\u0438\u0442 \u0437\u0430\u043F\u0440\u043E\u0441\u043E\u0432 (429). \u041F\u043E\u0434\u043E\u0436\u0434\u0438\u0442\u0435 \u043D\u0435\u043C\u043D\u043E\u0433\u043E \u0438 \u043F\u043E\u043F\u0440\u043E\u0431\u0443\u0439\u0442\u0435 \u0441\u043D\u043E\u0432\u0430.");
+        }
+        if (message.includes("timeout") || message.includes("\u0442\u0430\u0439\u043C\u0430\u0443\u0442")) {
+          throw new Error("\u0422\u0430\u0439\u043C\u0430\u0443\u0442 \u043F\u043E\u0434\u043A\u043B\u044E\u0447\u0435\u043D\u0438\u044F. \u041F\u0440\u043E\u0432\u0435\u0440\u044C\u0442\u0435 \u0441\u0435\u0442\u044C \u0438 \u0430\u0434\u0440\u0435\u0441 API.");
+        }
+        throw new Error(`\u041D\u0435 \u0443\u0434\u0430\u043B\u043E\u0441\u044C \u0441\u0433\u0435\u043D\u0435\u0440\u0438\u0440\u043E\u0432\u0430\u0442\u044C \u043A\u043E\u043D\u0442\u0430\u043A\u0442\u044B: ${message}`);
       }
       onProgress("\u0420\u0430\u0437\u0431\u0438\u0440\u0430\u044E \u043E\u0442\u0432\u0435\u0442\u2026");
       const data = this._parse(raw);
@@ -7091,7 +7104,13 @@ description \u043F\u0438\u0448\u0438 \u043A\u0430\u043A \u043F\u0440\u043E\u043C
         seedInFlight = true;
         globalThis.__astralSeeding = true;
         core.refresh();
-        _runSeed(false, { silent: true }).catch((err) => console.warn("[Astral Phone] auto-seed failed:", err)).finally(() => {
+        _runSeed(false, { silent: false }).catch((err) => {
+          console.warn("[Astral Phone] auto-seed failed:", err);
+          const msg = String(err?.message || err || "");
+          if (!msg.includes("skipped")) {
+            error(`\u041D\u0435 \u0443\u0434\u0430\u043B\u043E\u0441\u044C \u0441\u0433\u0435\u043D\u0435\u0440\u0438\u0440\u043E\u0432\u0430\u0442\u044C \u043F\u0435\u0440\u0435\u043F\u0438\u0441\u043A\u0443: ${msg}`);
+          }
+        }).finally(() => {
           seedInFlight = false;
           seedTried = true;
           globalThis.__astralSeeding = false;

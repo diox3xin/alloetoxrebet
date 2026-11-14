@@ -25,6 +25,7 @@ import { ContactSeeder } from './apps/contact-seeder.js';
 import { refreshPhonePrompt } from './apps/phone-prompt.js';
 import { extractPhoneEvents, normaliseEvent } from './apps/event-parser.js';
 import { analysisInterval, analyseCast } from './apps/cast-profiles.js';
+import { error as showError } from './apps/notifications.js';
 
 const MODULE_NAME = 'astral-phone';
 
@@ -599,8 +600,15 @@ function registerContactSeeder(context) {
             core.refresh();
 
             // не блокируем открытие: рендер уже произошёл, сид идёт фоном
-            _runSeed(false, { silent: true })
-                .catch(err => console.warn('[Astral Phone] auto-seed failed:', err))
+            _runSeed(false, { silent: false })
+                .catch(err => {
+                    console.warn('[Astral Phone] auto-seed failed:', err);
+                    // Показываем ошибку пользователю
+                    const msg = String(err?.message || err || '');
+                    if (!msg.includes('skipped')) {
+                        showError(`Не удалось сгенерировать переписку: ${msg}`);
+                    }
+                })
                 .finally(() => {
                     seedInFlight = false;
                     seedTried = true;

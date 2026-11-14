@@ -10,6 +10,8 @@
  * forced with { force: true }.
  */
 
+import { handleApiError, handleGenerationError } from './notifications.js';
+
 export class ContactSeeder {
     constructor(context, storage) {
         this._seed = context || null;
@@ -48,7 +50,26 @@ export class ContactSeeder {
         try {
             raw = await ctx.generateQuietPrompt(prompt, false, false);
         } catch (err) {
-            throw new Error(`Генерация завершилась с ошибкой: ${err?.message || err}`);
+            // Обработка ошибок API с понятным описанием
+            const message = String(err?.message || err || '');
+            
+            if (message.includes('Not Found') || message.includes('404')) {
+                throw new Error('API endpoint не найден (404). Проверьте настройки подключения в SillyTavern (API → Chat Completion).');
+            }
+            
+            if (message.includes('Unauthorized') || message.includes('401')) {
+                throw new Error('Неверный API ключ (401). Проверьте ключ в настройках SillyTavern.');
+            }
+            
+            if (message.includes('Too Many Requests') || message.includes('429')) {
+                throw new Error('Превышен лимит запросов (429). Подождите немного и попробуйте снова.');
+            }
+            
+            if (message.includes('timeout') || message.includes('таймаут')) {
+                throw new Error('Таймаут подключения. Проверьте сеть и адрес API.');
+            }
+            
+            throw new Error(`Не удалось сгенерировать контакты: ${message}`);
         }
 
         onProgress('Разбираю ответ…');
