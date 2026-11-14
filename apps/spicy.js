@@ -4,6 +4,7 @@
  */
 
 import { ICONS } from './phone-core.js';
+import { handleImageGenerationError, success, error as showError } from './notifications.js';
 
 const CATEGORIES = ['Все', 'Новое', 'Тренды', 'Смотреть позже'];
 
@@ -112,13 +113,12 @@ export class SpicyApp {
 
     async _generate(index) {
         if (!this.imageGen.isAvailable()) {
-            this._toast('Haruspics не установлен', 'error');
+            showError('Haruspics не установлен');
             return;
         }
         if (this._busy.has(index)) return;
 
         this._busy.add(index);
-        this._toast('Генерирую превью…', 'info');
 
         try {
             const state = this.storage.getState();
@@ -141,10 +141,10 @@ export class SpicyApp {
 
             state.spicy[index].thumbnailUrl = url;
             this.storage.save();
-            this._toast('Готово', 'success');
+            success('Готово');
         } catch (err) {
             console.error('[Spicy] generation failed:', err);
-            this._toast(`Не получилось: ${err.message}`, 'error');
+            handleImageGenerationError(err);
         } finally {
             this._busy.delete(index);
             this.render(document.querySelector('.astral-phone-body'));
@@ -194,11 +194,6 @@ export class SpicyApp {
         if (diff < 36e5) return `${Math.floor(diff / 6e4)} мин`;
         if (diff < 864e5) return `${Math.floor(diff / 36e5)} ч`;
         return `${Math.floor(diff / 864e5)} дн`;
-    }
-
-    _toast(text, kind = 'info') {
-        if (window.toastr) (toastr[kind] || toastr.info)(text);
-        else console.log(`[Spicy] ${text}`);
     }
 
     _esc(str) {

@@ -11,6 +11,7 @@
 
 import { ICONS } from './phone-core.js';
 import { generateNotes, showTyping, collectCast } from './character-gen.js';
+import { handleGenerationError, success, error as showError } from './notifications.js';
 
 /** Типы записей — задают цвет и иконку. */
 const NOTE_KINDS = {
@@ -131,7 +132,7 @@ export class NotesApp {
             stop();
 
             if (!notes.length || !notes[0].text) {
-                this._toast('Модель ничего не написала', 'error');
+                showError('Модель ничего не написала');
                 return;
             }
 
@@ -152,12 +153,12 @@ export class NotesApp {
 
             this.storage.save();
             this._refreshPrompt();
-            this._toast(notes.length > 1 ? `Добавлено записей: ${notes.length}` : 'Запись добавлена');
+            success(notes.length > 1 ? `Добавлено записей: ${notes.length}` : 'Запись добавлена');
             this.render(container);
         } catch (err) {
             stop();
             console.error('[Notes] generation failed:', err);
-            this._toast(`Не получилось: ${err.message}`, 'error');
+            handleGenerationError(err, 'заметку');
         } finally {
             if (btn) { btn.disabled = false; btn.classList.remove('is-busy'); }
         }
@@ -231,7 +232,7 @@ export class NotesApp {
             st.notes = (st.notes || []).filter(n => n.id !== note.id);
             this.storage.save();
             this._openId = null;
-            this._toast('Запись удалена');
+            success('Запись удалена');
             this.render(container);
         });
     }
@@ -307,7 +308,7 @@ export class NotesApp {
             this.storage.save();
             close();
             this._openId = isNew ? null : this._openId;
-            this._toast(isNew ? 'Запись добавлена' : 'Запись обновлена');
+            success(isNew ? 'Запись добавлена' : 'Запись обновлена');
             this.render(document.querySelector('.astral-phone-body'));
             this._refreshPrompt();
         });
@@ -354,11 +355,6 @@ export class NotesApp {
 
     _refreshPrompt() {
         try { globalThis.__astralRefreshPrompt?.(); } catch { /* ignore */ }
-    }
-
-    _toast(text, kind = 'info') {
-        if (window.toastr) (toastr[kind] || toastr.info)(text);
-        else console.log(`[Notes] ${text}`);
     }
 
     _time(ts) {

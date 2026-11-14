@@ -10,6 +10,7 @@
  */
 
 import { ICONS } from './phone-core.js';
+import { handleImageGenerationError, handleGenerationError, success, error as showError } from './notifications.js';
 
 const TABS = [
     { id: 'profile', label: 'Профиль' },
@@ -521,7 +522,7 @@ export class CreatorApp {
         enhanceBtn?.addEventListener('click', async () => {
             const draft = promptField.value.trim();
             if (!draft) {
-                this._toast('Сначала напиши черновик промпта', 'error');
+                showError('Сначала напиши черновик промпта');
                 promptField.focus();
                 return;
             }
@@ -538,13 +539,13 @@ export class CreatorApp {
                 });
                 if (improved) {
                     promptField.value = improved;
-                    this._toast('Промпт улучшен', 'success');
+                    success('Промпт улучшен');
                 } else {
-                    this._toast('Модель вернула пустой ответ', 'error');
+                    showError('Модель вернула пустой ответ');
                 }
             } catch (err) {
                 console.error('[Creator] enhance failed:', err);
-                this._toast(`Не получилось: ${err.message}`, 'error');
+                handleGenerationError(err, 'улучшенный промпт');
             } finally {
                 enhanceBtn.disabled = false;
                 enhanceBtn.textContent = original;
@@ -593,7 +594,7 @@ export class CreatorApp {
         this.storage.save();
 
         this.render(document.querySelector('.astral-phone-body'));
-        this._toast('Пост обновлён', 'success');
+        success('Пост обновлён');
     }
 
     _deletePost(index) {
@@ -604,7 +605,7 @@ export class CreatorApp {
         this.storage.save();
 
         this.render(document.querySelector('.astral-phone-body'));
-        this._toast('Пост удалён', 'success');
+        success('Пост удалён');
     }
 
     /** Small action sheet for a post: edit, delete. */
@@ -762,13 +763,12 @@ export class CreatorApp {
 
     async _generate(index, silent = false) {
         if (!this.imageGen.isAvailable()) {
-            this._toast('Haruspics не установлен', 'error');
+            showError('Haruspics не установлен');
             return;
         }
         if (this._busy.has(index)) return;
 
         this._busy.add(index);
-        this._toast('Генерирую фото…', 'info');
 
         try {
             const state = this.storage.getState();
@@ -802,10 +802,10 @@ export class CreatorApp {
             post.imageH = 0;
             if (style) post.style = style;
             this.storage.save();
-            this._toast('Готово', 'success');
+            success('Готово');
         } catch (err) {
             console.error('[Creator] generation failed:', err);
-            this._toast(`Не получилось: ${err.message}`, 'error');
+            handleImageGenerationError(err);
         } finally {
             this._busy.delete(index);
             if (!silent) this.render(document.querySelector('.astral-phone-body'));
@@ -900,11 +900,6 @@ export class CreatorApp {
     _slug(name) {
         const slug = String(name).toLowerCase().replace(/\s+/g, '_').replace(/[^\p{L}\p{N}_]/gu, '');
         return slug || 'creator';
-    }
-
-    _toast(text, kind = 'info') {
-        if (window.toastr) (toastr[kind] || toastr.info)(text);
-        else console.log(`[Creator] ${text}`);
     }
 
     _esc(str) {

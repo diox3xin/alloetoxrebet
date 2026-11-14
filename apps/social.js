@@ -11,6 +11,7 @@
 
 import { ICONS } from './phone-core.js';
 import { generateSocialPost, showTyping, collectCast } from './character-gen.js';
+import { handleGenerationError, success, error as showError } from './notifications.js';
 
 export class SocialApp {
     constructor(context, storage, imageGen) {
@@ -148,7 +149,7 @@ export class SocialApp {
             };
             this.storage.save();
             close();
-            this._toast('Профиль сохранён');
+            success('Профиль сохранён');
             this.render(container);
         });
 
@@ -249,7 +250,7 @@ export class SocialApp {
             if (state.social.length === before) return;
 
             this.storage.save();
-            this._toast('Пост удалён');
+            success('Пост удалён');
             this.render(container);
         });
 
@@ -313,7 +314,7 @@ export class SocialApp {
 
             this.storage.save();
             close();
-            this._toast('Ответ добавлен');
+            success('Ответ добавлен');
             this.render(container);
         });
 
@@ -405,7 +406,7 @@ export class SocialApp {
             stopTyping();
 
             if (!result.text) {
-                this._toast('Модель ничего не написала', 'error');
+                showError('Модель ничего не написала');
                 return;
             }
 
@@ -424,12 +425,12 @@ export class SocialApp {
             });
 
             this.storage.save();
-            this._toast(`${result.author}: пост опубликован`);
+            success(`${result.author}: пост опубликован`);
             this.render(container);
         } catch (err) {
             stopTyping();
             console.error('[Social] summon failed:', err);
-            this._toast(`Не получилось: ${err.message}`, 'error');
+            handleGenerationError(err, 'пост');
         }
     }
 
@@ -478,7 +479,7 @@ export class SocialApp {
 
             this.storage.save();
             close();
-            this._toast('Опубликовано');
+            success('Опубликовано');
             this.render(container);
         });
 
@@ -548,11 +549,6 @@ export class SocialApp {
         const h = Math.floor(m / 60);
         if (h < 24) return `${h}ч`;
         return `${Math.floor(h / 24)}д`;
-    }
-
-    _toast(text, kind = 'info') {
-        if (window.toastr) (toastr[kind] || toastr.info)(text);
-        else console.log(`[Social] ${text}`);
     }
 
     _esc(str) {

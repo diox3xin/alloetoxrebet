@@ -6,6 +6,7 @@
 
 import { ICONS } from './phone-core.js';
 import { showTyping, generateMessage } from './character-gen.js';
+import { handleGenerationError, success, error as showError } from './notifications.js';
 
 export class MessagesApp {
     constructor(context, storage, imageGen) {
@@ -246,7 +247,7 @@ export class MessagesApp {
         if (state.messages.length === before) return;
 
         this.storage.save();
-        this._toast('Сообщение удалено');
+        success('Сообщение удалено');
         this.render(document.querySelector('.astral-phone-body'), { character });
     }
 
@@ -266,7 +267,7 @@ export class MessagesApp {
             stopTyping();
 
             if (!text) {
-                this._toast('Персонаж промолчал', 'error');
+                showError('Персонаж промолчал');
                 return;
             }
 
@@ -286,8 +287,7 @@ export class MessagesApp {
             this.render(document.querySelector('.astral-phone-body'), { character });
         } catch (err) {
             stopTyping();
-            console.error('[Astral Phone] reply generation failed:', err);
-            this._toast(`Ошибка: ${err.message}`, 'error');
+            handleGenerationError(err, 'ответ персонажа');
         }
     }
 

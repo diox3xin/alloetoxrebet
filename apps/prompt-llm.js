@@ -10,6 +10,7 @@
  */
 
 import { cleanTags } from './prompt-builder.js';
+import { handleApiError, describeHttpError } from './notifications.js';
 
 const MODULE = '[AstralLLM]';
 export const SETTINGS_KEY = 'astral-phone';
@@ -186,7 +187,10 @@ export async function fetchModels(settings) {
         const res = await fetch(`${root}/models`, { headers, signal: controller.signal });
         if (!res.ok) {
             const body = await res.text().catch(() => '');
-            throw new Error(`HTTP ${res.status}: ${body.slice(0, 200)}`);
+            const error = new Error(describeHttpError(res.status, body));
+            error.status = res.status;
+            error.body = body;
+            throw error;
         }
         const data = await res.json();
         const raw = data?.data ?? data?.models ?? data;
@@ -204,7 +208,11 @@ export async function fetchModels(settings) {
         if (!unique.length) throw new Error('Провайдер вернул пустой список моделей');
         return unique;
     } catch (err) {
-        if (err?.name === 'AbortError') throw new Error('Таймаут подключения (30с)');
+        if (err?.name === 'AbortError') {
+            const error = new Error('Таймаут подключения (30с)');
+            error.name = 'AbortError';
+            throw error;
+        }
         throw err;
     } finally {
         clearTimeout(timer);
@@ -291,7 +299,10 @@ async function callOpenAICompatible(prompt, systemPrompt, settings) {
 
         if (!res.ok) {
             const body = await res.text().catch(() => '');
-            throw new Error(`HTTP ${res.status}: ${body.slice(0, 300)}`);
+            const error = new Error(describeHttpError(res.status, body));
+            error.status = res.status;
+            error.body = body;
+            throw error;
         }
 
         const data = await res.json();

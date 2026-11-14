@@ -6,6 +6,7 @@
 import { ICONS } from './phone-core.js';
 import { buildPhotoPrompt } from './prompt-builder.js';
 import { ask as askLLM, resolveStyle, ensureStyle } from './prompt-llm.js';
+import { handleImageGenerationError, handleGenerationError, success, error as showError } from './notifications.js';
 
 export class GalleryApp {
     constructor(context, storage, imageGen) {
@@ -180,7 +181,7 @@ export class GalleryApp {
             p.selfieInstruction = overlay.querySelector('#astral-camera-selfie-instr').value;
             this._saveCameraPrefs(p);
             settingsPanel.style.display = 'none';
-            this._toast('Настройки сохранены');
+            success('Настройки сохранены');
         });
 
         // Shutter
@@ -257,11 +258,11 @@ export class GalleryApp {
             });
 
             this.storage.save();
-            this._toast(resolvedMode === 'selfie' ? 'Селфи добавлено' : 'Фото добавлено');
+            success(resolvedMode === 'selfie' ? 'Селфи добавлено' : 'Фото добавлено');
             this.render(document.querySelector('.astral-phone-body'));
         } catch (err) {
             console.error('[Astral Phone] takePhoto failed:', err);
-            this._toast(`Error: ${err.message}`, 'error');
+            handleImageGenerationError(err);
         }
     }
 
@@ -292,13 +293,12 @@ export class GalleryApp {
 
     async _generate(index, silent = false) {
         if (!this.imageGen.isAvailable()) {
-            this._toast('Haruspics не установлен — генерация недоступна', 'error');
+            showError('Haruspics не установлен — генерация недоступна');
             return;
         }
         if (this._busy.has(index)) return;
 
         this._busy.add(index);
-        this._toast('Генерирую…', 'info');
 
         try {
             const state = this.storage.getState();
@@ -319,11 +319,10 @@ export class GalleryApp {
 
             state.gallery[index].imageUrl = url;
             this.storage.save();
-            this._toast('Готово', 'success');
+            success('Готово');
             if (!silent) this.render(document.querySelector('.astral-phone-body'));
         } catch (err) {
-            console.error('[Gallery] generation failed:', err);
-            this._toast(`Не получилось: ${err.message}`, 'error');
+            handleImageGenerationError(err);
         } finally {
             this._busy.delete(index);
             if (!silent) this.render(document.querySelector('.astral-phone-body'));
@@ -416,7 +415,7 @@ export class GalleryApp {
         if (!photo) return;
         photo.description = value;
         this.storage.save();
-        if (!opts.silent) this._toast('Промпт сохранён');
+        if (!opts.silent) success('Промпт сохранён');
     }
 
     _deletePhoto(photo) {
@@ -425,7 +424,7 @@ export class GalleryApp {
         if (idx >= 0) {
             state.gallery.splice(idx, 1);
             this.storage.save();
-            this._toast('Photo deleted');
+            success('Photo deleted');
             this.render(document.querySelector('.astral-phone-body'));
         }
     }
@@ -440,14 +439,6 @@ export class GalleryApp {
         });
         this.storage.save();
         return { success: true, message: 'Фото добавлено в галерею' };
-    }
-
-    _toast(text, kind = 'info') {
-        if (window.toastr) {
-            (toastr[kind] || toastr.info)(text);
-        } else {
-            console.log(`[Gallery] ${text}`);
-        }
     }
 
     _time(ts) {
