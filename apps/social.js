@@ -492,24 +492,89 @@ export class SocialApp {
         const state = this.storage.getState();
         if (!Array.isArray(state.social)) state.social = [];
 
-        const text = String(eventData.description || eventData.text || '').trim();
-        if (!text) return { success: false, message: 'Пустой пост' };
+        const { type } = eventData;
 
-        const author = String(eventData.character || this.context?.name2 || '').trim() || 'Неизвестный';
+        // ── Новый пост ──
+        if (!type || type === 'social_post') {
+            const text = String(eventData.description || eventData.text || '').trim();
+            if (!text) return { success: false, message: 'Пустой пост' };
 
-        state.social.push({
-            id: `post_${Date.now()}_${Math.random().toString(36).slice(2, 7)}`,
-            author,
-            handle: this._handle(author),
-            text,
-            timestamp: Date.now(),
-            likedBy: [],
-            repostedBy: [],
-            replies: [],
-        });
+            const author = String(eventData.character || this.context?.name2 || '').trim() || 'Неизвестный';
 
-        this.storage.save();
-        return { success: true, message: 'Пост опубликован' };
+            state.social.push({
+                id: `post_${Date.now()}_${Math.random().toString(36).slice(2, 7)}`,
+                author,
+                handle: this._handle(author),
+                text,
+                timestamp: Date.now(),
+                likedBy: [],
+                repostedBy: [],
+                replies: [],
+            });
+
+            this.storage.save();
+            return { success: true, message: 'Пост опубликован' };
+        }
+
+        // ── Лайк от НПС ──
+        if (type === 'social_like') {
+            const from = String(eventData.character || eventData.from || '').trim();
+            if (!from) return { success: false, message: 'Не указан автор лайка' };
+
+            // Лайкаем последний пост юзера (или по id если задан)
+            const targetId = eventData.metadata?.postId;
+            const myName = this._userName();
+            const post = targetId
+                ? state.social.find(p => p.id === targetId)
+                : [...state.social].reverse().find(p => p.author === myName);
+
+            if (!post) return { success: false, message: 'Пост не найден' };
+            if (!Array.isArray(post.likedBy)) post.likedBy = [];
+            if (!post.likedBy.includes(from)) post.likedBy.push(from);
+
+            this.storage.save();
+            return { success: true, message: `${from} лайкнул пост` };
+        }
+
+        // ── Комментарий от НПС ──
+        if (type === 'social_comment') {
+            const from = String(eventData.character || eventData.from || '').trim();
+            const text = String(eventData.description || eventData.text || '').trim();
+            if (!from || !text) return { success: false, message: 'Не указан автор или текст' };
+
+            const targetId = eventData.metadata?.postId;
+            const myName = this._userName();
+            const post = targetId
+                ? state.social.find(p => p.id === targetId)
+                : [...state.social].reverse().find(p => p.author === myName);
+
+            if (!post) return { success: false, message: 'Пост не найден' };
+            if (!Array.isArray(post.replies)) post.replies = [];
+            post.replies.push({
+                author: from,
+                text,
+                timestamp: Date.now(),
+            });
+
+            this.storage.save();
+            return { success: true, message: `${from} прокомментировал` };
+        }
+
+        // ── Подписка НПС на юзера ──
+        if (type === 'social_follow') {
+            const from = String(eventData.character || eventData.from || '').trim();
+            if (!from) return { success: false, message: 'Не указан подписчик' };
+
+            if (!Array.isArray(state.socialFollowers)) state.socialFollowers = [];
+            if (!state.socialFollowers.includes(from)) {
+                state.socialFollowers.push(from);
+            }
+
+            this.storage.save();
+            return { success: true, message: `${from} подписался` };
+        }
+
+        return { success: false, message: `Неизвестный тип события: ${type}` };
     }
 
     /* ─────────────────────────── утилиты ─────────────────────────── */

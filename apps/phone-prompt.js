@@ -22,17 +22,14 @@ function isOutgoing(m) {
 function buildSocialMetrics(state) {
     const social = state.social || [];
     const myPosts = social.filter(p => p.isOwn);
-    const totalLikes = myPosts.reduce((sum, p) => sum + (p.likes || 0), 0);
-    const recentPosts = social.slice(-3).map(p => 
-        `"${(p.text || '').slice(0, 40)}" от ${p.author} (${p.likes || 0} лайков)`
+    const totalLikes = myPosts.reduce((sum, p) => sum + (p.likedBy?.length || p.likes || 0), 0);
+    const followers = (state.socialFollowers || []).length;
+    const following = (state.socialFollowing || []).length;
+    const recentPosts = social.slice(-3).map(p =>
+        `"${(p.text || '').slice(0, 40)}" от ${p.author} (❤${p.likedBy?.length || p.likes || 0}${p.replies?.length ? ` 💬${p.replies.length}` : ''})`
     );
-    
-    return {
-        totalPosts: social.length,
-        myPosts: myPosts.length,
-        totalLikes,
-        recentPosts,
-    };
+
+    return { totalPosts: social.length, myPosts: myPosts.length, totalLikes, followers, following, recentPosts };
 }
 
 /**
@@ -77,8 +74,10 @@ export function buildPhoneContext(state, storageRef) {
         const social = buildSocialMetrics(state);
         if (social.totalPosts > 0) {
             const metrics = [
-                `Всего постов: ${social.totalPosts} (из них твоих: ${social.myPosts})`,
-                social.totalLikes > 0 ? `Лайков на твоих постах: ${social.totalLikes}` : null,
+                `Всего постов: ${social.totalPosts}`,
+                social.followers > 0 ? `Подписчиков: ${social.followers}` : null,
+                social.following > 0 ? `Подписок: ${social.following}` : null,
+                social.totalLikes > 0 ? `Лайков на постах юзера: ${social.totalLikes}` : null,
                 social.recentPosts.length ? `Последние посты: ${social.recentPosts.join('; ')}` : null,
             ].filter(Boolean).join('\n');
             parts.push(`[Astral Phone — Social]\n${metrics}`);
@@ -117,33 +116,34 @@ export function buildPhoneContext(state, storageRef) {
 
 НПС и персонажи могут взаимодействовать с телефоном САМОСТОЯТЕЛЬНО, когда это уместно по сцене:
 
-SOCIAL (посты):
+SOCIAL — посты:
 - НПС публикуют посты о своей жизни или реакциях на события
 - Частота: 1-2 поста на 8-12 сообщений чата (рандомно)
-- Посты связаны с текущими событиями или их повседневной жизнью
 - Тег: <phone-event type="social_post" character="Имя" description="текст поста" />
 
-MESSAGES (сообщения):
-- НПС пишут сообщения юзеру, если:
-  * Что-то важное случилось в сцене и они хотят обсудить
-  * Прошло время и они хотят узнать как дела
-  * Есть конкретная причина связаться (план, встреча, вопрос)
+SOCIAL — лайки и комменты (только под постами юзера):
+- НПС могут лайкнуть пост юзера: <phone-event type="social_like" character="Имя" description="" />
+- НПС могут прокомментировать: <phone-event type="social_comment" character="Имя" description="текст комментария" />
+- Лайки и комменты приходят через 1-3 сообщения после публикации поста юзера
+- Частота: 1-3 реакции на новый пост, не из каждого сообщения
+
+SOCIAL — подписки на юзера:
+- НПС могут подписаться: <phone-event type="social_follow" character="Имя" description="" />
+- Только когда это органично — после интересного поста или события в сцене
+
+MESSAGES — сообщения:
+- НПС пишут сообщения юзеру, если есть конкретная причина
 - Частота: не чаще 1 сообщения на 10-15 сообщений чата
 - Тег: <phone-event type="message_received" character="Имя" description="текст сообщения" />
 
-CREATOR STUDIO (подписчики и донаты):
-- Подписчики растут постепенно: <phone-event type="subscriber_joined" count="N" />
-  * Когда персонаж публикует контент
-  * Редко и рандомно (1-5 подписчиков)
-- Донаты случаются редко: <phone-event type="donation_received" amount="N" from="Имя фаната" />
-  * Малые суммы ($5-$50) чаще, крупные ($100+) очень редко
-  * Обычно после публикации нового контента
+CREATOR STUDIO — только если аккаунт активен:
+- Подписчики: <phone-event type="subscriber_joined" count="N" />
+- Донаты: <phone-event type="donation_received" amount="N" character="Имя фаната" />
 
 ВАЖНО:
-- Не спамить событиями — они дополняют сцену, а не заменяют её
-- События должны быть уместны по контексту и времени
-- НПС не знают о приватных заметках персонажа
-- Один тег = одно событие, не группировать несколько в одном сообщении`;
+- Не спамить — события дополняют сцену, не заменяют её
+- Один тег = одно событие
+- НПС не знают о приватных заметках персонажа`;
 
     parts.push(npcRules);
 

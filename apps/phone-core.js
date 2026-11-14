@@ -367,6 +367,9 @@ export class PhoneCore {
             spicy_posted: 'spicy',
             note_written: 'notes',
             social_post: 'social',
+            social_like: 'social',
+            social_comment: 'social',
+            social_follow: 'social',
         };
 
         const appId = routing[type];

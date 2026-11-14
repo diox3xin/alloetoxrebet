@@ -551,7 +551,10 @@
         subscriber_joined: "creator",
         spicy_posted: "spicy",
         note_written: "notes",
-        social_post: "social"
+        social_post: "social",
+        social_like: "social",
+        social_comment: "social",
+        social_follow: "social"
       };
       const appId = routing[type];
       if (!appId) return { success: false, error: `Unknown event type: ${type}` };
@@ -6367,21 +6370,64 @@ ${who}\xAB${preview}${preview.length >= 60 ? "\u2026" : ""}\xBB`)) return;
     async handleEvent(eventData) {
       const state = this.storage.getState();
       if (!Array.isArray(state.social)) state.social = [];
-      const text = String(eventData.description || eventData.text || "").trim();
-      if (!text) return { success: false, message: "\u041F\u0443\u0441\u0442\u043E\u0439 \u043F\u043E\u0441\u0442" };
-      const author = String(eventData.character || this.context?.name2 || "").trim() || "\u041D\u0435\u0438\u0437\u0432\u0435\u0441\u0442\u043D\u044B\u0439";
-      state.social.push({
-        id: `post_${Date.now()}_${Math.random().toString(36).slice(2, 7)}`,
-        author,
-        handle: this._handle(author),
-        text,
-        timestamp: Date.now(),
-        likedBy: [],
-        repostedBy: [],
-        replies: []
-      });
-      this.storage.save();
-      return { success: true, message: "\u041F\u043E\u0441\u0442 \u043E\u043F\u0443\u0431\u043B\u0438\u043A\u043E\u0432\u0430\u043D" };
+      const { type } = eventData;
+      if (!type || type === "social_post") {
+        const text = String(eventData.description || eventData.text || "").trim();
+        if (!text) return { success: false, message: "\u041F\u0443\u0441\u0442\u043E\u0439 \u043F\u043E\u0441\u0442" };
+        const author = String(eventData.character || this.context?.name2 || "").trim() || "\u041D\u0435\u0438\u0437\u0432\u0435\u0441\u0442\u043D\u044B\u0439";
+        state.social.push({
+          id: `post_${Date.now()}_${Math.random().toString(36).slice(2, 7)}`,
+          author,
+          handle: this._handle(author),
+          text,
+          timestamp: Date.now(),
+          likedBy: [],
+          repostedBy: [],
+          replies: []
+        });
+        this.storage.save();
+        return { success: true, message: "\u041F\u043E\u0441\u0442 \u043E\u043F\u0443\u0431\u043B\u0438\u043A\u043E\u0432\u0430\u043D" };
+      }
+      if (type === "social_like") {
+        const from = String(eventData.character || eventData.from || "").trim();
+        if (!from) return { success: false, message: "\u041D\u0435 \u0443\u043A\u0430\u0437\u0430\u043D \u0430\u0432\u0442\u043E\u0440 \u043B\u0430\u0439\u043A\u0430" };
+        const targetId = eventData.metadata?.postId;
+        const myName = this._userName();
+        const post = targetId ? state.social.find((p) => p.id === targetId) : [...state.social].reverse().find((p) => p.author === myName);
+        if (!post) return { success: false, message: "\u041F\u043E\u0441\u0442 \u043D\u0435 \u043D\u0430\u0439\u0434\u0435\u043D" };
+        if (!Array.isArray(post.likedBy)) post.likedBy = [];
+        if (!post.likedBy.includes(from)) post.likedBy.push(from);
+        this.storage.save();
+        return { success: true, message: `${from} \u043B\u0430\u0439\u043A\u043D\u0443\u043B \u043F\u043E\u0441\u0442` };
+      }
+      if (type === "social_comment") {
+        const from = String(eventData.character || eventData.from || "").trim();
+        const text = String(eventData.description || eventData.text || "").trim();
+        if (!from || !text) return { success: false, message: "\u041D\u0435 \u0443\u043A\u0430\u0437\u0430\u043D \u0430\u0432\u0442\u043E\u0440 \u0438\u043B\u0438 \u0442\u0435\u043A\u0441\u0442" };
+        const targetId = eventData.metadata?.postId;
+        const myName = this._userName();
+        const post = targetId ? state.social.find((p) => p.id === targetId) : [...state.social].reverse().find((p) => p.author === myName);
+        if (!post) return { success: false, message: "\u041F\u043E\u0441\u0442 \u043D\u0435 \u043D\u0430\u0439\u0434\u0435\u043D" };
+        if (!Array.isArray(post.replies)) post.replies = [];
+        post.replies.push({
+          author: from,
+          text,
+          timestamp: Date.now()
+        });
+        this.storage.save();
+        return { success: true, message: `${from} \u043F\u0440\u043E\u043A\u043E\u043C\u043C\u0435\u043D\u0442\u0438\u0440\u043E\u0432\u0430\u043B` };
+      }
+      if (type === "social_follow") {
+        const from = String(eventData.character || eventData.from || "").trim();
+        if (!from) return { success: false, message: "\u041D\u0435 \u0443\u043A\u0430\u0437\u0430\u043D \u043F\u043E\u0434\u043F\u0438\u0441\u0447\u0438\u043A" };
+        if (!Array.isArray(state.socialFollowers)) state.socialFollowers = [];
+        if (!state.socialFollowers.includes(from)) {
+          state.socialFollowers.push(from);
+        }
+        this.storage.save();
+        return { success: true, message: `${from} \u043F\u043E\u0434\u043F\u0438\u0441\u0430\u043B\u0441\u044F` };
+      }
+      return { success: false, message: `\u041D\u0435\u0438\u0437\u0432\u0435\u0441\u0442\u043D\u044B\u0439 \u0442\u0438\u043F \u0441\u043E\u0431\u044B\u0442\u0438\u044F: ${type}` };
     }
     /* ─────────────────────────── утилиты ─────────────────────────── */
     /** Имя для своих постов — из профиля соцсети, иначе из персоны. */
@@ -6636,16 +6682,13 @@ Rules:
   function buildSocialMetrics(state) {
     const social = state.social || [];
     const myPosts = social.filter((p) => p.isOwn);
-    const totalLikes = myPosts.reduce((sum, p) => sum + (p.likes || 0), 0);
+    const totalLikes = myPosts.reduce((sum, p) => sum + (p.likedBy?.length || p.likes || 0), 0);
+    const followers = (state.socialFollowers || []).length;
+    const following = (state.socialFollowing || []).length;
     const recentPosts = social.slice(-3).map(
-      (p) => `"${(p.text || "").slice(0, 40)}" \u043E\u0442 ${p.author} (${p.likes || 0} \u043B\u0430\u0439\u043A\u043E\u0432)`
+      (p) => `"${(p.text || "").slice(0, 40)}" \u043E\u0442 ${p.author} (\u2764${p.likedBy?.length || p.likes || 0}${p.replies?.length ? ` \u{1F4AC}${p.replies.length}` : ""})`
     );
-    return {
-      totalPosts: social.length,
-      myPosts: myPosts.length,
-      totalLikes,
-      recentPosts
-    };
+    return { totalPosts: social.length, myPosts: myPosts.length, totalLikes, followers, following, recentPosts };
   }
   __name(buildSocialMetrics, "buildSocialMetrics");
   function buildCreatorMetrics(state) {
@@ -6675,8 +6718,10 @@ ${body}`];
       const social = buildSocialMetrics(state);
       if (social.totalPosts > 0) {
         const metrics = [
-          `\u0412\u0441\u0435\u0433\u043E \u043F\u043E\u0441\u0442\u043E\u0432: ${social.totalPosts} (\u0438\u0437 \u043D\u0438\u0445 \u0442\u0432\u043E\u0438\u0445: ${social.myPosts})`,
-          social.totalLikes > 0 ? `\u041B\u0430\u0439\u043A\u043E\u0432 \u043D\u0430 \u0442\u0432\u043E\u0438\u0445 \u043F\u043E\u0441\u0442\u0430\u0445: ${social.totalLikes}` : null,
+          `\u0412\u0441\u0435\u0433\u043E \u043F\u043E\u0441\u0442\u043E\u0432: ${social.totalPosts}`,
+          social.followers > 0 ? `\u041F\u043E\u0434\u043F\u0438\u0441\u0447\u0438\u043A\u043E\u0432: ${social.followers}` : null,
+          social.following > 0 ? `\u041F\u043E\u0434\u043F\u0438\u0441\u043E\u043A: ${social.following}` : null,
+          social.totalLikes > 0 ? `\u041B\u0430\u0439\u043A\u043E\u0432 \u043D\u0430 \u043F\u043E\u0441\u0442\u0430\u0445 \u044E\u0437\u0435\u0440\u0430: ${social.totalLikes}` : null,
           social.recentPosts.length ? `\u041F\u043E\u0441\u043B\u0435\u0434\u043D\u0438\u0435 \u043F\u043E\u0441\u0442\u044B: ${social.recentPosts.join("; ")}` : null
         ].filter(Boolean).join("\n");
         parts.push(`[Astral Phone \u2014 Social]
@@ -6711,33 +6756,34 @@ ${metrics}`);
 
 \u041D\u041F\u0421 \u0438 \u043F\u0435\u0440\u0441\u043E\u043D\u0430\u0436\u0438 \u043C\u043E\u0433\u0443\u0442 \u0432\u0437\u0430\u0438\u043C\u043E\u0434\u0435\u0439\u0441\u0442\u0432\u043E\u0432\u0430\u0442\u044C \u0441 \u0442\u0435\u043B\u0435\u0444\u043E\u043D\u043E\u043C \u0421\u0410\u041C\u041E\u0421\u0422\u041E\u042F\u0422\u0415\u041B\u042C\u041D\u041E, \u043A\u043E\u0433\u0434\u0430 \u044D\u0442\u043E \u0443\u043C\u0435\u0441\u0442\u043D\u043E \u043F\u043E \u0441\u0446\u0435\u043D\u0435:
 
-SOCIAL (\u043F\u043E\u0441\u0442\u044B):
+SOCIAL \u2014 \u043F\u043E\u0441\u0442\u044B:
 - \u041D\u041F\u0421 \u043F\u0443\u0431\u043B\u0438\u043A\u0443\u044E\u0442 \u043F\u043E\u0441\u0442\u044B \u043E \u0441\u0432\u043E\u0435\u0439 \u0436\u0438\u0437\u043D\u0438 \u0438\u043B\u0438 \u0440\u0435\u0430\u043A\u0446\u0438\u044F\u0445 \u043D\u0430 \u0441\u043E\u0431\u044B\u0442\u0438\u044F
 - \u0427\u0430\u0441\u0442\u043E\u0442\u0430: 1-2 \u043F\u043E\u0441\u0442\u0430 \u043D\u0430 8-12 \u0441\u043E\u043E\u0431\u0449\u0435\u043D\u0438\u0439 \u0447\u0430\u0442\u0430 (\u0440\u0430\u043D\u0434\u043E\u043C\u043D\u043E)
-- \u041F\u043E\u0441\u0442\u044B \u0441\u0432\u044F\u0437\u0430\u043D\u044B \u0441 \u0442\u0435\u043A\u0443\u0449\u0438\u043C\u0438 \u0441\u043E\u0431\u044B\u0442\u0438\u044F\u043C\u0438 \u0438\u043B\u0438 \u0438\u0445 \u043F\u043E\u0432\u0441\u0435\u0434\u043D\u0435\u0432\u043D\u043E\u0439 \u0436\u0438\u0437\u043D\u044C\u044E
 - \u0422\u0435\u0433: <phone-event type="social_post" character="\u0418\u043C\u044F" description="\u0442\u0435\u043A\u0441\u0442 \u043F\u043E\u0441\u0442\u0430" />
 
-MESSAGES (\u0441\u043E\u043E\u0431\u0449\u0435\u043D\u0438\u044F):
-- \u041D\u041F\u0421 \u043F\u0438\u0448\u0443\u0442 \u0441\u043E\u043E\u0431\u0449\u0435\u043D\u0438\u044F \u044E\u0437\u0435\u0440\u0443, \u0435\u0441\u043B\u0438:
-  * \u0427\u0442\u043E-\u0442\u043E \u0432\u0430\u0436\u043D\u043E\u0435 \u0441\u043B\u0443\u0447\u0438\u043B\u043E\u0441\u044C \u0432 \u0441\u0446\u0435\u043D\u0435 \u0438 \u043E\u043D\u0438 \u0445\u043E\u0442\u044F\u0442 \u043E\u0431\u0441\u0443\u0434\u0438\u0442\u044C
-  * \u041F\u0440\u043E\u0448\u043B\u043E \u0432\u0440\u0435\u043C\u044F \u0438 \u043E\u043D\u0438 \u0445\u043E\u0442\u044F\u0442 \u0443\u0437\u043D\u0430\u0442\u044C \u043A\u0430\u043A \u0434\u0435\u043B\u0430
-  * \u0415\u0441\u0442\u044C \u043A\u043E\u043D\u043A\u0440\u0435\u0442\u043D\u0430\u044F \u043F\u0440\u0438\u0447\u0438\u043D\u0430 \u0441\u0432\u044F\u0437\u0430\u0442\u044C\u0441\u044F (\u043F\u043B\u0430\u043D, \u0432\u0441\u0442\u0440\u0435\u0447\u0430, \u0432\u043E\u043F\u0440\u043E\u0441)
+SOCIAL \u2014 \u043B\u0430\u0439\u043A\u0438 \u0438 \u043A\u043E\u043C\u043C\u0435\u043D\u0442\u044B (\u0442\u043E\u043B\u044C\u043A\u043E \u043F\u043E\u0434 \u043F\u043E\u0441\u0442\u0430\u043C\u0438 \u044E\u0437\u0435\u0440\u0430):
+- \u041D\u041F\u0421 \u043C\u043E\u0433\u0443\u0442 \u043B\u0430\u0439\u043A\u043D\u0443\u0442\u044C \u043F\u043E\u0441\u0442 \u044E\u0437\u0435\u0440\u0430: <phone-event type="social_like" character="\u0418\u043C\u044F" description="" />
+- \u041D\u041F\u0421 \u043C\u043E\u0433\u0443\u0442 \u043F\u0440\u043E\u043A\u043E\u043C\u043C\u0435\u043D\u0442\u0438\u0440\u043E\u0432\u0430\u0442\u044C: <phone-event type="social_comment" character="\u0418\u043C\u044F" description="\u0442\u0435\u043A\u0441\u0442 \u043A\u043E\u043C\u043C\u0435\u043D\u0442\u0430\u0440\u0438\u044F" />
+- \u041B\u0430\u0439\u043A\u0438 \u0438 \u043A\u043E\u043C\u043C\u0435\u043D\u0442\u044B \u043F\u0440\u0438\u0445\u043E\u0434\u044F\u0442 \u0447\u0435\u0440\u0435\u0437 1-3 \u0441\u043E\u043E\u0431\u0449\u0435\u043D\u0438\u044F \u043F\u043E\u0441\u043B\u0435 \u043F\u0443\u0431\u043B\u0438\u043A\u0430\u0446\u0438\u0438 \u043F\u043E\u0441\u0442\u0430 \u044E\u0437\u0435\u0440\u0430
+- \u0427\u0430\u0441\u0442\u043E\u0442\u0430: 1-3 \u0440\u0435\u0430\u043A\u0446\u0438\u0438 \u043D\u0430 \u043D\u043E\u0432\u044B\u0439 \u043F\u043E\u0441\u0442, \u043D\u0435 \u0438\u0437 \u043A\u0430\u0436\u0434\u043E\u0433\u043E \u0441\u043E\u043E\u0431\u0449\u0435\u043D\u0438\u044F
+
+SOCIAL \u2014 \u043F\u043E\u0434\u043F\u0438\u0441\u043A\u0438 \u043D\u0430 \u044E\u0437\u0435\u0440\u0430:
+- \u041D\u041F\u0421 \u043C\u043E\u0433\u0443\u0442 \u043F\u043E\u0434\u043F\u0438\u0441\u0430\u0442\u044C\u0441\u044F: <phone-event type="social_follow" character="\u0418\u043C\u044F" description="" />
+- \u0422\u043E\u043B\u044C\u043A\u043E \u043A\u043E\u0433\u0434\u0430 \u044D\u0442\u043E \u043E\u0440\u0433\u0430\u043D\u0438\u0447\u043D\u043E \u2014 \u043F\u043E\u0441\u043B\u0435 \u0438\u043D\u0442\u0435\u0440\u0435\u0441\u043D\u043E\u0433\u043E \u043F\u043E\u0441\u0442\u0430 \u0438\u043B\u0438 \u0441\u043E\u0431\u044B\u0442\u0438\u044F \u0432 \u0441\u0446\u0435\u043D\u0435
+
+MESSAGES \u2014 \u0441\u043E\u043E\u0431\u0449\u0435\u043D\u0438\u044F:
+- \u041D\u041F\u0421 \u043F\u0438\u0448\u0443\u0442 \u0441\u043E\u043E\u0431\u0449\u0435\u043D\u0438\u044F \u044E\u0437\u0435\u0440\u0443, \u0435\u0441\u043B\u0438 \u0435\u0441\u0442\u044C \u043A\u043E\u043D\u043A\u0440\u0435\u0442\u043D\u0430\u044F \u043F\u0440\u0438\u0447\u0438\u043D\u0430
 - \u0427\u0430\u0441\u0442\u043E\u0442\u0430: \u043D\u0435 \u0447\u0430\u0449\u0435 1 \u0441\u043E\u043E\u0431\u0449\u0435\u043D\u0438\u044F \u043D\u0430 10-15 \u0441\u043E\u043E\u0431\u0449\u0435\u043D\u0438\u0439 \u0447\u0430\u0442\u0430
 - \u0422\u0435\u0433: <phone-event type="message_received" character="\u0418\u043C\u044F" description="\u0442\u0435\u043A\u0441\u0442 \u0441\u043E\u043E\u0431\u0449\u0435\u043D\u0438\u044F" />
 
-CREATOR STUDIO (\u043F\u043E\u0434\u043F\u0438\u0441\u0447\u0438\u043A\u0438 \u0438 \u0434\u043E\u043D\u0430\u0442\u044B):
-- \u041F\u043E\u0434\u043F\u0438\u0441\u0447\u0438\u043A\u0438 \u0440\u0430\u0441\u0442\u0443\u0442 \u043F\u043E\u0441\u0442\u0435\u043F\u0435\u043D\u043D\u043E: <phone-event type="subscriber_joined" count="N" />
-  * \u041A\u043E\u0433\u0434\u0430 \u043F\u0435\u0440\u0441\u043E\u043D\u0430\u0436 \u043F\u0443\u0431\u043B\u0438\u043A\u0443\u0435\u0442 \u043A\u043E\u043D\u0442\u0435\u043D\u0442
-  * \u0420\u0435\u0434\u043A\u043E \u0438 \u0440\u0430\u043D\u0434\u043E\u043C\u043D\u043E (1-5 \u043F\u043E\u0434\u043F\u0438\u0441\u0447\u0438\u043A\u043E\u0432)
-- \u0414\u043E\u043D\u0430\u0442\u044B \u0441\u043B\u0443\u0447\u0430\u044E\u0442\u0441\u044F \u0440\u0435\u0434\u043A\u043E: <phone-event type="donation_received" amount="N" from="\u0418\u043C\u044F \u0444\u0430\u043D\u0430\u0442\u0430" />
-  * \u041C\u0430\u043B\u044B\u0435 \u0441\u0443\u043C\u043C\u044B ($5-$50) \u0447\u0430\u0449\u0435, \u043A\u0440\u0443\u043F\u043D\u044B\u0435 ($100+) \u043E\u0447\u0435\u043D\u044C \u0440\u0435\u0434\u043A\u043E
-  * \u041E\u0431\u044B\u0447\u043D\u043E \u043F\u043E\u0441\u043B\u0435 \u043F\u0443\u0431\u043B\u0438\u043A\u0430\u0446\u0438\u0438 \u043D\u043E\u0432\u043E\u0433\u043E \u043A\u043E\u043D\u0442\u0435\u043D\u0442\u0430
+CREATOR STUDIO \u2014 \u0442\u043E\u043B\u044C\u043A\u043E \u0435\u0441\u043B\u0438 \u0430\u043A\u043A\u0430\u0443\u043D\u0442 \u0430\u043A\u0442\u0438\u0432\u0435\u043D:
+- \u041F\u043E\u0434\u043F\u0438\u0441\u0447\u0438\u043A\u0438: <phone-event type="subscriber_joined" count="N" />
+- \u0414\u043E\u043D\u0430\u0442\u044B: <phone-event type="donation_received" amount="N" character="\u0418\u043C\u044F \u0444\u0430\u043D\u0430\u0442\u0430" />
 
 \u0412\u0410\u0416\u041D\u041E:
-- \u041D\u0435 \u0441\u043F\u0430\u043C\u0438\u0442\u044C \u0441\u043E\u0431\u044B\u0442\u0438\u044F\u043C\u0438 \u2014 \u043E\u043D\u0438 \u0434\u043E\u043F\u043E\u043B\u043D\u044F\u044E\u0442 \u0441\u0446\u0435\u043D\u0443, \u0430 \u043D\u0435 \u0437\u0430\u043C\u0435\u043D\u044F\u044E\u0442 \u0435\u0451
-- \u0421\u043E\u0431\u044B\u0442\u0438\u044F \u0434\u043E\u043B\u0436\u043D\u044B \u0431\u044B\u0442\u044C \u0443\u043C\u0435\u0441\u0442\u043D\u044B \u043F\u043E \u043A\u043E\u043D\u0442\u0435\u043A\u0441\u0442\u0443 \u0438 \u0432\u0440\u0435\u043C\u0435\u043D\u0438
-- \u041D\u041F\u0421 \u043D\u0435 \u0437\u043D\u0430\u044E\u0442 \u043E \u043F\u0440\u0438\u0432\u0430\u0442\u043D\u044B\u0445 \u0437\u0430\u043C\u0435\u0442\u043A\u0430\u0445 \u043F\u0435\u0440\u0441\u043E\u043D\u0430\u0436\u0430
-- \u041E\u0434\u0438\u043D \u0442\u0435\u0433 = \u043E\u0434\u043D\u043E \u0441\u043E\u0431\u044B\u0442\u0438\u0435, \u043D\u0435 \u0433\u0440\u0443\u043F\u043F\u0438\u0440\u043E\u0432\u0430\u0442\u044C \u043D\u0435\u0441\u043A\u043E\u043B\u044C\u043A\u043E \u0432 \u043E\u0434\u043D\u043E\u043C \u0441\u043E\u043E\u0431\u0449\u0435\u043D\u0438\u0438`;
+- \u041D\u0435 \u0441\u043F\u0430\u043C\u0438\u0442\u044C \u2014 \u0441\u043E\u0431\u044B\u0442\u0438\u044F \u0434\u043E\u043F\u043E\u043B\u043D\u044F\u044E\u0442 \u0441\u0446\u0435\u043D\u0443, \u043D\u0435 \u0437\u0430\u043C\u0435\u043D\u044F\u044E\u0442 \u0435\u0451
+- \u041E\u0434\u0438\u043D \u0442\u0435\u0433 = \u043E\u0434\u043D\u043E \u0441\u043E\u0431\u044B\u0442\u0438\u0435
+- \u041D\u041F\u0421 \u043D\u0435 \u0437\u043D\u0430\u044E\u0442 \u043E \u043F\u0440\u0438\u0432\u0430\u0442\u043D\u044B\u0445 \u0437\u0430\u043C\u0435\u0442\u043A\u0430\u0445 \u043F\u0435\u0440\u0441\u043E\u043D\u0430\u0436\u0430`;
     parts.push(npcRules);
     return parts.join("\n\n");
   }
@@ -7407,6 +7453,9 @@ description \u043F\u0438\u0448\u0438 \u043A\u0430\u043A \u043F\u0440\u043E\u043C
               "content_posted",
               "note_written",
               "social_post",
+              "social_like",
+              "social_comment",
+              "social_follow",
               "donation_received",
               "subscriber_joined"
             ],

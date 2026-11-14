@@ -49,6 +49,9 @@ export const KNOWN_EVENT_TYPES = new Set([
     'content_posted',
     'note_written',
     'social_post',
+    'social_like',
+    'social_comment',
+    'social_follow',
     'donation_received',
     'subscriber_joined',
 ]);
