@@ -2781,6 +2781,10 @@ ${prompt2}
     showNotification(message, NotificationType.SUCCESS);
   }
   __name(success, "success");
+  function info(message) {
+    showNotification(message, NotificationType.INFO);
+  }
+  __name(info, "info");
   function error(message) {
     showNotification(message, NotificationType.ERROR);
   }
@@ -3920,6 +3924,7 @@ REPLY (text only):`;
       }
       if (this._busy.has(index)) return;
       this._busy.add(index);
+      info("\u0413\u0435\u043D\u0435\u0440\u0438\u0440\u0443\u044E \u0438\u0437\u043E\u0431\u0440\u0430\u0436\u0435\u043D\u0438\u0435\u2026");
       try {
         const state = this.storage.getState();
         const photo = state.gallery[index];
@@ -4154,6 +4159,7 @@ REPLY (text only):`;
       }
       if (this._busy.has(index)) return;
       this._busy.add(index);
+      info("\u0413\u0435\u043D\u0435\u0440\u0438\u0440\u0443\u044E \u043F\u0440\u0435\u0432\u044C\u044E\u2026");
       try {
         const state = this.storage.getState();
         const item = state.spicy[index];
@@ -4886,6 +4892,7 @@ REPLY (text only):`;
       }
       if (this._busy.has(index)) return;
       this._busy.add(index);
+      info("\u0413\u0435\u043D\u0435\u0440\u0438\u0440\u0443\u044E \u0438\u0437\u043E\u0431\u0440\u0430\u0436\u0435\u043D\u0438\u0435\u2026");
       try {
         const state = this.storage.getState();
         const post = state.creator?.posts?.[index];
@@ -5537,10 +5544,10 @@ ${lines.join("\n")}`;
       }
       const genBar = document.createElement("div");
       genBar.className = "astral-note-gen";
-      for (const [kind, info] of Object.entries(NOTE_KINDS)) {
+      for (const [kind, info2] of Object.entries(NOTE_KINDS)) {
         const btn = document.createElement("button");
         btn.className = "astral-note-gen-btn";
-        btn.innerHTML = `<span class="astral-note-gen-mark">${info.mark}</span>${info.label}`;
+        btn.innerHTML = `<span class="astral-note-gen-mark">${info2.mark}</span>${info2.label}`;
         btn.addEventListener("click", () => this._generate(kind, container, btn));
         genBar.appendChild(btn);
       }

@@ -6,7 +6,7 @@
 import { ICONS } from './phone-core.js';
 import { buildPhotoPrompt } from './prompt-builder.js';
 import { ask as askLLM, resolveStyle, ensureStyle } from './prompt-llm.js';
-import { handleImageGenerationError, handleGenerationError, success, error as showError } from './notifications.js';
+import { handleImageGenerationError, handleGenerationError, success, error as showError, info } from './notifications.js';
 
 export class GalleryApp {
     constructor(context, storage, imageGen) {
@@ -299,6 +299,7 @@ export class GalleryApp {
         if (this._busy.has(index)) return;
 
         this._busy.add(index);
+        info('Генерирую изображение…');
 
         try {
             const state = this.storage.getState();

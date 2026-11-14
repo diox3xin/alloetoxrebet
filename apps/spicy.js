@@ -4,7 +4,7 @@
  */
 
 import { ICONS } from './phone-core.js';
-import { handleImageGenerationError, success, error as showError } from './notifications.js';
+import { handleImageGenerationError, success, error as showError, info } from './notifications.js';
 
 const CATEGORIES = ['Все', 'Новое', 'Тренды', 'Смотреть позже'];
 
@@ -119,6 +119,7 @@ export class SpicyApp {
         if (this._busy.has(index)) return;
 
         this._busy.add(index);
+        info('Генерирую превью…');
 
         try {
             const state = this.storage.getState();

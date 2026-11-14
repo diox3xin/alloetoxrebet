@@ -10,7 +10,7 @@
  */
 
 import { ICONS } from './phone-core.js';
-import { handleImageGenerationError, handleGenerationError, success, error as showError } from './notifications.js';
+import { handleImageGenerationError, handleGenerationError, success, error as showError, info } from './notifications.js';
 
 const TABS = [
     { id: 'profile', label: 'Профиль' },
@@ -769,6 +769,7 @@ export class CreatorApp {
         if (this._busy.has(index)) return;
 
         this._busy.add(index);
+        info('Генерирую изображение…');
 
         try {
             const state = this.storage.getState();
