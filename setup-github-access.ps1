@@ -37,24 +37,45 @@ $token = $null
 
 Write-Host '  Ищу сохранённый токен в Windows Credential Manager...' -ForegroundColor Cyan
 
-$input = "protocol=https`nhost=github.com`n`n"
-try {
-    $filled = $input | git credential fill 2>$null
-    if ($filled) {
-        foreach ($line in $filled) {
-            if ($line -like 'password=*') {
-                $token = $line.Substring(9)
-                break
+# Наш helper перекрывает системный, поэтому для поиска обращаемся к
+# менеджеру напрямую — там git хранит токен после `gh auth login`.
+$helpers = @('manager', 'manager-core', 'wincred')
+foreach ($h in $helpers) {
+    if ($token) { break }
+    try {
+        $filled = "protocol=https`nhost=github.com`n`n" | git -c "credential.helper=$h" credential fill 2>$null
+        if ($filled) {
+            foreach ($line in $filled) {
+                if ($line -like 'password=*') {
+                    $token = $line.Substring(9)
+                    break
+                }
             }
         }
+    } catch {
+        # этого помощника на машине нет — пробуем следующий
     }
-} catch {
-    # credential helper может отсутствовать — не страшно
 }
 
 if ($token) {
     Write-Host '  Нашёл сохранённый токен.' -ForegroundColor Green
 } else {
+    # Запасной путь: GitHub CLI умеет отдавать свой токен сам.
+    $gh = Get-Command gh -ErrorAction SilentlyContinue
+    if ($gh) {
+        try {
+            $out = & gh auth token 2>$null
+            if ($out -and $out.Trim()) {
+                $token = $out.Trim()
+                Write-Host '  Нашёл токен через GitHub CLI.' -ForegroundColor Green
+            }
+        } catch {
+            # gh есть, но не авторизован
+        }
+    }
+}
+
+if (-not $token) {
     Write-Host '  Сохранённого токена не нашлось.' -ForegroundColor Yellow
     Write-Host ''
     Write-Host '  Нужен Personal Access Token с правом "Contents: read and write"' -ForegroundColor Yellow
