@@ -53,6 +53,17 @@ export function buildPhoneContext(state, storageRef) {
     const msgs = Array.isArray(state?.messages) ? state.messages : [];
     const recent = msgs.slice(-24);
 
+    // Quiet Mode: короткий блок вместо полного промпта
+    if (state?.quietMode) {
+        return `[Astral Phone — ПАУЗА]
+Входящая активность телефона приостановлена пользователем. НЕ генерируй:
+- входящие сообщения (message_received)
+- посты НПС (social_post)
+- лайки и комменты (social_like, social_comment, social_follow)
+- донаты и подписчики (donation_received, subscriber_joined)
+Телефон существует, photo_taken и note_written — по-прежнему работают.`;
+    }
+
     const lines = recent.map((m) => {
         const who = isOutgoing(m) ? 'Ты' : (m.character || 'Контакт');
         return `${who}: ${String(m.text || '').slice(0, 160)}`;

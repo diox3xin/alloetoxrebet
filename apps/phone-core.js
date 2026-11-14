@@ -212,6 +212,21 @@ export class PhoneCore {
                     <div class="astral-phone-close" title="Закрыть">✕</div>
                 </div>
 
+                <div class="astral-nc-drawer" id="astral-nc-drawer">
+                    <div class="astral-nc-header">
+                        <span class="astral-nc-title">Уведомления</span>
+                        <div class="astral-nc-controls">
+                            <button class="astral-nc-quiet" id="astral-nc-quiet" title="Пауза входящих">
+                                <svg viewBox="0 0 24 24" width="14" height="14" stroke="currentColor" fill="none" stroke-width="2">
+                                    <path d="M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9M13.73 21a2 2 0 0 1-3.46 0"/>
+                                </svg>
+                            </button>
+                            <button class="astral-nc-clear" id="astral-nc-clear" title="Очистить">✕</button>
+                        </div>
+                    </div>
+                    <div class="astral-nc-list" id="astral-nc-list"></div>
+                </div>
+
                 <div class="astral-phone-body"></div>
             </div>
         `;
@@ -226,13 +241,34 @@ export class PhoneCore {
         this.iconEl = overlay.querySelector('.astral-app-icon');
         this.backEl = overlay.querySelector('.astral-back-btn');
         this.timeEl = overlay.querySelector('.astral-sb-time');
+        this.ncDrawer = overlay.querySelector('#astral-nc-drawer');
+        this.ncList = overlay.querySelector('#astral-nc-list');
 
         overlay.querySelector('.astral-phone-close').addEventListener('click', () => this.close());
         this.backEl.addEventListener('click', () => {
-            if (this.currentAppId) this.showHome();
+            if (this.ncDrawer?.classList.contains('open')) {
+                this._closeNC();
+            } else if (this.currentAppId) {
+                this.showHome();
+            }
         });
         overlay.addEventListener('click', (e) => {
             if (e.target === overlay) this.close();
+        });
+
+        // Статусбар: свайп вниз или клик — открыть notification center
+        const statusbar = overlay.querySelector('.astral-phone-statusbar');
+        statusbar?.addEventListener('click', () => this._toggleNC());
+
+        // Кнопки в шторке
+        overlay.querySelector('#astral-nc-clear')?.addEventListener('click', () => {
+            const state = this.storage.getState();
+            state.notifications = [];
+            this.storage.save();
+            this._renderNC();
+        });
+        overlay.querySelector('#astral-nc-quiet')?.addEventListener('click', () => {
+            this._toggleQuietMode();
         });
 
         this._bindCloseGestures(overlay);
@@ -434,7 +470,7 @@ export class PhoneCore {
         }
     }
 
-    /** Push a notification onto the lock-screen queue (capped at 5). */
+    /** Push a notification onto the lock-screen queue (capped at 10). */
     pushNotification({ app, title, text }) {
         try {
             const state = this.storage.getState();
@@ -445,13 +481,119 @@ export class PhoneCore {
                 text: String(text || '').slice(0, 140),
                 timestamp: Date.now(),
             });
-            if (state.notifications.length > 5) {
-                state.notifications = state.notifications.slice(-5);
+            if (state.notifications.length > 10) {
+                state.notifications = state.notifications.slice(-10);
             }
             this.storage.save();
+
+            // Если NC открыт — перерисовываем
+            if (this.ncDrawer?.classList.contains('open')) {
+                this._renderNC();
+            }
         } catch (err) {
             console.warn('[Astral Phone] push notification failed:', err);
         }
+    }
+
+    /* ─────────────────────────── notification center ─────────────────────────── */
+
+    _toggleNC() {
+        if (this.ncDrawer?.classList.contains('open')) {
+            this._closeNC();
+        } else {
+            this._openNC();
+        }
+    }
+
+    _openNC() {
+        if (!this.ncDrawer) return;
+        this._renderNC();
+        this.ncDrawer.classList.add('open');
+    }
+
+    _closeNC() {
+        this.ncDrawer?.classList.remove('open');
+    }
+
+    _renderNC() {
+        if (!this.ncList) return;
+
+        const state = this.storage.getState();
+        const list = Array.isArray(state.notifications) ? [...state.notifications].reverse() : [];
+
+        // Иконка Quiet Mode
+        const quietBtn = this.overlay?.querySelector('#astral-nc-quiet');
+        const quietOn = Boolean(state.quietMode);
+        if (quietBtn) {
+            quietBtn.classList.toggle('active', quietOn);
+            quietBtn.title = quietOn ? 'Пауза включена — нажми чтобы выключить' : 'Включить паузу входящих';
+        }
+
+        const appLabels = {
+            messages: 'Messages',
+            gallery: 'Gallery',
+            notes: 'Notes',
+            social: 'Social',
+            creator: 'Creator Studio',
+        };
+
+        if (list.length === 0) {
+            this.ncList.innerHTML = `<div class="astral-nc-empty">Нет уведомлений</div>`;
+            return;
+        }
+
+        this.ncList.innerHTML = '';
+        for (const n of list) {
+            const item = document.createElement('div');
+            item.className = 'astral-nc-item';
+            item.innerHTML = `
+                <div class="astral-nc-item-head">
+                    <span class="astral-nc-item-app">${this._esc(appLabels[n.app] || n.app || '')}</span>
+                    <span class="astral-nc-item-time">${this._ago(n.timestamp)}</span>
+                </div>
+                ${n.title ? `<div class="astral-nc-item-title">${this._esc(n.title)}</div>` : ''}
+                ${n.text ? `<div class="astral-nc-item-text">${this._esc(n.text)}</div>` : ''}
+            `;
+
+            // Клик — открыть нужное приложение
+            if (n.app) {
+                item.style.cursor = 'pointer';
+                item.addEventListener('click', () => {
+                    this._closeNC();
+                    if (this.apps.has(n.app)) {
+                        this.openApp(n.app);
+                    }
+                });
+            }
+
+            this.ncList.appendChild(item);
+        }
+    }
+
+    _ago(ts) {
+        if (!ts) return '';
+        const diff = Math.max(0, Date.now() - ts);
+        const m = Math.floor(diff / 60000);
+        if (m < 1) return 'сейчас';
+        if (m < 60) return `${m}м`;
+        const h = Math.floor(m / 60);
+        if (h < 24) return `${h}ч`;
+        return `${Math.floor(h / 24)}д`;
+    }
+
+    /* ─────────────────────────── quiet mode ─────────────────────────── */
+
+    _toggleQuietMode() {
+        const state = this.storage.getState();
+        state.quietMode = !state.quietMode;
+        this.storage.save();
+        this._renderNC();
+        // Обновить промпт — модель должна сразу узнать о режиме
+        try { globalThis.__astralRefreshPrompt?.(); } catch { /* ignore */ }
+    }
+
+    isQuietMode() {
+        return Boolean(this.storage.getState().quietMode);
     }
 
     /* ─────────────────────────── utils ─────────────────────────── */

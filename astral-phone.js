@@ -425,6 +425,21 @@
                     <div class="astral-phone-close" title="\u0417\u0430\u043A\u0440\u044B\u0442\u044C">\u2715</div>
                 </div>
 
+                <div class="astral-nc-drawer" id="astral-nc-drawer">
+                    <div class="astral-nc-header">
+                        <span class="astral-nc-title">\u0423\u0432\u0435\u0434\u043E\u043C\u043B\u0435\u043D\u0438\u044F</span>
+                        <div class="astral-nc-controls">
+                            <button class="astral-nc-quiet" id="astral-nc-quiet" title="\u041F\u0430\u0443\u0437\u0430 \u0432\u0445\u043E\u0434\u044F\u0449\u0438\u0445">
+                                <svg viewBox="0 0 24 24" width="14" height="14" stroke="currentColor" fill="none" stroke-width="2">
+                                    <path d="M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9M13.73 21a2 2 0 0 1-3.46 0"/>
+                                </svg>
+                            </button>
+                            <button class="astral-nc-clear" id="astral-nc-clear" title="\u041E\u0447\u0438\u0441\u0442\u0438\u0442\u044C">\u2715</button>
+                        </div>
+                    </div>
+                    <div class="astral-nc-list" id="astral-nc-list"></div>
+                </div>
+
                 <div class="astral-phone-body"></div>
             </div>
         `;
@@ -435,12 +450,29 @@
       this.iconEl = overlay.querySelector(".astral-app-icon");
       this.backEl = overlay.querySelector(".astral-back-btn");
       this.timeEl = overlay.querySelector(".astral-sb-time");
+      this.ncDrawer = overlay.querySelector("#astral-nc-drawer");
+      this.ncList = overlay.querySelector("#astral-nc-list");
       overlay.querySelector(".astral-phone-close").addEventListener("click", () => this.close());
       this.backEl.addEventListener("click", () => {
-        if (this.currentAppId) this.showHome();
+        if (this.ncDrawer?.classList.contains("open")) {
+          this._closeNC();
+        } else if (this.currentAppId) {
+          this.showHome();
+        }
       });
       overlay.addEventListener("click", (e) => {
         if (e.target === overlay) this.close();
+      });
+      const statusbar = overlay.querySelector(".astral-phone-statusbar");
+      statusbar?.addEventListener("click", () => this._toggleNC());
+      overlay.querySelector("#astral-nc-clear")?.addEventListener("click", () => {
+        const state = this.storage.getState();
+        state.notifications = [];
+        this.storage.save();
+        this._renderNC();
+      });
+      overlay.querySelector("#astral-nc-quiet")?.addEventListener("click", () => {
+        this._toggleQuietMode();
       });
       this._bindCloseGestures(overlay);
     }
@@ -612,7 +644,7 @@
         console.warn("[Astral Phone] bump unread failed:", err);
       }
     }
-    /** Push a notification onto the lock-screen queue (capped at 5). */
+    /** Push a notification onto the lock-screen queue (capped at 10). */
     pushNotification({ app, title, text }) {
       try {
         const state = this.storage.getState();
@@ -623,13 +655,101 @@
           text: String(text || "").slice(0, 140),
           timestamp: Date.now()
         });
-        if (state.notifications.length > 5) {
-          state.notifications = state.notifications.slice(-5);
+        if (state.notifications.length > 10) {
+          state.notifications = state.notifications.slice(-10);
         }
         this.storage.save();
+        if (this.ncDrawer?.classList.contains("open")) {
+          this._renderNC();
+        }
       } catch (err) {
         console.warn("[Astral Phone] push notification failed:", err);
       }
+    }
+    /* ─────────────────────────── notification center ─────────────────────────── */
+    _toggleNC() {
+      if (this.ncDrawer?.classList.contains("open")) {
+        this._closeNC();
+      } else {
+        this._openNC();
+      }
+    }
+    _openNC() {
+      if (!this.ncDrawer) return;
+      this._renderNC();
+      this.ncDrawer.classList.add("open");
+    }
+    _closeNC() {
+      this.ncDrawer?.classList.remove("open");
+    }
+    _renderNC() {
+      if (!this.ncList) return;
+      const state = this.storage.getState();
+      const list = Array.isArray(state.notifications) ? [...state.notifications].reverse() : [];
+      const quietBtn = this.overlay?.querySelector("#astral-nc-quiet");
+      const quietOn = Boolean(state.quietMode);
+      if (quietBtn) {
+        quietBtn.classList.toggle("active", quietOn);
+        quietBtn.title = quietOn ? "\u041F\u0430\u0443\u0437\u0430 \u0432\u043A\u043B\u044E\u0447\u0435\u043D\u0430 \u2014 \u043D\u0430\u0436\u043C\u0438 \u0447\u0442\u043E\u0431\u044B \u0432\u044B\u043A\u043B\u044E\u0447\u0438\u0442\u044C" : "\u0412\u043A\u043B\u044E\u0447\u0438\u0442\u044C \u043F\u0430\u0443\u0437\u0443 \u0432\u0445\u043E\u0434\u044F\u0449\u0438\u0445";
+      }
+      const appLabels = {
+        messages: "Messages",
+        gallery: "Gallery",
+        notes: "Notes",
+        social: "Social",
+        creator: "Creator Studio"
+      };
+      if (list.length === 0) {
+        this.ncList.innerHTML = `<div class="astral-nc-empty">\u041D\u0435\u0442 \u0443\u0432\u0435\u0434\u043E\u043C\u043B\u0435\u043D\u0438\u0439</div>`;
+        return;
+      }
+      this.ncList.innerHTML = "";
+      for (const n of list) {
+        const item = document.createElement("div");
+        item.className = "astral-nc-item";
+        item.innerHTML = `
+                <div class="astral-nc-item-head">
+                    <span class="astral-nc-item-app">${this._esc(appLabels[n.app] || n.app || "")}</span>
+                    <span class="astral-nc-item-time">${this._ago(n.timestamp)}</span>
+                </div>
+                ${n.title ? `<div class="astral-nc-item-title">${this._esc(n.title)}</div>` : ""}
+                ${n.text ? `<div class="astral-nc-item-text">${this._esc(n.text)}</div>` : ""}
+            `;
+        if (n.app) {
+          item.style.cursor = "pointer";
+          item.addEventListener("click", () => {
+            this._closeNC();
+            if (this.apps.has(n.app)) {
+              this.openApp(n.app);
+            }
+          });
+        }
+        this.ncList.appendChild(item);
+      }
+    }
+    _ago(ts) {
+      if (!ts) return "";
+      const diff = Math.max(0, Date.now() - ts);
+      const m = Math.floor(diff / 6e4);
+      if (m < 1) return "\u0441\u0435\u0439\u0447\u0430\u0441";
+      if (m < 60) return `${m}\u043C`;
+      const h = Math.floor(m / 60);
+      if (h < 24) return `${h}\u0447`;
+      return `${Math.floor(h / 24)}\u0434`;
+    }
+    /* ─────────────────────────── quiet mode ─────────────────────────── */
+    _toggleQuietMode() {
+      const state = this.storage.getState();
+      state.quietMode = !state.quietMode;
+      this.storage.save();
+      this._renderNC();
+      try {
+        globalThis.__astralRefreshPrompt?.();
+      } catch {
+      }
+    }
+    isQuietMode() {
+      return Boolean(this.storage.getState().quietMode);
     }
     /* ─────────────────────────── utils ─────────────────────────── */
     _esc(str) {
@@ -6535,6 +6655,15 @@ Rules:
   function buildPhoneContext(state, storageRef) {
     const msgs = Array.isArray(state?.messages) ? state.messages : [];
     const recent = msgs.slice(-24);
+    if (state?.quietMode) {
+      return `[Astral Phone \u2014 \u041F\u0410\u0423\u0417\u0410]
+\u0412\u0445\u043E\u0434\u044F\u0449\u0430\u044F \u0430\u043A\u0442\u0438\u0432\u043D\u043E\u0441\u0442\u044C \u0442\u0435\u043B\u0435\u0444\u043E\u043D\u0430 \u043F\u0440\u0438\u043E\u0441\u0442\u0430\u043D\u043E\u0432\u043B\u0435\u043D\u0430 \u043F\u043E\u043B\u044C\u0437\u043E\u0432\u0430\u0442\u0435\u043B\u0435\u043C. \u041D\u0415 \u0433\u0435\u043D\u0435\u0440\u0438\u0440\u0443\u0439:
+- \u0432\u0445\u043E\u0434\u044F\u0449\u0438\u0435 \u0441\u043E\u043E\u0431\u0449\u0435\u043D\u0438\u044F (message_received)
+- \u043F\u043E\u0441\u0442\u044B \u041D\u041F\u0421 (social_post)
+- \u043B\u0430\u0439\u043A\u0438 \u0438 \u043A\u043E\u043C\u043C\u0435\u043D\u0442\u044B (social_like, social_comment, social_follow)
+- \u0434\u043E\u043D\u0430\u0442\u044B \u0438 \u043F\u043E\u0434\u043F\u0438\u0441\u0447\u0438\u043A\u0438 (donation_received, subscriber_joined)
+\u0422\u0435\u043B\u0435\u0444\u043E\u043D \u0441\u0443\u0449\u0435\u0441\u0442\u0432\u0443\u0435\u0442, photo_taken \u0438 note_written \u2014 \u043F\u043E-\u043F\u0440\u0435\u0436\u043D\u0435\u043C\u0443 \u0440\u0430\u0431\u043E\u0442\u0430\u044E\u0442.`;
+    }
     const lines = recent.map((m) => {
       const who = isOutgoing(m) ? "\u0422\u044B" : m.character || "\u041A\u043E\u043D\u0442\u0430\u043A\u0442";
       return `${who}: ${String(m.text || "").slice(0, 160)}`;
