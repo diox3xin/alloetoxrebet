@@ -37,8 +37,10 @@ export class SocialApp {
         this.title = 'Social';
         this.icon = ICONS.social;
         this._replyTo = null;
-        this._filter = 'all';   // all | following
-        this._tagFilter = null; // хэштег-фильтр
+        this._filter = 'all';
+        this._tagFilter = null;
+        this._search = '';
+        this._searchOpen = false;
     }
 
     render(container) {
@@ -61,6 +63,22 @@ export class SocialApp {
                 this.render(container);
             });
             container.appendChild(tagBar);
+        }
+
+        // Строка поиска
+        if (this._searchOpen) {
+            const searchWrap = document.createElement('div');
+            searchWrap.className = 'astral-search-wrap';
+            searchWrap.innerHTML = `<input class="astral-search-input" id="astral-social-search"
+                type="search" placeholder="Поиск по ленте…" autocomplete="off"
+                value="${this._esc(this._search || '')}" />`;
+            container.appendChild(searchWrap);
+            const inp = searchWrap.querySelector('#astral-social-search');
+            inp.addEventListener('input', (e) => {
+                this._search = e.target.value;
+                this.render(container);
+            });
+            setTimeout(() => inp.focus(), 50);
         }
 
         if (posts.length === 0) {
@@ -101,9 +119,28 @@ export class SocialApp {
             posts = posts.filter(p =>
                 extractHashtags(p.text).some(t => t.toLowerCase() === this._tagFilter.toLowerCase())
             );
+        } else if (this._search) {
+            const q = this._search.trim().toLowerCase();
+            posts = posts.filter(p =>
+                String(p.text || '').toLowerCase().includes(q) ||
+                String(p.author || '').toLowerCase().includes(q)
+            );
         } else if (this._filter === 'following') {
             const following = new Set(state.socialFollowing || []);
             posts = posts.filter(p => following.has(p.author));
+        } else if (this._filter === 'trending') {
+            // Trending: посты с наибольшим числом реакций + комментов за последние 24 часа
+            const cutoff = Date.now() - 24 * 60 * 60 * 1000;
+            const score = (p) => {
+                const reactCount = Object.entries(p.reactions || {})
+                    .filter(([k]) => k !== 'me')
+                    .reduce((s, [, arr]) => s + (Array.isArray(arr) ? arr.length : 0), 0);
+                const replyCount = Array.isArray(p.replies) ? p.replies.length : 0;
+                const repostCount = Array.isArray(p.repostedBy) ? p.repostedBy.length : 0;
+                const fresh = (p.timestamp || 0) > cutoff ? 2 : 1;
+                return (reactCount + replyCount * 2 + repostCount) * fresh;
+            };
+            return posts.sort((a, b) => score(b) - score(a));
         }
 
         return posts.sort((a, b) => (b.timestamp || 0) - (a.timestamp || 0));
@@ -114,14 +151,26 @@ export class SocialApp {
         bar.className = 'astral-social-top';
 
         const all = document.createElement('button');
-        all.className = `astral-social-tab ${this._filter === 'all' ? 'active' : ''}`;
+        all.className = `astral-social-tab ${this._filter === 'all' && !this._tagFilter ? 'active' : ''}`;
         all.textContent = 'Все';
-        all.addEventListener('click', () => { this._filter = 'all'; this.render(container); });
+        all.addEventListener('click', () => { this._filter = 'all'; this._tagFilter = null; this._search = ''; this.render(container); });
 
         const following = document.createElement('button');
         following.className = `astral-social-tab ${this._filter === 'following' ? 'active' : ''}`;
         following.textContent = 'Подписки';
-        following.addEventListener('click', () => { this._filter = 'following'; this.render(container); });
+        following.addEventListener('click', () => { this._filter = 'following'; this._tagFilter = null; this._search = ''; this.render(container); });
+
+        const trending = document.createElement('button');
+        trending.className = `astral-social-tab ${this._filter === 'trending' ? 'active' : ''}`;
+        trending.textContent = '🔥';
+        trending.title = 'Trending';
+        trending.addEventListener('click', () => { this._filter = 'trending'; this._tagFilter = null; this._search = ''; this.render(container); });
+
+        const searchBtn = document.createElement('button');
+        searchBtn.className = 'astral-social-tab astral-social-tab--icon';
+        searchBtn.title = 'Поиск';
+        searchBtn.innerHTML = `<svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2.2"><circle cx="11" cy="11" r="7"/><path d="M21 21l-4.35-4.35"/></svg>`;
+        searchBtn.addEventListener('click', () => this._toggleSearch(container));
 
         const profile = document.createElement('button');
         profile.className = 'astral-social-tab astral-social-tab--icon';
@@ -131,8 +180,16 @@ export class SocialApp {
 
         bar.appendChild(all);
         bar.appendChild(following);
+        bar.appendChild(trending);
+        bar.appendChild(searchBtn);
         bar.appendChild(profile);
         return bar;
+    }
+
+    _toggleSearch(container) {
+        this._searchOpen = !this._searchOpen;
+        this._search = '';
+        this.render(container);
     }
 
     /* ─────────────────────────── профиль персоны ─────────────────────────── */
@@ -237,6 +294,12 @@ export class SocialApp {
 
             <div class="astral-social-body">${linkHashtags(post.text || '', this._esc.bind(this)).replace(/\n/g, '<br>')}</div>
 
+            ${post.isRepost && post.repostAuthor ? `
+                <div class="astral-repost-embed">
+                    <div class="astral-repost-embed-author">${this._esc(post.repostAuthor)}${post.repostHandle ? ` <span class="astral-social-handle">@${this._esc(post.repostHandle)}</span>` : ''}</div>
+                    <div class="astral-repost-embed-text">${this._esc((post.repostText || '').slice(0, 140))}${(post.repostText || '').length > 140 ? '…' : ''}</div>
+                </div>` : ''}
+
             ${post.imageUrl
                 ? `<div class="astral-social-media"><img src="${this._esc(post.imageUrl)}" alt="" loading="lazy"></div>`
                 : ''}
@@ -286,8 +349,7 @@ export class SocialApp {
 
         card.querySelector('[data-act="repost"]').addEventListener('click', (e) => {
             e.stopPropagation();
-            this._toggle(post.id, 'repostedBy');
-            this.render(container);
+            this._openRepostDialog(post.id, container);
         });
 
         card.querySelector('[data-act="react"]').addEventListener('click', (e) => {
@@ -313,6 +375,100 @@ export class SocialApp {
         });
 
         return card;
+    }
+
+    /* ─────────────────────────── репост с комментарием ─────────────────────────── */
+
+    _openRepostDialog(postId, container) {
+        const phone = document.querySelector('.astral-phone');
+        if (!phone) return;
+
+        const state = this.storage.getState();
+        const post = (state.social || []).find(p => p.id === postId);
+        if (!post) return;
+
+        const alreadyReposted = Array.isArray(post.repostedBy) && post.repostedBy.includes('me');
+
+        const overlay = document.createElement('div');
+        overlay.className = 'astral-modal';
+        overlay.innerHTML = `
+            <div class="astral-modal-card">
+                <div class="astral-modal-title">Поделиться</div>
+
+                <div class="astral-repost-quote">
+                    <div class="astral-repost-quote-author">${this._esc(post.author || '')}</div>
+                    <div class="astral-repost-quote-text">${this._esc((post.text || '').slice(0, 120))}${(post.text || '').length > 120 ? '…' : ''}</div>
+                </div>
+
+                <label class="astral-field-label">Твой комментарий (необязательно)</label>
+                <textarea class="astral-textarea" id="astral-repost-comment" rows="2"
+                          placeholder="Добавь комментарий…"></textarea>
+
+                <div class="astral-modal-actions">
+                    <button class="astral-btn" id="astral-repost-cancel">Отмена</button>
+                    ${alreadyReposted ? `<button class="astral-btn astral-btn--danger" id="astral-repost-remove">Снять репост</button>` : ''}
+                    <button class="astral-btn astral-btn-primary" id="astral-repost-go">Поделиться</button>
+                </div>
+            </div>
+        `;
+
+        phone.appendChild(overlay);
+        const close = () => overlay.remove();
+
+        overlay.querySelector('#astral-repost-cancel').addEventListener('click', close);
+        overlay.addEventListener('click', (e) => { if (e.target === overlay) close(); });
+
+        overlay.querySelector('#astral-repost-go').addEventListener('click', () => {
+            const comment = overlay.querySelector('#astral-repost-comment').value.trim();
+
+            const s = this.storage.getState();
+            const p = (s.social || []).find(x => x.id === postId);
+            if (!p) { close(); return; }
+
+            if (!Array.isArray(p.repostedBy)) p.repostedBy = [];
+            if (!p.repostedBy.includes('me')) p.repostedBy.push('me');
+
+            // Создаём новый пост юзера с цитатой
+            if (!Array.isArray(s.social)) s.social = [];
+            const repostPost = {
+                id: `repost_${Date.now()}_${Math.random().toString(36).slice(2, 7)}`,
+                author: this._userName(),
+                handle: this._myHandle(),
+                text: comment || `Репост`,
+                timestamp: Date.now(),
+                mine: true,
+                isRepost: true,
+                repostOf: post.id,
+                repostAuthor: post.author,
+                repostText: post.text,
+                repostHandle: post.handle,
+                reactions: {},
+                replies: [],
+                repostedBy: [],
+            };
+            s.social.push(repostPost);
+
+            this.storage.save();
+            close();
+            success('Репост опубликован');
+            this.render(container);
+        });
+
+        overlay.querySelector('#astral-repost-remove')?.addEventListener('click', () => {
+            const s = this.storage.getState();
+            const p = (s.social || []).find(x => x.id === postId);
+            if (p && Array.isArray(p.repostedBy)) {
+                const i = p.repostedBy.indexOf('me');
+                if (i >= 0) p.repostedBy.splice(i, 1);
+            }
+            // Удаляем репост-пост юзера
+            s.social = s.social.filter(x => !(x.isRepost && x.repostOf === postId && x.mine));
+            this.storage.save();
+            close();
+            this.render(container);
+        });
+
+        overlay.querySelector('#astral-repost-comment').focus();
     }
 
     /* ─────────────────────────── пикер реакций ─────────────────────────── */

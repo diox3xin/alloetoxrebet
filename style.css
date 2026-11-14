@@ -3677,3 +3677,48 @@
   align-items: center;
   justify-content: center;
 }
+
+/* ─────────────────────────── repost embed ─────────────────────────── */
+
+.astral-repost-embed {
+  margin: 6px 0;
+  padding: 10px 12px;
+  border: 1px solid rgba(217,154,181,0.2);
+  border-radius: 10px;
+  background: rgba(255,255,255,0.03);
+}
+
+.astral-repost-embed-author {
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--phone-text);
+  margin-bottom: 3px;
+}
+
+.astral-repost-embed-text {
+  font-size: 11px;
+  color: var(--phone-muted);
+  line-height: 1.4;
+}
+
+/* repost dialog quote */
+.astral-repost-quote {
+  padding: 10px 12px;
+  border: 1px solid rgba(217,154,181,0.2);
+  border-radius: 10px;
+  background: rgba(255,255,255,0.03);
+  margin-bottom: 12px;
+}
+
+.astral-repost-quote-author {
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--phone-accent);
+  margin-bottom: 4px;
+}
+
+.astral-repost-quote-text {
+  font-size: 12px;
+  color: var(--phone-muted);
+  line-height: 1.4;
+}
