@@ -67,32 +67,58 @@ export class MessagesApp {
             }
         }
 
+        // ── Поиск ──
+        const searchWrap = document.createElement('div');
+        searchWrap.className = 'astral-search-wrap';
+        searchWrap.innerHTML = `
+            <input class="astral-search-input" id="astral-msg-search"
+                   placeholder="Поиск…" autocomplete="off" type="search" />`;
+        container.appendChild(searchWrap);
+
         const list = document.createElement('div');
         list.className = 'astral-thread-list';
 
-        for (const [char, { last, role }] of threads) {
-            const item = document.createElement('div');
-            item.className = 'astral-msg-item';
-            const isOut = this._isOut(last);
-            item.innerHTML = `
-                <div class="astral-msg-avatar">${this._esc((char[0] || '?').toUpperCase())}</div>
-                <div class="astral-msg-content">
-                    <div class="astral-msg-name-row">
-                        <span class="astral-msg-name">${this._esc(char)}</span>
-                        ${role ? `<span class="astral-msg-role">${this._esc(role)}</span>` : ''}
+        const renderItems = (query = '') => {
+            list.innerHTML = '';
+            const q = query.trim().toLowerCase();
+            for (const [char, { last, role }] of threads) {
+                if (q && !char.toLowerCase().includes(q) &&
+                    !String(last.text || '').toLowerCase().includes(q)) continue;
+
+                const item = document.createElement('div');
+                item.className = 'astral-msg-item';
+                const isOut = this._isOut(last);
+                item.innerHTML = `
+                    <div class="astral-msg-avatar">${this._esc((char[0] || '?').toUpperCase())}</div>
+                    <div class="astral-msg-content">
+                        <div class="astral-msg-name-row">
+                            <span class="astral-msg-name">${this._esc(char)}</span>
+                            ${role ? `<span class="astral-msg-role">${this._esc(role)}</span>` : ''}
+                        </div>
+                        <div class="astral-msg-preview ${isOut ? 'astral-msg-preview--out' : ''}">
+                            ${isOut ? '→ ' : ''}${this._esc(this._truncate(last.text, 48))}
+                        </div>
                     </div>
-                    <div class="astral-msg-preview ${isOut ? 'astral-msg-preview--out' : ''}">
-                        ${isOut ? '→ ' : ''}${this._esc(this._truncate(last.text, 48))}
-                    </div>
-                </div>
-                <div class="astral-msg-time">${this._time(last.timestamp)}</div>
-            `;
-            item.addEventListener('click', () => {
-                this._thread = char;
-                this.render(document.querySelector('.astral-phone-body'));
-            });
-            list.appendChild(item);
-        }
+                    <div class="astral-msg-time">${this._time(last.timestamp)}</div>
+                `;
+                item.addEventListener('click', () => {
+                    this._thread = char;
+                    this.render(document.querySelector('.astral-phone-body'));
+                });
+                list.appendChild(item);
+            }
+
+            if (list.children.length === 0) {
+                list.innerHTML = `<div class="astral-empty-state" style="padding:24px 0">
+                    <div>Ничего не найдено</div></div>`;
+            }
+        };
+
+        renderItems();
+
+        searchWrap.querySelector('#astral-msg-search').addEventListener('input', (e) => {
+            renderItems(e.target.value);
+        });
 
         container.appendChild(list);
     }

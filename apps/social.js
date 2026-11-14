@@ -169,7 +169,7 @@ export class SocialApp {
 
         card.innerHTML = `
             <div class="astral-social-head">
-                <div class="astral-social-avatar">${this._esc(avatarLetter)}</div>
+                <div class="astral-social-avatar astral-social-avatar--clickable" data-author="${this._esc(post.author || '')}">${this._esc(avatarLetter)}</div>
                 <div class="astral-social-who">
                     <span class="astral-social-name">${this._esc(post.author || 'Неизвестный')}</span>
                     ${post.handle ? `<span class="astral-social-handle">@${this._esc(post.handle)}</span>` : ''}
@@ -224,6 +224,13 @@ export class SocialApp {
             e.stopPropagation();
             this._toggle(post.id, 'likedBy');
             this.render(container);
+        });
+
+        // Клик по аватару → профиль НПС
+        card.querySelector('.astral-social-avatar--clickable')?.addEventListener('click', (e) => {
+            e.stopPropagation();
+            const author = e.currentTarget.dataset.author;
+            if (author) this._openNPCProfile(author);
         });
 
         card.querySelector('[data-act="repost"]').addEventListener('click', (e) => {
@@ -575,6 +582,89 @@ export class SocialApp {
         }
 
         return { success: false, message: `Неизвестный тип события: ${type}` };
+    }
+
+    /* ─────────────────────────── профиль НПС ─────────────────────────── */
+
+    _openNPCProfile(author) {
+        const phone = document.querySelector('.astral-phone');
+        if (!phone) return;
+
+        const state = this.storage.getState();
+        const posts = (state.social || []).filter(p => p.author === author);
+        const totalLikes = posts.reduce((sum, p) => sum + (p.likedBy?.length || 0), 0);
+        const handle = posts[0]?.handle || this._handle(author);
+        const isFollowing = (state.socialFollowing || []).includes(author);
+        const isFollower = (state.socialFollowers || []).includes(author);
+        const avatarLetter = (author[0] || '?').toUpperCase();
+
+        const overlay = document.createElement('div');
+        overlay.className = 'astral-modal';
+        overlay.innerHTML = `
+            <div class="astral-modal-card astral-modal-card--profile">
+                <button class="astral-modal-close" id="astral-npc-close">✕</button>
+
+                <div class="astral-npc-header">
+                    <div class="astral-npc-avatar">${this._esc(avatarLetter)}</div>
+                    <div class="astral-npc-info">
+                        <div class="astral-npc-name">${this._esc(author)}</div>
+                        <div class="astral-npc-handle">@${this._esc(handle)}</div>
+                    </div>
+                    <button class="astral-btn ${isFollowing ? '' : 'astral-btn-primary'} astral-npc-follow-btn" id="astral-npc-follow">
+                        ${isFollowing ? 'Отписаться' : 'Подписаться'}
+                    </button>
+                </div>
+
+                <div class="astral-npc-stats">
+                    <div class="astral-npc-stat">
+                        <span class="astral-npc-stat-val">${posts.length}</span>
+                        <span class="astral-npc-stat-label">постов</span>
+                    </div>
+                    <div class="astral-npc-stat">
+                        <span class="astral-npc-stat-val">${totalLikes}</span>
+                        <span class="astral-npc-stat-label">лайков</span>
+                    </div>
+                    ${isFollower ? `<div class="astral-npc-stat">
+                        <span class="astral-npc-stat-val">✓</span>
+                        <span class="astral-npc-stat-label">подписан на тебя</span>
+                    </div>` : ''}
+                </div>
+
+                <div class="astral-npc-posts">
+                    ${posts.length === 0
+                        ? `<div class="astral-nc-empty">Нет постов</div>`
+                        : posts.slice(0, 20).map(p => `
+                            <div class="astral-npc-post">
+                                <div class="astral-npc-post-text">${this._esc(p.text || '')}</div>
+                                <div class="astral-npc-post-meta">
+                                    ${p.likedBy?.length ? `❤ ${p.likedBy.length}` : ''}
+                                    ${p.replies?.length ? `💬 ${p.replies.length}` : ''}
+                                    <span class="astral-npc-post-time">${this._ago(p.timestamp)}</span>
+                                </div>
+                            </div>`).join('')
+                    }
+                </div>
+            </div>
+        `;
+
+        phone.appendChild(overlay);
+        const close = () => overlay.remove();
+
+        overlay.querySelector('#astral-npc-close').addEventListener('click', close);
+        overlay.addEventListener('click', (e) => { if (e.target === overlay) close(); });
+
+        overlay.querySelector('#astral-npc-follow').addEventListener('click', () => {
+            const s = this.storage.getState();
+            if (!Array.isArray(s.socialFollowing)) s.socialFollowing = [];
+            const idx = s.socialFollowing.indexOf(author);
+            if (idx >= 0) {
+                s.socialFollowing.splice(idx, 1);
+            } else {
+                s.socialFollowing.push(author);
+            }
+            this.storage.save();
+            close();
+        });
     }
 
     /* ─────────────────────────── утилиты ─────────────────────────── */
