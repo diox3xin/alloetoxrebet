@@ -45,7 +45,6 @@ const ATTR_ALIASES = {
 export const KNOWN_EVENT_TYPES = new Set([
     'photo_taken',
     'message_received',
-    'spicy_posted',
     'content_posted',
     'note_written',
     'social_post',

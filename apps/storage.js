@@ -69,7 +69,6 @@ export class PhoneStorage {
             notes: [],
             social: [],
             socialFollowing: [],
-            spicy: [],
             creator: {
                 posts: [],
                 subscribers: 0,
@@ -77,7 +76,7 @@ export class PhoneStorage {
                 fans: [],
             },
             /** Unread counters per app — drive the home-screen badges. */
-            unread: { messages: 0, gallery: 0, notes: 0, social: 0, spicy: 0, creator: 0 },
+            unread: { messages: 0, gallery: 0, notes: 0, social: 0, creator: 0 },
             /** Latest RP events for the lock screen (newest last, capped). */
             notifications: [],
             /** How many chat messages have passed since the last phone_event. */
@@ -101,19 +100,19 @@ export class PhoneStorage {
         for (const k of Object.keys(d.creator)) {
             if (root.state.creator[k] === undefined) root.state.creator[k] = d.creator[k];
         }
-        for (const list of ['messages', 'gallery', 'spicy']) {
+        for (const list of ['messages', 'gallery']) {
             if (!Array.isArray(root.state[list])) root.state[list] = [];
         }
         if (!Array.isArray(root.state.creator.posts)) root.state.creator.posts = [];
         if (!Array.isArray(root.state.creator.fans)) root.state.creator.fans = [];
         if (!Array.isArray(root.state.notifications)) root.state.notifications = [];
         if (!root.state.unread || typeof root.state.unread !== 'object') {
-            root.state.unread = { messages: 0, gallery: 0, notes: 0, social: 0, spicy: 0, creator: 0 };
+            root.state.unread = { messages: 0, gallery: 0, notes: 0, social: 0, creator: 0 };
         }
         if (!Array.isArray(root.state.notes)) root.state.notes = [];
         if (!Array.isArray(root.state.social)) root.state.social = [];
         if (!Array.isArray(root.state.socialFollowing)) root.state.socialFollowing = [];
-        for (const key of ['messages', 'gallery', 'notes', 'social', 'spicy', 'creator']) {
+        for (const key of ['messages', 'gallery', 'notes', 'social', 'creator']) {
             if (typeof root.state.unread[key] !== 'number') root.state.unread[key] = 0;
         }
         if (typeof root.state.sinceEvent !== 'number') root.state.sinceEvent = 0;

@@ -97,7 +97,7 @@
       return {
         messages: "Messages",
         gallery: "Gallery",
-        spicy: "Spicy Hub",
+        spicy: "Spicy (\u0443\u0434\u0430\u043B\u0451\u043D)",
         creator: "Creator Studio"
       }[app] || app || "";
     }
@@ -247,7 +247,6 @@
     home: `<svg viewBox="0 0 24 24"><path d="M12 3.2l1.9 4.6 4.9.4-3.7 3.2 1.1 4.8L12 13.7 7.8 16.2l1.1-4.8L5.2 8.2l4.9-.4z"/></svg>`,
     messages: `<svg viewBox="0 0 24 24"><path d="M20.5 12.2c0 4-3.8 7.2-8.5 7.2-1 0-2-.1-2.9-.4L4 20.5l1.3-3.5C4.2 15.6 3.5 14 3.5 12.2c0-4 3.8-7.2 8.5-7.2s8.5 3.2 8.5 7.2z"/><path d="M8.5 11.5h.01M12 11.5h.01M15.5 11.5h.01" stroke-width="2"/></svg>`,
     gallery: `<svg viewBox="0 0 24 24"><rect x="3.2" y="5.4" width="17.6" height="13.2" rx="3"/><circle cx="12" cy="12" r="3.6"/><path d="M17.4 8.4h.01" stroke-width="2.4"/></svg>`,
-    spicy: `<svg viewBox="0 0 24 24"><path d="M12 21c3.6 0 6.4-2.6 6.4-6.2 0-4.4-4.3-6.6-4.3-10.8-2.2 1-3.3 3-3.3 5.2 0 1.4.4 2.2.4 2.2-1.4-.6-2.4-2-2.4-3.6-1.6 1.6-2.6 3.9-2.6 6.4C6.2 18.2 8.6 21 12 21z"/></svg>`,
     creator: `<svg viewBox="0 0 24 24"><path d="M12 2.8l3.1 5.9 6.3 1-4.6 4.4 1.1 6.4-5.9-3.2-5.9 3.2 1.1-6.4L2.6 9.7l6.3-1z"/></svg>`,
     notes: `<svg viewBox="0 0 24 24"><path d="M5 3.5h11l4 4v13a1 1 0 0 1-1 1H5a1 1 0 0 1-1-1v-16a1 1 0 0 1 1-1z"/><path d="M15.5 3.5V8h4.5M8.5 12h7M8.5 16h4.5"/></svg>`,
     social: `<svg viewBox="0 0 24 24"><circle cx="6" cy="6" r="2.6"/><circle cx="18" cy="6" r="2.6"/><circle cx="12" cy="18" r="2.6"/><path d="M8.4 7.2l3.2 8.6M15.6 7.2l-3.2 8.6M8.6 6h6.8"/></svg>`,
@@ -549,7 +548,6 @@
         content_posted: "creator",
         donation_received: "creator",
         subscriber_joined: "creator",
-        spicy_posted: "spicy",
         note_written: "notes",
         social_post: "social",
         social_like: "social",
@@ -693,7 +691,6 @@
         notes: [],
         social: [],
         socialFollowing: [],
-        spicy: [],
         creator: {
           posts: [],
           subscribers: 0,
@@ -701,7 +698,7 @@
           fans: []
         },
         /** Unread counters per app — drive the home-screen badges. */
-        unread: { messages: 0, gallery: 0, notes: 0, social: 0, spicy: 0, creator: 0 },
+        unread: { messages: 0, gallery: 0, notes: 0, social: 0, creator: 0 },
         /** Latest RP events for the lock screen (newest last, capped). */
         notifications: [],
         /** How many chat messages have passed since the last phone_event. */
@@ -723,19 +720,19 @@
       for (const k of Object.keys(d.creator)) {
         if (root.state.creator[k] === void 0) root.state.creator[k] = d.creator[k];
       }
-      for (const list of ["messages", "gallery", "spicy"]) {
+      for (const list of ["messages", "gallery"]) {
         if (!Array.isArray(root.state[list])) root.state[list] = [];
       }
       if (!Array.isArray(root.state.creator.posts)) root.state.creator.posts = [];
       if (!Array.isArray(root.state.creator.fans)) root.state.creator.fans = [];
       if (!Array.isArray(root.state.notifications)) root.state.notifications = [];
       if (!root.state.unread || typeof root.state.unread !== "object") {
-        root.state.unread = { messages: 0, gallery: 0, notes: 0, social: 0, spicy: 0, creator: 0 };
+        root.state.unread = { messages: 0, gallery: 0, notes: 0, social: 0, creator: 0 };
       }
       if (!Array.isArray(root.state.notes)) root.state.notes = [];
       if (!Array.isArray(root.state.social)) root.state.social = [];
       if (!Array.isArray(root.state.socialFollowing)) root.state.socialFollowing = [];
-      for (const key of ["messages", "gallery", "notes", "social", "spicy", "creator"]) {
+      for (const key of ["messages", "gallery", "notes", "social", "creator"]) {
         if (typeof root.state.unread[key] !== "number") root.state.unread[key] = 0;
       }
       if (typeof root.state.sinceEvent !== "number") root.state.sinceEvent = 0;
@@ -4133,173 +4130,6 @@ REPLY (text only):`;
     }
   };
 
-  // apps/spicy.js
-  var CATEGORIES = ["\u0412\u0441\u0435", "\u041D\u043E\u0432\u043E\u0435", "\u0422\u0440\u0435\u043D\u0434\u044B", "\u0421\u043C\u043E\u0442\u0440\u0435\u0442\u044C \u043F\u043E\u0437\u0436\u0435"];
-  var SpicyApp = class {
-    static {
-      __name(this, "SpicyApp");
-    }
-    constructor(context, storage2, imageGen2) {
-      this.context = context;
-      this.storage = storage2;
-      this.imageGen = imageGen2;
-      this.id = "spicy";
-      this.title = "Spicy Hub";
-      this.icon = ICONS.spicy;
-      this._filter = "\u0412\u0441\u0435";
-      this._busy = /* @__PURE__ */ new Set();
-    }
-    render(container) {
-      const state = this.storage.getState();
-      const items = state.spicy || [];
-      container.innerHTML = "";
-      container.appendChild(this._buildTopBar());
-      if (items.length === 0) {
-        container.innerHTML += `
-                <div class="astral-empty-state">
-                    <div class="astral-empty-state-icon">${ICONS.spicy}</div>
-                    <div>\u041B\u0435\u043D\u0442\u0430 \u043F\u0443\u0441\u0442\u0430</div>
-                    <div style="margin-top:10px;opacity:.7">\u0420\u043E\u043B\u0438\u043A\u0438 \u043F\u043E\u044F\u0432\u044F\u0442\u0441\u044F, \u043A\u043E\u0433\u0434\u0430 \u043F\u0435\u0440\u0441\u043E\u043D\u0430\u0436 \u0447\u0442\u043E-\u043D\u0438\u0431\u0443\u0434\u044C \u0432\u044B\u043B\u043E\u0436\u0438\u0442</div>
-                </div>`;
-        return;
-      }
-      const filtered = this._applyFilter(items);
-      const feed = document.createElement("div");
-      feed.className = "astral-card-feed";
-      filtered.forEach((item) => feed.appendChild(this._renderCard(item, items.indexOf(item))));
-      container.appendChild(feed);
-    }
-    _buildTopBar() {
-      const bar = document.createElement("div");
-      bar.className = "astral-chips";
-      for (const cat of CATEGORIES) {
-        const chip = document.createElement("button");
-        chip.className = "astral-chip" + (cat === this._filter ? " astral-chip--on" : "");
-        chip.textContent = cat;
-        chip.addEventListener("click", () => {
-          this._filter = cat;
-          this.render(document.querySelector(".astral-phone-body"));
-        });
-        bar.appendChild(chip);
-      }
-      return bar;
-    }
-    _applyFilter(items) {
-      if (this._filter === "\u041D\u043E\u0432\u043E\u0435") return [...items].sort((a, b) => b.timestamp - a.timestamp);
-      if (this._filter === "\u0422\u0440\u0435\u043D\u0434\u044B") return [...items].sort((a, b) => (b.views || 0) - (a.views || 0));
-      return items;
-    }
-    _renderCard(item, idx) {
-      const card = document.createElement("div");
-      card.className = "astral-card";
-      const busy = this._busy.has(idx);
-      const media = item.thumbnailUrl ? `<img class="astral-card-media" src="${item.thumbnailUrl}" alt="" loading="lazy">
-               <div class="astral-card-duration">${this._esc(item.duration || "12:04")}</div>` : `<div class="astral-card-media astral-card-media--empty">
-                    <div class="astral-card-empty-inner">
-                        <div class="astral-card-empty-icon">${ICONS.spicy}</div>
-                        <button class="astral-btn" data-gen="${idx}" ${busy ? "disabled" : ""}>
-                            ${busy ? "\u0413\u0435\u043D\u0435\u0440\u0430\u0446\u0438\u044F\u2026" : "\u0421\u043E\u0437\u0434\u0430\u0442\u044C \u043F\u0440\u0435\u0432\u044C\u044E"}
-                        </button>
-                    </div>
-               </div>`;
-      card.innerHTML = `
-            ${media}
-            <div class="astral-card-body">
-                <div class="astral-card-title">${this._esc(item.title || item.description)}</div>
-                <div class="astral-card-meta">
-                    <span>${this._n(item.views)} \u043F\u0440\u043E\u0441\u043C\u043E\u0442\u0440\u043E\u0432</span>
-                    <span>${this._n(item.likes)} \u2764</span>
-                    <span>${this._ago(item.timestamp)}</span>
-                </div>
-                ${item.tags?.length ? `<div class="astral-card-tags">${item.tags.map((t) => `<span class="astral-tag">#${this._esc(t)}</span>`).join("")}</div>` : ""}
-            </div>
-        `;
-      const btn = card.querySelector(`[data-gen="${idx}"]`);
-      if (btn && !busy) {
-        btn.addEventListener("click", async (e) => {
-          e.stopPropagation();
-          await this._generate(idx);
-        });
-      }
-      return card;
-    }
-    async _generate(index) {
-      if (!this.imageGen.isAvailable()) {
-        error("Haruspics \u043D\u0435 \u0443\u0441\u0442\u0430\u043D\u043E\u0432\u043B\u0435\u043D");
-        return;
-      }
-      if (this._busy.has(index)) return;
-      this._busy.add(index);
-      info("\u0413\u0435\u043D\u0435\u0440\u0438\u0440\u0443\u044E \u043F\u0440\u0435\u0432\u044C\u044E\u2026");
-      try {
-        const state = this.storage.getState();
-        const item = state.spicy[index];
-        if (!item) return;
-        const style = resolveStyle(this.imageGen) || String(item.style || "");
-        const base = [item.character, item.description].filter(Boolean).join(", ");
-        const prompt2 = ensureStyle(base, style);
-        console.log("[Spicy] prompt:", prompt2);
-        const url = await this.imageGen.generate(prompt2, {
-          character: item.character,
-          type: "spicy_thumbnail",
-          nsfw: true,
-          style
-        });
-        if (style) state.spicy[index].style = style;
-        state.spicy[index].thumbnailUrl = url;
-        this.storage.save();
-        success("\u0413\u043E\u0442\u043E\u0432\u043E");
-      } catch (err) {
-        console.error("[Spicy] generation failed:", err);
-        handleImageGenerationError(err);
-      } finally {
-        this._busy.delete(index);
-        this.render(document.querySelector(".astral-phone-body"));
-      }
-    }
-    async handleEvent(eventData) {
-      const state = this.storage.getState();
-      const meta = eventData.metadata || {};
-      state.spicy.push({
-        character: eventData.character || this.context.name2 || "",
-        title: meta.title || this._titleFrom(eventData.description),
-        description: eventData.description || "",
-        timestamp: Date.now(),
-        thumbnailUrl: null,
-        views: this._rand(400, 4e4),
-        likes: this._rand(10, 2400),
-        duration: `${this._rand(3, 24)}:${String(this._rand(0, 59)).padStart(2, "0")}`,
-        tags: meta.tags || []
-      });
-      this.storage.save();
-      return { success: true, message: "\u0420\u043E\u043B\u0438\u043A \u0434\u043E\u0431\u0430\u0432\u043B\u0435\u043D \u0432 Spicy Hub" };
-    }
-    _titleFrom(desc = "") {
-      const clean2 = String(desc).trim();
-      if (!clean2) return "\u0431\u0435\u0437 \u043D\u0430\u0437\u0432\u0430\u043D\u0438\u044F";
-      const first = clean2.split(/[.,;—]/)[0].trim();
-      return first.length > 42 ? first.slice(0, 42) + "\u2026" : first;
-    }
-    _rand(min, max) {
-      return Math.floor(Math.random() * (max - min + 1)) + min;
-    }
-    _n(num) {
-      if (!num) return "0";
-      if (num >= 1e6) return (num / 1e6).toFixed(1) + "M";
-      if (num >= 1e3) return (num / 1e3).toFixed(1) + "K";
-      return String(num);
-    }
-    _ago(ts) {
-      const diff = Date.now() - ts;
-      if (diff < 36e5) return `${Math.floor(diff / 6e4)} \u043C\u0438\u043D`;
-      if (diff < 864e5) return `${Math.floor(diff / 36e5)} \u0447`;
-      return `${Math.floor(diff / 864e5)} \u0434\u043D`;
-    }
-    _esc(str) {
-      return String(str ?? "").replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" })[c]);
-    }
-  };
-
   // apps/creator.js
   var TABS = [
     { id: "profile", label: "\u041F\u0440\u043E\u0444\u0438\u043B\u044C" },
@@ -6955,7 +6785,6 @@ CREATOR STUDIO \u2014 \u0442\u043E\u043B\u044C\u043A\u043E \u0435\u0441\u043B\u0
       messages: [...currentState.messages || []],
       social: [...currentState.social || []],
       gallery: [...currentState.gallery || []],
-      spicy: [...currentState.spicy || []],
       notes: [...currentState.notes || []],
       creator: currentState.creator ? { ...currentState.creator } : null
     };
@@ -7071,17 +6900,6 @@ CREATOR STUDIO \u2014 \u0442\u043E\u043B\u044C\u043A\u043E \u0435\u0441\u043B\u0
               });
             }
           } else if (type === "spicy_posted") {
-            const id = `scan_${timestamp}_${Math.random().toString(36).slice(2, 7)}`;
-            if (!recovered.spicy.some((s) => s.id === id)) {
-              recovered.spicy.push({
-                id,
-                character: normalized.character,
-                title: normalized.metadata?.title || "Video",
-                description: normalized.description,
-                timestamp,
-                thumbnailUrl: null
-              });
-            }
           }
         }
       } catch (err) {
@@ -7112,13 +6930,6 @@ CREATOR STUDIO \u2014 \u0442\u043E\u043B\u044C\u043A\u043E \u0435\u0441\u043B\u0
       if (!photo.id || !currentPhotoIds.has(photo.id)) {
         if (!merged.gallery) merged.gallery = [];
         merged.gallery.push(photo);
-      }
-    }
-    const currentSpicyIds = new Set((merged.spicy || []).map((s) => s.id).filter(Boolean));
-    for (const item of recovered.spicy || []) {
-      if (!item.id || !currentSpicyIds.has(item.id)) {
-        if (!merged.spicy) merged.spicy = [];
-        merged.spicy.push(item);
       }
     }
     const currentNoteIds = new Set((merged.notes || []).map((n) => n.id).filter(Boolean));
@@ -7278,7 +7089,7 @@ CREATOR STUDIO \u2014 \u0442\u043E\u043B\u044C\u043A\u043E \u0435\u0441\u043B\u0
   var stopTimers = null;
   var PROMPT_BLOCK = `[Astral Phone \u2014 \u0438\u043D\u0442\u0435\u0440\u0444\u0435\u0439\u0441 \u0442\u0435\u043B\u0435\u0444\u043E\u043D\u0430 \u043F\u0435\u0440\u0441\u043E\u043D\u0430\u0436\u0430]
 
-\u0423 \u043F\u0435\u0440\u0441\u043E\u043D\u0430\u0436\u0430 \u0435\u0441\u0442\u044C \u0441\u043C\u0430\u0440\u0442\u0444\u043E\u043D. \u041F\u0440\u0438\u043B\u043E\u0436\u0435\u043D\u0438\u044F: Messages (\u043F\u0435\u0440\u0435\u043F\u0438\u0441\u043A\u0430), Gallery (\u0444\u043E\u0442\u043E), Notes (\u043B\u0438\u0447\u043D\u044B\u0439 \u0434\u043D\u0435\u0432\u043D\u0438\u043A), Social (\u043F\u0443\u0431\u043B\u0438\u0447\u043D\u0430\u044F \u043B\u0435\u043D\u0442\u0430), Spicy Hub (\u0430\u043D\u043E\u043D\u0438\u043C\u043D\u0430\u044F \u043B\u0435\u043D\u0442\u0430), Creator Studio (\u043F\u043B\u0430\u0442\u043D\u044B\u0439 \u043A\u043E\u043D\u0442\u0435\u043D\u0442 \u0441 \u043F\u043E\u0434\u043F\u0438\u0441\u0447\u0438\u043A\u0430\u043C\u0438 \u0438 \u0434\u043E\u0445\u043E\u0434\u043E\u043C).
+\u0423 \u043F\u0435\u0440\u0441\u043E\u043D\u0430\u0436\u0430 \u0435\u0441\u0442\u044C \u0441\u043C\u0430\u0440\u0442\u0444\u043E\u043D. \u041F\u0440\u0438\u043B\u043E\u0436\u0435\u043D\u0438\u044F: Messages (\u043F\u0435\u0440\u0435\u043F\u0438\u0441\u043A\u0430), Gallery (\u0444\u043E\u0442\u043E), Notes (\u043B\u0438\u0447\u043D\u044B\u0439 \u0434\u043D\u0435\u0432\u043D\u0438\u043A), Social (\u043F\u0443\u0431\u043B\u0438\u0447\u043D\u0430\u044F \u043B\u0435\u043D\u0442\u0430), Creator Studio (\u043F\u043B\u0430\u0442\u043D\u044B\u0439 \u043A\u043E\u043D\u0442\u0435\u043D\u0442 \u0441 \u043F\u043E\u0434\u043F\u0438\u0441\u0447\u0438\u043A\u0430\u043C\u0438 \u0438 \u0434\u043E\u0445\u043E\u0434\u043E\u043C).
 
 \u041F\u0420\u0410\u0412\u0418\u041B\u041E \u0413\u041B\u0410\u0412\u041D\u041E\u0415: \u0442\u0435\u043B\u0435\u0444\u043E\u043D \u0441\u0443\u0449\u0435\u0441\u0442\u0432\u0443\u0435\u0442 \u0432\u043D\u0435 \u0447\u0430\u0442\u0430. \u0422\u044B \u041D\u0418\u041A\u041E\u0413\u0414\u0410 \u043D\u0435 \u043E\u043F\u0438\u0441\u044B\u0432\u0430\u0435\u0448\u044C \u0442\u0435\u043B\u0435\u0444\u043E\u043D \u0441\u043B\u043E\u0432\u0430\u043C\u0438 \u0432 \u0442\u0435\u043A\u0441\u0442\u0435 \u043E\u0442\u0432\u0435\u0442\u0430 \u2014 \u043D\u0438 \xAB\u043E\u043D \u0434\u043E\u0441\u0442\u0430\u043B \u0442\u0435\u043B\u0435\u0444\u043E\u043D\xBB, \u043D\u0438 \xAB\u0442\u044B \u043F\u043E\u043B\u0443\u0447\u0430\u0435\u0448\u044C \u0441\u043E\u043E\u0431\u0449\u0435\u043D\u0438\u0435\xBB, \u043D\u0438 \xAB\u043E\u043D\u0430 \u0432\u044B\u043B\u043E\u0436\u0438\u043B\u0430 \u0444\u043E\u0442\u043E\xBB. \u0422\u044B \u0432\u044B\u0437\u044B\u0432\u0430\u0435\u0448\u044C \u0438\u043D\u0441\u0442\u0440\u0443\u043C\u0435\u043D\u0442 phone_event, \u0438 \u0441\u043E\u0431\u044B\u0442\u0438\u0435 \u0441\u0430\u043C\u043E \u043F\u043E\u044F\u0432\u0438\u0442\u0441\u044F \u0432 \u043D\u0443\u0436\u043D\u043E\u043C \u043F\u0440\u0438\u043B\u043E\u0436\u0435\u043D\u0438\u0438. \u0415\u0441\u043B\u0438 \u0442\u044B \u043D\u0430\u043F\u0438\u0441\u0430\u043B \u0432 \u0442\u0435\u043A\u0441\u0442\u0435 \xAB\u043E\u043D \u0432\u0437\u044F\u043B \u0442\u0435\u043B\u0435\u0444\u043E\u043D\xBB \u2014 \u0441\u043E\u0431\u044B\u0442\u0438\u0435 \u043D\u0435 \u043F\u043E\u044F\u0432\u0438\u0442\u0441\u044F, \u043F\u043E\u0442\u043E\u043C\u0443 \u0447\u0442\u043E \u043D\u0438\u043A\u0442\u043E \u0435\u0433\u043E \u043D\u0435 \u0441\u043E\u0437\u0434\u0430\u043B.
 
@@ -7291,10 +7102,12 @@ CREATOR STUDIO \u2014 \u0442\u043E\u043B\u044C\u043A\u043E \u0435\u0441\u043B\u0
 \u0422\u0438\u043F\u044B \u0441\u043E\u0431\u044B\u0442\u0438\u0439:
 - photo_taken \u2014 \u043F\u0435\u0440\u0441\u043E\u043D\u0430\u0436 \u0441\u0444\u043E\u0442\u043E\u0433\u0440\u0430\u0444\u0438\u0440\u043E\u0432\u0430\u043B \u0447\u0442\u043E-\u0442\u043E \u0438\u043B\u0438 \u0441\u0434\u0435\u043B\u0430\u043B \u0441\u0435\u043B\u0444\u0438. description = \u0447\u0442\u043E \u0438\u043C\u0435\u043D\u043D\u043E \u0432 \u043A\u0430\u0434\u0440\u0435, \u043A\u043E\u043D\u043A\u0440\u0435\u0442\u043D\u043E \u0438 \u0432\u0438\u0437\u0443\u0430\u043B\u044C\u043D\u043E (\u0432\u043D\u0435\u0448\u043D\u043E\u0441\u0442\u044C, \u043E\u0434\u0435\u0436\u0434\u0430, \u043F\u043E\u0437\u0430, \u043C\u0435\u0441\u0442\u043E, \u0441\u0432\u0435\u0442) \u2014 \u044D\u0442\u043E \u043F\u043E\u0439\u0434\u0451\u0442 \u0432 \u043F\u0440\u043E\u043C\u043F\u0442 \u0433\u0435\u043D\u0435\u0440\u0430\u0446\u0438\u0438 \u043A\u0430\u0440\u0442\u0438\u043D\u043A\u0438.
 - message_received \u2014 \u043F\u0435\u0440\u0441\u043E\u043D\u0430\u0436 \u043D\u0430\u043F\u0438\u0441\u0430\u043B \u0442\u0435\u0431\u0435 \u0441\u043E\u043E\u0431\u0449\u0435\u043D\u0438\u0435. description = \u0442\u0435\u043A\u0441\u0442 \u0441\u043E\u043E\u0431\u0449\u0435\u043D\u0438\u044F, \u043A\u043E\u0440\u043E\u0442\u043A\u043E, \u043A\u0430\u043A \u0440\u0435\u0430\u043B\u044C\u043D\u043E\u0435 \u0441\u043E\u043E\u0431\u0449\u0435\u043D\u0438\u0435 \u0432 \u0447\u0430\u0442\u0435.
-- spicy_posted \u2014 \u043F\u0435\u0440\u0441\u043E\u043D\u0430\u0436 \u0432\u044B\u043B\u043E\u0436\u0438\u043B \u043E\u0442\u043A\u0440\u043E\u0432\u0435\u043D\u043D\u044B\u0439 \u0440\u043E\u043B\u0438\u043A \u0432 Spicy Hub. description = \u043D\u0430\u0437\u0432\u0430\u043D\u0438\u0435 \u0438 \u0441\u0443\u0442\u044C \u0440\u043E\u043B\u0438\u043A\u0430 \u043F\u043B\u044E\u0441 \u0432\u0438\u0437\u0443\u0430\u043B\u044C\u043D\u043E\u0435 \u043E\u043F\u0438\u0441\u0430\u043D\u0438\u0435 \u043A\u0430\u0434\u0440\u0430 \u0434\u043B\u044F \u043F\u0440\u0435\u0432\u044C\u044E.
 - content_posted \u2014 \u043F\u0435\u0440\u0441\u043E\u043D\u0430\u0436 \u0432\u044B\u043B\u043E\u0436\u0438\u043B \u043F\u043E\u0441\u0442 \u0432 Creator Studio. description = \u043F\u043E\u0434\u043F\u0438\u0441\u044C \u043A \u043F\u043E\u0441\u0442\u0443 \u043F\u043B\u044E\u0441 \u0432\u0438\u0437\u0443\u0430\u043B\u044C\u043D\u043E\u0435 \u043E\u043F\u0438\u0441\u0430\u043D\u0438\u0435 \u043A\u0430\u0434\u0440\u0430.
 - note_written \u2014 \u043F\u0435\u0440\u0441\u043E\u043D\u0430\u0436 \u0441\u0434\u0435\u043B\u0430\u043B \u043F\u0440\u0438\u0432\u0430\u0442\u043D\u0443\u044E \u0437\u0430\u043F\u0438\u0441\u044C \u0432 Notes (\u0434\u043D\u0435\u0432\u043D\u0438\u043A, \u043F\u043B\u0430\u043D, \u0441\u0435\u043A\u0440\u0435\u0442). description = \u0442\u0435\u043A\u0441\u0442 \u0437\u0430\u043F\u0438\u0441\u0438 \u043E\u0442 \u043F\u0435\u0440\u0432\u043E\u0433\u043E \u043B\u0438\u0446\u0430, \u043A\u0430\u043A \u043E\u043D \u0434\u0443\u043C\u0430\u0435\u0442. metadata.title = \u043A\u043E\u0440\u043E\u0442\u043A\u0438\u0439 \u0437\u0430\u0433\u043E\u043B\u043E\u0432\u043E\u043A, kind = diary|plan|secret|note.
 - social_post \u2014 \u043F\u0435\u0440\u0441\u043E\u043D\u0430\u0436 \u043D\u0430\u043F\u0438\u0441\u0430\u043B \u043F\u0443\u0431\u043B\u0438\u0447\u043D\u044B\u0439 \u043F\u043E\u0441\u0442 \u0432 \u0441\u043E\u0446\u0441\u0435\u0442\u0438. description = \u0442\u0435\u043A\u0441\u0442 \u043F\u043E\u0441\u0442\u0430, \u043A\u043E\u0440\u043E\u0442\u043A\u043E \u0438 \u0432 \u0435\u0433\u043E \u0433\u043E\u043B\u043E\u0441\u0435.
+- social_like \u2014 \u041D\u041F\u0421 \u043B\u0430\u0439\u043A\u043D\u0443\u043B \u043F\u043E\u0441\u0442 \u044E\u0437\u0435\u0440\u0430. character = \u043A\u0442\u043E \u043B\u0430\u0439\u043A\u043D\u0443\u043B.
+- social_comment \u2014 \u041D\u041F\u0421 \u043F\u0440\u043E\u043A\u043E\u043C\u043C\u0435\u043D\u0442\u0438\u0440\u043E\u0432\u0430\u043B \u043F\u043E\u0441\u0442. description = \u0442\u0435\u043A\u0441\u0442 \u043A\u043E\u043C\u043C\u0435\u043D\u0442\u0430\u0440\u0438\u044F.
+- social_follow \u2014 \u041D\u041F\u0421 \u043F\u043E\u0434\u043F\u0438\u0441\u0430\u043B\u0441\u044F \u043D\u0430 \u044E\u0437\u0435\u0440\u0430.
 - donation_received \u2014 \u0444\u0430\u043D\u0430\u0442 \u0437\u0430\u0434\u043E\u043D\u0430\u0442\u0438\u043B. metadata.amount = \u0441\u0443\u043C\u043C\u0430 \u0432 \u0434\u043E\u043B\u043B\u0430\u0440\u0430\u0445.
 - subscriber_joined \u2014 \u043D\u043E\u0432\u044B\u0439 \u043F\u043E\u0434\u043F\u0438\u0441\u0447\u0438\u043A. metadata.count = \u0441\u043A\u043E\u043B\u044C\u043A\u043E.
 
@@ -7309,7 +7122,7 @@ description \u043F\u0438\u0448\u0438 \u043A\u0430\u043A \u043F\u0440\u043E\u043C
 
 \u041F\u043E\u043B\u044C\u0437\u043E\u0432\u0430\u0442\u0435\u043B\u044C \u043C\u043E\u0436\u0435\u0442 \u0441\u0430\u043C \u043F\u0438\u0441\u0430\u0442\u044C \u0441 \u0442\u0435\u043B\u0435\u0444\u043E\u043D\u0430: \u0432 \u0431\u043B\u043E\u043A\u0435 [Astral Phone \u2014 \u043F\u0435\u0440\u0435\u043F\u0438\u0441\u043A\u0430] \u0441\u043E\u043E\u0431\u0449\u0435\u043D\u0438\u044F \u043E\u0442 \u043D\u0435\u0433\u043E \u043F\u043E\u043C\u0435\u0447\u0435\u043D\u044B \u043A\u0430\u043A \xAB\u0422\u044B\xBB. \u0415\u0441\u043B\u0438 \u0442\u0430\u043C \u0435\u0441\u0442\u044C \u0435\u0433\u043E \u043D\u043E\u0432\u044B\u0435 \u0441\u043E\u043E\u0431\u0449\u0435\u043D\u0438\u044F, \u043D\u0430 \u043A\u043E\u0442\u043E\u0440\u044B\u0435 \u043F\u0435\u0440\u0441\u043E\u043D\u0430\u0436 \u0435\u0449\u0451 \u043D\u0435 \u043E\u0442\u0432\u0435\u0442\u0438\u043B \u2014 \u043E\u0442\u0440\u0435\u0430\u0433\u0438\u0440\u0443\u0439 \u043D\u0430 \u043D\u0438\u0445 \u0447\u0435\u0440\u0435\u0437 message_received: \u043F\u0435\u0440\u0441\u043E\u043D\u0430\u0436 \u043F\u0440\u043E\u0447\u0438\u0442\u0430\u043B \u0438 \u043E\u0442\u0432\u0435\u0442\u0438\u043B. \u041D\u0435 \u0438\u0433\u043D\u043E\u0440\u0438\u0440\u0443\u0439 \u0438\u0445.
 
-\u041F\u0435\u0440\u0435\u043F\u0438\u0441\u043A\u0438 \u043F\u0435\u0440\u0441\u043E\u043D\u0430\u0436\u0430 \u2014 \u0447\u0430\u0441\u0442\u044C \u0435\u0433\u043E \u0432\u043D\u0443\u0442\u0440\u0435\u043D\u043D\u0435\u0433\u043E \u043C\u0438\u0440\u0430. \u041E\u043D\u0438 \u0432\u043B\u0438\u044F\u044E\u0442 \u043D\u0430 \u0435\u0433\u043E \u043E\u0442\u043D\u043E\u0448\u0435\u043D\u0438\u044F, \u043C\u043E\u0442\u0438\u0432\u0430\u0446\u0438\u044E \u0438 \u044D\u043C\u043E\u0446\u0438\u0438 \u0432 \u0441\u0446\u0435\u043D\u0435. \u0415\u0441\u043B\u0438 \u043E\u043D \u043F\u043E\u043B\u0443\u0447\u0430\u0435\u0442 \u0441\u043E\u043E\u0431\u0449\u0435\u043D\u0438\u0435 \u043E\u0442 \u0431\u043B\u0438\u0437\u043A\u043E\u0433\u043E \u0447\u0435\u043B\u043E\u0432\u0435\u043A\u0430 \u0438\u043B\u0438 \u0432\u0440\u0430\u0433\u0430, \u044D\u0442\u043E \u0434\u043E\u043B\u0436\u043D\u043E \u043E\u0442\u0440\u0430\u0437\u0438\u0442\u044C\u0441\u044F \u043D\u0430 \u0435\u0433\u043E \u043F\u043E\u0432\u0435\u0434\u0435\u043D\u0438\u0438 \u0438 \u0434\u0438\u0430\u043B\u043E\u0433\u0435 \u0441 \u0442\u043E\u0431\u043E\u0439. \u0415\u0441\u043B\u0438 \u0432 \u0421\u043F\u0430\u0439\u0441\u0438 \u0425\u0430\u0431\u0435 \u043C\u043D\u043E\u0433\u043E \u043D\u0435\u043B\u0435\u0441\u0442\u043D\u044B\u0445 \u043A\u043E\u043C\u043C\u0435\u043D\u0442\u0430\u0440\u0438\u0435\u0432, \u044D\u0442\u043E \u043C\u043E\u0436\u0435\u0442 \u0435\u0433\u043E \u0440\u0430\u0441\u0441\u0442\u0440\u043E\u0438\u0442\u044C. \u0418\u0441\u043F\u043E\u043B\u044C\u0437\u0443\u0439 \u0438\u043D\u0444\u043E\u0440\u043C\u0430\u0446\u0438\u044E \u0438\u0437 \u0442\u0435\u043B\u0435\u0444\u043E\u043D\u0430, \u0447\u0442\u043E\u0431\u044B \u0434\u043E\u0431\u0430\u0432\u0438\u0442\u044C \u0433\u043B\u0443\u0431\u0438\u043D\u0443 RP.`;
+\u041F\u0435\u0440\u0435\u043F\u0438\u0441\u043A\u0438 \u043F\u0435\u0440\u0441\u043E\u043D\u0430\u0436\u0430 \u2014 \u0447\u0430\u0441\u0442\u044C \u0435\u0433\u043E \u0432\u043D\u0443\u0442\u0440\u0435\u043D\u043D\u0435\u0433\u043E \u043C\u0438\u0440\u0430. \u041E\u043D\u0438 \u0432\u043B\u0438\u044F\u044E\u0442 \u043D\u0430 \u0435\u0433\u043E \u043E\u0442\u043D\u043E\u0448\u0435\u043D\u0438\u044F, \u043C\u043E\u0442\u0438\u0432\u0430\u0446\u0438\u044E \u0438 \u044D\u043C\u043E\u0446\u0438\u0438 \u0432 \u0441\u0446\u0435\u043D\u0435. \u0415\u0441\u043B\u0438 \u043E\u043D \u043F\u043E\u043B\u0443\u0447\u0430\u0435\u0442 \u0441\u043E\u043E\u0431\u0449\u0435\u043D\u0438\u0435 \u043E\u0442 \u0431\u043B\u0438\u0437\u043A\u043E\u0433\u043E \u0447\u0435\u043B\u043E\u0432\u0435\u043A\u0430 \u0438\u043B\u0438 \u0432\u0440\u0430\u0433\u0430, \u044D\u0442\u043E \u0434\u043E\u043B\u0436\u043D\u043E \u043E\u0442\u0440\u0430\u0437\u0438\u0442\u044C\u0441\u044F \u043D\u0430 \u0435\u0433\u043E \u043F\u043E\u0432\u0435\u0434\u0435\u043D\u0438\u0438 \u0438 \u0434\u0438\u0430\u043B\u043E\u0433\u0435 \u0441 \u0442\u043E\u0431\u043E\u0439. \u0418\u0441\u043F\u043E\u043B\u044C\u0437\u0443\u0439 \u0438\u043D\u0444\u043E\u0440\u043C\u0430\u0446\u0438\u044E \u0438\u0437 \u0442\u0435\u043B\u0435\u0444\u043E\u043D\u0430, \u0447\u0442\u043E\u0431\u044B \u0434\u043E\u0431\u0430\u0432\u0438\u0442\u044C \u0433\u043B\u0443\u0431\u0438\u043D\u0443 RP.`;
   function init() {
     if (initialized) return;
     const context = SillyTavern.getContext();
@@ -7323,7 +7136,6 @@ description \u043F\u0438\u0448\u0438 \u043A\u0430\u043A \u043F\u0440\u043E\u043C
     const apps = [
       ["messages", () => new MessagesApp(context, storage, imageGen)],
       ["gallery", () => new GalleryApp(context, storage, imageGen)],
-      ["spicy", () => new SpicyApp(context, storage, imageGen)],
       ["notes", () => new NotesApp(context, storage, imageGen)],
       ["social", () => new SocialApp(context, storage, imageGen)],
       ["creator", () => new CreatorApp(context, storage, imageGen)],
@@ -7488,7 +7300,7 @@ description \u043F\u0438\u0448\u0438 \u043A\u0430\u043A \u043F\u0440\u043E\u043C
         const label = {
           photo_taken: "\u0441\u0434\u0435\u043B\u0430\u043B \u0444\u043E\u0442\u043E",
           message_received: "\u043D\u0430\u043F\u0438\u0441\u0430\u043B \u0441\u043E\u043E\u0431\u0449\u0435\u043D\u0438\u0435",
-          spicy_posted: "\u0432\u044B\u043B\u043E\u0436\u0438\u043B \u0440\u043E\u043B\u0438\u043A",
+          spicy_posted: "\u0432\u044B\u043B\u043E\u0436\u0438\u043B \u0440\u043E\u043B\u0438\u043A (\u0443\u0441\u0442\u0430\u0440\u0435\u0432\u0448\u0438\u0439 \u0442\u0438\u043F)",
           content_posted: "\u0432\u044B\u043B\u043E\u0436\u0438\u043B \u043F\u043E\u0441\u0442",
           note_written: "\u0437\u0430\u043F\u0438\u0441\u0430\u043B \u0432 \u0434\u043D\u0435\u0432\u043D\u0438\u043A\u0435",
           social_post: "\u043D\u0430\u043F\u0438\u0441\u0430\u043B \u043F\u043E\u0441\u0442",

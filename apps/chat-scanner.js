@@ -19,7 +19,6 @@ export function scanChatHistory(chat, currentState = {}) {
         messages: [...(currentState.messages || [])],
         social: [...(currentState.social || [])],
         gallery: [...(currentState.gallery || [])],
-        spicy: [...(currentState.spicy || [])],
         notes: [...(currentState.notes || [])],
         creator: currentState.creator ? { ...currentState.creator } : null,
     };
@@ -159,20 +158,8 @@ export function scanChatHistory(chat, currentState = {}) {
                     }
                 }
                 
-                else if (type === 'spicy_posted') {
-                    // Spicy Hub
-                    const id = `scan_${timestamp}_${Math.random().toString(36).slice(2, 7)}`;
-                    if (!recovered.spicy.some(s => s.id === id)) {
-                        recovered.spicy.push({
-                            id,
-                            character: normalized.character,
-                            title: normalized.metadata?.title || 'Video',
-                            description: normalized.description,
-                            timestamp,
-                            thumbnailUrl: null,
-                        });
-                    }
-                }
+                // spicy_posted — устаревший тип, игнорируем
+                else if (type === 'spicy_posted') { /* skip */ }
             }
         } catch (err) {
             console.warn('[Astral Phone] scan error at message', i, ':', err);
@@ -215,16 +202,7 @@ export function mergeRecoveredState(current, recovered) {
             merged.gallery.push(photo);
         }
     }
-    
-    // Spicy
-    const currentSpicyIds = new Set((merged.spicy || []).map(s => s.id).filter(Boolean));
-    for (const item of (recovered.spicy || [])) {
-        if (!item.id || !currentSpicyIds.has(item.id)) {
-            if (!merged.spicy) merged.spicy = [];
-            merged.spicy.push(item);
-        }
-    }
-    
+
     // Notes
     const currentNoteIds = new Set((merged.notes || []).map(n => n.id).filter(Boolean));
     for (const note of (recovered.notes || [])) {

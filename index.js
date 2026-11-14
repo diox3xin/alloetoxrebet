@@ -10,7 +10,6 @@ import { PhoneStorage } from './apps/storage.js';
 import { ImageGenerator } from './apps/image-gen.js';
 import { MessagesApp } from './apps/messages.js';
 import { GalleryApp } from './apps/gallery.js';
-import { SpicyApp } from './apps/spicy.js';
 import { CreatorApp } from './apps/creator.js';
 import { SettingsApp } from './apps/settings.js';
 import { NotesApp } from './apps/notes.js';
@@ -42,7 +41,7 @@ let stopTimers = null; // функция для остановки таймер�
 
 const PROMPT_BLOCK = `[Astral Phone — интерфейс телефона персонажа]
 
-У персонажа есть смартфон. Приложения: Messages (переписка), Gallery (фото), Notes (личный дневник), Social (публичная лента), Spicy Hub (анонимная лента), Creator Studio (платный контент с подписчиками и доходом).
+У персонажа есть смартфон. Приложения: Messages (переписка), Gallery (фото), Notes (личный дневник), Social (публичная лента), Creator Studio (платный контент с подписчиками и доходом).
 
 ПРАВИЛО ГЛАВНОЕ: телефон существует вне чата. Ты НИКОГДА не описываешь телефон словами в тексте ответа — ни «он достал телефон», ни «ты получаешь сообщение», ни «она выложила фото». Ты вызываешь инструмент phone_event, и событие само появится в нужном приложении. Если ты написал в тексте «он взял телефон» — событие не появится, потому что никто его не создал.
 
@@ -55,10 +54,12 @@ const PROMPT_BLOCK = `[Astral Phone — интерфейс телефона пе
 Типы событий:
 - photo_taken — персонаж сфотографировал что-то или сделал селфи. description = что именно в кадре, конкретно и визуально (внешность, одежда, поза, место, свет) — это пойдёт в промпт генерации картинки.
 - message_received — персонаж написал тебе сообщение. description = текст сообщения, коротко, как реальное сообщение в чате.
-- spicy_posted — персонаж выложил откровенный ролик в Spicy Hub. description = название и суть ролика плюс визуальное описание кадра для превью.
 - content_posted — персонаж выложил пост в Creator Studio. description = подпись к посту плюс визуальное описание кадра.
 - note_written — персонаж сделал приватную запись в Notes (дневник, план, секрет). description = текст записи от первого лица, как он думает. metadata.title = короткий заголовок, kind = diary|plan|secret|note.
 - social_post — персонаж написал публичный пост в соцсети. description = текст поста, коротко и в его голосе.
+- social_like — НПС лайкнул пост юзера. character = кто лайкнул.
+- social_comment — НПС прокомментировал пост. description = текст комментария.
+- social_follow — НПС подписался на юзера.
 - donation_received — фанат задонатил. metadata.amount = сумма в долларах.
 - subscriber_joined — новый подписчик. metadata.count = сколько.
 
@@ -73,7 +74,7 @@ description пиши как промпт для художника: без ме�
 
 Пользователь может сам писать с телефона: в блоке [Astral Phone — переписка] сообщения от него помечены как «Ты». Если там есть его новые сообщения, на которые персонаж ещё не ответил — отреагируй на них через message_received: персонаж прочитал и ответил. Не игнорируй их.
 
-Переписки персонажа — часть его внутреннего мира. Они влияют на его отношения, мотивацию и эмоции в сцене. Если он получает сообщение от близкого человека или врага, это должно отразиться на его поведении и диалоге с тобой. Если в Спайси Хабе много нелестных комментариев, это может его расстроить. Используй информацию из телефона, чтобы добавить глубину RP.`;
+Переписки персонажа — часть его внутреннего мира. Они влияют на его отношения, мотивацию и эмоции в сцене. Если он получает сообщение от близкого человека или врага, это должно отразиться на его поведении и диалоге с тобой. Используй информацию из телефона, чтобы добавить глубину RP.`;
 
 /* ────────────────────────────── init ────────────────────────────── */
 
@@ -98,7 +99,6 @@ function init() {
     const apps = [
         ['messages', () => new MessagesApp(context, storage, imageGen)],
         ['gallery', () => new GalleryApp(context, storage, imageGen)],
-        ['spicy', () => new SpicyApp(context, storage, imageGen)],
         ['notes', () => new NotesApp(context, storage, imageGen)],
         ['social', () => new SocialApp(context, storage, imageGen)],
         ['creator', () => new CreatorApp(context, storage, imageGen)],
@@ -288,7 +288,7 @@ function registerFunctionTool(context) {
             const label = {
                 photo_taken: 'сделал фото',
                 message_received: 'написал сообщение',
-                spicy_posted: 'выложил ролик',
+                spicy_posted: 'выложил ролик (устаревший тип)',
                 content_posted: 'выложил пост',
                 note_written: 'записал в дневнике',
                 social_post: 'написал пост',
