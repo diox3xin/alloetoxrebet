@@ -7,6 +7,7 @@
 import { ICONS } from './phone-core.js';
 import { showTyping, generateMessage } from './character-gen.js';
 import { handleGenerationError, success, error as showError } from './notifications.js';
+import { openNPCProfile } from './profile-view.js';
 
 export class MessagesApp {
     constructor(context, storage, imageGen) {
@@ -141,7 +142,7 @@ export class MessagesApp {
                     <path d="M19 12H5M5 12l7-7M5 12l7 7"/>
                 </svg>
             </button>
-            <div class="astral-thread-avatar">${this._esc((character[0] || '?').toUpperCase())}</div>
+            <div class="astral-thread-avatar astral-thread-avatar--clickable" id="astral-thread-avatar">${this._esc((character[0] || '?').toUpperCase())}</div>
             <div class="astral-thread-info">
                 <div class="astral-thread-name">${this._esc(character)}</div>
                 ${role ? `<div class="astral-thread-role">${this._esc(role)}</div>` : ''}
@@ -186,6 +187,10 @@ export class MessagesApp {
         header.querySelector('#astral-thread-back').addEventListener('click', () => {
             this._thread = null;
             this.render(document.querySelector('.astral-phone-body'));
+        });
+
+        header.querySelector('#astral-thread-avatar').addEventListener('click', () => {
+            openNPCProfile(character, this.storage, this.context, globalThis.__astralPhoneCore);
         });
 
         header.querySelector('#astral-thread-edit').addEventListener('click', () => {

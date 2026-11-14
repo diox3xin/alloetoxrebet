@@ -328,12 +328,12 @@
     _showLockScreen() {
       try {
         this._removeLockScreen();
-        const phone = this.overlay?.querySelector(".astral-phone");
-        if (!phone) return;
+        const phone2 = this.overlay?.querySelector(".astral-phone");
+        if (!phone2) return;
         this.lockScreen.onCloseRequest = () => this.close();
         const lockEl = this.lockScreen.build();
         lockEl.classList.add("astral-lockscreen--in-frame");
-        phone.appendChild(lockEl);
+        phone2.appendChild(lockEl);
       } catch (err) {
         console.warn("[Astral Phone] lockscreen failed, skipping:", err);
       }
@@ -513,17 +513,17 @@
       header.addEventListener("touchstart", onStart, { passive: true });
       header.addEventListener("touchmove", onMove, { passive: true });
       header.addEventListener("touchend", onEnd, { passive: true });
-      const phone = overlay.querySelector(".astral-phone");
-      if (!phone) return;
+      const phone2 = overlay.querySelector(".astral-phone");
+      if (!phone2) return;
       let edgeX = 0;
       let edgeTracking = false;
-      phone.addEventListener("touchstart", (e) => {
+      phone2.addEventListener("touchstart", (e) => {
         const t = e.touches?.[0];
         if (!t) return;
         edgeTracking = t.clientX < 32;
         edgeX = t.clientX;
       }, { passive: true });
-      phone.addEventListener("touchmove", (e) => {
+      phone2.addEventListener("touchmove", (e) => {
         if (!edgeTracking) return;
         const t = e.touches?.[0];
         if (!t) return;
@@ -532,7 +532,7 @@
           this.close();
         }
       }, { passive: true });
-      phone.addEventListener("touchend", () => {
+      phone2.addEventListener("touchend", () => {
         edgeTracking = false;
       }, { passive: true });
     }
@@ -3540,6 +3540,387 @@ MESSAGE:`;
   }
   __name(escapeHtml2, "escapeHtml");
 
+  // apps/profile-view.js
+  function esc(str) {
+    return String(str ?? "").replace(
+      /[&<>"]/g,
+      (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" })[c]
+    );
+  }
+  __name(esc, "esc");
+  function ago(ts) {
+    if (!ts) return "";
+    const diff = Math.max(0, Date.now() - ts);
+    const m = Math.floor(diff / 6e4);
+    if (m < 1) return "\u0441\u0435\u0439\u0447\u0430\u0441";
+    if (m < 60) return `${m}\u043C`;
+    const h = Math.floor(m / 60);
+    if (h < 24) return `${h}\u0447`;
+    return `${Math.floor(h / 24)}\u0434`;
+  }
+  __name(ago, "ago");
+  function phone() {
+    return document.querySelector(".astral-phone");
+  }
+  __name(phone, "phone");
+  function openUserProfile(storage2, context) {
+    const ph = phone();
+    if (!ph) return;
+    const state = storage2.getState();
+    const saved = state.socialProfile || {};
+    const account = state.account || {};
+    const name = String(saved.displayName || account.name || context?.name1 || "\u0422\u044B").trim();
+    const handle = String(saved.handle || "").trim() || name.toLowerCase().replace(/\s+/g, "_").replace(/[^a-z0-9_]/g, "");
+    const bio = String(saved.bio || account.bio || "").trim();
+    const avatar = account.avatar || null;
+    const myPosts = (state.social || []).filter((p) => p.author === name || p.mine);
+    const followers = (state.socialFollowers || []).length;
+    const following = (state.socialFollowing || []).length;
+    const totalReacts = myPosts.reduce((sum, p) => {
+      return sum + Object.entries(p.reactions || {}).filter(([k]) => k !== "me").reduce((s, [, arr]) => s + (Array.isArray(arr) ? arr.length : 0), 0);
+    }, 0);
+    const avatarHtml = avatar ? `<img src="${esc(avatar)}" class="astral-up-avatar astral-up-avatar--img" alt="" />` : `<div class="astral-up-avatar">${esc((name[0] || "?").toUpperCase())}</div>`;
+    const postsGrid = myPosts.length ? `<div class="astral-up-posts-grid">
+            ${myPosts.slice(0, 9).map((p) => `
+                <div class="astral-up-post-thumb ${p.imageUrl ? "astral-up-post-thumb--img" : ""}">
+                    ${p.imageUrl ? `<img src="${esc(p.imageUrl)}" alt="" />` : `<div class="astral-up-post-text-thumb">${esc((p.text || "").slice(0, 60))}</div>`}
+                </div>
+            `).join("")}
+           </div>` : `<div class="astral-nc-empty" style="padding:20px 0">\u041D\u0435\u0442 \u043F\u0443\u0431\u043B\u0438\u043A\u0430\u0446\u0438\u0439</div>`;
+    const overlay = document.createElement("div");
+    overlay.className = "astral-modal";
+    overlay.innerHTML = `
+        <div class="astral-modal-card astral-modal-card--profile astral-up">
+            <button class="astral-modal-close" id="astral-up-close">\u2715</button>
+
+            <div class="astral-up-hero">
+                <div class="astral-up-avatar-wrap">
+                    ${avatarHtml}
+                    <button class="astral-up-avatar-edit" id="astral-up-avatar-btn" title="\u0421\u043C\u0435\u043D\u0438\u0442\u044C \u0430\u0432\u0430\u0442\u0430\u0440">\u270E</button>
+                </div>
+                <div class="astral-up-info">
+                    <div class="astral-up-name" id="astral-up-name-view">${esc(name)}</div>
+                    <div class="astral-up-handle">@${esc(handle)}</div>
+                    ${bio ? `<div class="astral-up-bio">${esc(bio)}</div>` : ""}
+                    <button class="astral-up-edit-btn" id="astral-up-edit-btn">\u0420\u0435\u0434\u0430\u043A\u0442\u0438\u0440\u043E\u0432\u0430\u0442\u044C</button>
+                </div>
+            </div>
+
+            <div class="astral-up-stats">
+                <div class="astral-up-stat">
+                    <span class="astral-up-stat-val">${myPosts.length}</span>
+                    <span class="astral-up-stat-label">\u043F\u043E\u0441\u0442\u043E\u0432</span>
+                </div>
+                <div class="astral-up-stat">
+                    <span class="astral-up-stat-val">${followers}</span>
+                    <span class="astral-up-stat-label">\u043F\u043E\u0434\u043F\u0438\u0441\u0447\u0438\u043A\u043E\u0432</span>
+                </div>
+                <div class="astral-up-stat">
+                    <span class="astral-up-stat-val">${following}</span>
+                    <span class="astral-up-stat-label">\u043F\u043E\u0434\u043F\u0438\u0441\u043E\u043A</span>
+                </div>
+                <div class="astral-up-stat">
+                    <span class="astral-up-stat-val">${totalReacts}</span>
+                    <span class="astral-up-stat-label">\u0440\u0435\u0430\u043A\u0446\u0438\u0439</span>
+                </div>
+            </div>
+
+            <div class="astral-up-posts-section">
+                <div class="astral-up-section-title">\u041F\u0443\u0431\u043B\u0438\u043A\u0430\u0446\u0438\u0438</div>
+                ${postsGrid}
+            </div>
+        </div>
+    `;
+    ph.appendChild(overlay);
+    const close = /* @__PURE__ */ __name(() => overlay.remove(), "close");
+    overlay.querySelector("#astral-up-close").addEventListener("click", close);
+    overlay.addEventListener("click", (e) => {
+      if (e.target === overlay) close();
+    });
+    overlay.querySelector("#astral-up-edit-btn").addEventListener("click", () => {
+      close();
+      _openUserProfileEditor(storage2, context);
+    });
+    overlay.querySelector("#astral-up-avatar-btn").addEventListener("click", () => {
+      _openAvatarPickerForUser(storage2, context, overlay, close);
+    });
+  }
+  __name(openUserProfile, "openUserProfile");
+  function _openUserProfileEditor(storage2, context) {
+    const ph = phone();
+    if (!ph) return;
+    const state = storage2.getState();
+    const saved = state.socialProfile || {};
+    const account = state.account || {};
+    const name = String(saved.displayName || account.name || context?.name1 || "\u0422\u044B").trim();
+    const handle = String(saved.handle || "").trim();
+    const bio = String(saved.bio || account.bio || "").trim();
+    const overlay = document.createElement("div");
+    overlay.className = "astral-modal";
+    overlay.innerHTML = `
+        <div class="astral-modal-card astral-modal-card--sheet">
+            <div class="astral-modal-title">\u0420\u0435\u0434\u0430\u043A\u0442\u0438\u0440\u043E\u0432\u0430\u0442\u044C \u043F\u0440\u043E\u0444\u0438\u043B\u044C</div>
+
+            <label class="astral-field-label">\u041E\u0442\u043E\u0431\u0440\u0430\u0436\u0430\u0435\u043C\u043E\u0435 \u0438\u043C\u044F</label>
+            <input class="astral-text-input" id="astral-upe-name" type="text"
+                   value="${esc(name)}" placeholder="\u0418\u043C\u044F" />
+
+            <label class="astral-field-label">\u041D\u0438\u043A</label>
+            <div class="astral-handle-input-row">
+                <span class="astral-handle-at">@</span>
+                <input class="astral-text-input" id="astral-upe-handle" type="text"
+                       value="${esc(handle)}" placeholder="${esc(name.toLowerCase().replace(/\s+/g, "_"))}" />
+            </div>
+
+            <label class="astral-field-label">\u041E \u0441\u0435\u0431\u0435</label>
+            <textarea class="astral-text-input astral-text-input--area" id="astral-upe-bio"
+                      rows="3" placeholder="\u041F\u0430\u0440\u0430 \u0441\u043B\u043E\u0432 \u043E \u0441\u0435\u0431\u0435">${esc(bio)}</textarea>
+
+            <div class="astral-modal-actions">
+                <button class="astral-btn" id="astral-upe-cancel">\u041E\u0442\u043C\u0435\u043D\u0430</button>
+                <button class="astral-btn astral-btn-primary" id="astral-upe-save">\u0421\u043E\u0445\u0440\u0430\u043D\u0438\u0442\u044C</button>
+            </div>
+        </div>
+    `;
+    ph.appendChild(overlay);
+    const close = /* @__PURE__ */ __name(() => {
+      overlay.remove();
+      openUserProfile(storage2, context);
+    }, "close");
+    overlay.querySelector("#astral-upe-cancel").addEventListener("click", () => {
+      overlay.remove();
+      openUserProfile(storage2, context);
+    });
+    overlay.addEventListener("click", (e) => {
+      if (e.target === overlay) close();
+    });
+    overlay.querySelector("#astral-upe-save").addEventListener("click", () => {
+      const newName = overlay.querySelector("#astral-upe-name").value.trim();
+      const rawHandle = overlay.querySelector("#astral-upe-handle").value.trim();
+      const newBio = overlay.querySelector("#astral-upe-bio").value.trim();
+      if (!newName) return;
+      const newHandle = rawHandle.replace(/^@/, "").replace(/\s+/g, "_").replace(/[^\p{L}\p{N}_]/gu, "").toLowerCase() || newName.toLowerCase().replace(/\s+/g, "_");
+      const s = storage2.getState();
+      s.socialProfile = { displayName: newName, handle: newHandle, bio: newBio };
+      if (s.account) {
+        s.account.name = newName;
+        s.account.bio = newBio;
+      }
+      storage2.save();
+      try {
+        globalThis.__astralRefreshPrompt?.();
+      } catch {
+      }
+      success("\u041F\u0440\u043E\u0444\u0438\u043B\u044C \u0441\u043E\u0445\u0440\u0430\u043D\u0451\u043D");
+      overlay.remove();
+      openUserProfile(storage2, context);
+    });
+    overlay.querySelector("#astral-upe-name").focus();
+  }
+  __name(_openUserProfileEditor, "_openUserProfileEditor");
+  function _openAvatarPickerForUser(storage2, context, profileOverlay, closeProfile) {
+    const ph = phone();
+    if (!ph) return;
+    const state = storage2.getState();
+    const gallery = (state.gallery || []).filter((p) => p.imageUrl);
+    const overlay = document.createElement("div");
+    overlay.className = "astral-modal";
+    overlay.innerHTML = `
+        <div class="astral-modal-card">
+            <div class="astral-modal-title">\u0410\u0432\u0430\u0442\u0430\u0440</div>
+
+            <label class="astral-field-label">\u0417\u0430\u0433\u0440\u0443\u0437\u0438\u0442\u044C \u0441 \u0443\u0441\u0442\u0440\u043E\u0439\u0441\u0442\u0432\u0430</label>
+            <label class="astral-upload-btn" style="display:block;margin-bottom:12px">
+                <input type="file" accept="image/*" id="astral-ava-file" style="display:none" />
+                <span>\u0412\u044B\u0431\u0440\u0430\u0442\u044C \u0444\u0430\u0439\u043B</span>
+            </label>
+
+            ${gallery.length ? `
+                <label class="astral-field-label">\u0418\u0437 \u0433\u0430\u043B\u0435\u0440\u0435\u0438</label>
+                <div class="astral-composer-gallery-row">
+                    ${gallery.slice(0, 12).map((p, i) => `
+                        <button class="astral-composer-thumb" data-idx="${i}">
+                            <img src="${esc(p.imageUrl)}" alt="" />
+                        </button>
+                    `).join("")}
+                </div>` : ""}
+
+            <div class="astral-modal-actions">
+                <button class="astral-btn" id="astral-ava-cancel">\u041E\u0442\u043C\u0435\u043D\u0430</button>
+            </div>
+        </div>
+    `;
+    ph.appendChild(overlay);
+    const close = /* @__PURE__ */ __name(() => {
+      overlay.remove();
+      closeProfile();
+      openUserProfile(storage2, context);
+    }, "close");
+    overlay.querySelector("#astral-ava-cancel").addEventListener("click", () => {
+      overlay.remove();
+      openUserProfile(storage2, context);
+    });
+    overlay.addEventListener("click", (e) => {
+      if (e.target === overlay) close();
+    });
+    overlay.querySelector("#astral-ava-file").addEventListener("change", async (e) => {
+      const file = e.target.files?.[0];
+      if (!file) return;
+      const reader = new FileReader();
+      reader.onload = (ev) => {
+        const s = storage2.getState();
+        if (!s.account) s.account = {};
+        s.account.avatar = ev.target.result;
+        storage2.save();
+        close();
+      };
+      reader.readAsDataURL(file);
+    });
+    overlay.querySelectorAll(".astral-composer-thumb").forEach((btn) => {
+      btn.addEventListener("click", () => {
+        const idx = Number(btn.dataset.idx);
+        const url = gallery[idx]?.imageUrl;
+        if (!url) return;
+        const s = storage2.getState();
+        if (!s.account) s.account = {};
+        s.account.avatar = url;
+        storage2.save();
+        close();
+      });
+    });
+  }
+  __name(_openAvatarPickerForUser, "_openAvatarPickerForUser");
+  function openNPCProfile(author, storage2, context, coreRef) {
+    const ph = phone();
+    if (!ph) return;
+    const state = storage2.getState();
+    const posts = (state.social || []).filter((p) => p.author === author);
+    const totalReacts = posts.reduce((sum, p) => {
+      return sum + Object.entries(p.reactions || {}).filter(([k]) => k !== "me").reduce((s, [, arr]) => s + (Array.isArray(arr) ? arr.length : 0), 0);
+    }, 0);
+    const thread = (state.messages || []).filter((m) => m.character === author);
+    const role = thread.find((m) => m.role)?.role || "";
+    const isFollowing = (state.socialFollowing || []).includes(author);
+    const isFollower = (state.socialFollowers || []).includes(author);
+    const handle = posts[0]?.handle || author.toLowerCase().replace(/\s+/g, "_").replace(/[^a-z0-9_]/g, "");
+    const avatarLetter = (author[0] || "?").toUpperCase();
+    const overlay = document.createElement("div");
+    overlay.className = "astral-modal";
+    overlay.innerHTML = `
+        <div class="astral-modal-card astral-modal-card--profile astral-npc-full">
+            <button class="astral-modal-close" id="astral-npc-full-close">\u2715</button>
+
+            <div class="astral-up-hero">
+                <div class="astral-npc-avatar astral-npc-avatar--lg">${esc(avatarLetter)}</div>
+                <div class="astral-up-info">
+                    <div class="astral-up-name">${esc(author)}</div>
+                    <div class="astral-up-handle">@${esc(handle)}</div>
+                    ${role ? `<div class="astral-up-bio astral-up-bio--role">${esc(role)}</div>` : ""}
+                    ${isFollower ? `<div class="astral-npc-follows-you">\u041F\u043E\u0434\u043F\u0438\u0441\u0430\u043D \u043D\u0430 \u0442\u0435\u0431\u044F</div>` : ""}
+                    <button class="astral-btn ${isFollowing ? "" : "astral-btn-primary"} astral-npc-follow-btn" id="astral-npc-full-follow">
+                        ${isFollowing ? "\u041E\u0442\u043F\u0438\u0441\u0430\u0442\u044C\u0441\u044F" : "\u041F\u043E\u0434\u043F\u0438\u0441\u0430\u0442\u044C\u0441\u044F"}
+                    </button>
+                </div>
+            </div>
+
+            <div class="astral-up-stats">
+                <div class="astral-up-stat">
+                    <span class="astral-up-stat-val">${posts.length}</span>
+                    <span class="astral-up-stat-label">\u043F\u043E\u0441\u0442\u043E\u0432</span>
+                </div>
+                <div class="astral-up-stat">
+                    <span class="astral-up-stat-val">${totalReacts}</span>
+                    <span class="astral-up-stat-label">\u0440\u0435\u0430\u043A\u0446\u0438\u0439</span>
+                </div>
+                <div class="astral-up-stat">
+                    <span class="astral-up-stat-val">${thread.length}</span>
+                    <span class="astral-up-stat-label">\u0441\u043E\u043E\u0431\u0449\u0435\u043D\u0438\u0439</span>
+                </div>
+            </div>
+
+            <div class="astral-npc-tabs">
+                <button class="astral-npc-tab active" data-tab="posts">\u041F\u043E\u0441\u0442\u044B</button>
+                <button class="astral-npc-tab" data-tab="messages">\u041F\u0435\u0440\u0435\u043F\u0438\u0441\u043A\u0430</button>
+            </div>
+
+            <div class="astral-npc-tab-body" id="astral-npc-tab-body"></div>
+        </div>
+    `;
+    ph.appendChild(overlay);
+    const close = /* @__PURE__ */ __name(() => overlay.remove(), "close");
+    overlay.querySelector("#astral-npc-full-close").addEventListener("click", close);
+    overlay.addEventListener("click", (e) => {
+      if (e.target === overlay) close();
+    });
+    overlay.querySelector("#astral-npc-full-follow").addEventListener("click", (e) => {
+      const s = storage2.getState();
+      if (!Array.isArray(s.socialFollowing)) s.socialFollowing = [];
+      const idx = s.socialFollowing.indexOf(author);
+      if (idx >= 0) s.socialFollowing.splice(idx, 1);
+      else s.socialFollowing.push(author);
+      storage2.save();
+      const btn = e.currentTarget;
+      const nowFollowing = s.socialFollowing.includes(author);
+      btn.textContent = nowFollowing ? "\u041E\u0442\u043F\u0438\u0441\u0430\u0442\u044C\u0441\u044F" : "\u041F\u043E\u0434\u043F\u0438\u0441\u0430\u0442\u044C\u0441\u044F";
+      btn.classList.toggle("astral-btn-primary", !nowFollowing);
+    });
+    const tabBody = overlay.querySelector("#astral-npc-tab-body");
+    const renderTab = /* @__PURE__ */ __name((tab) => {
+      overlay.querySelectorAll(".astral-npc-tab").forEach((t) => t.classList.toggle("active", t.dataset.tab === tab));
+      if (tab === "posts") {
+        if (!posts.length) {
+          tabBody.innerHTML = `<div class="astral-nc-empty" style="padding:20px">\u041D\u0435\u0442 \u043F\u043E\u0441\u0442\u043E\u0432</div>`;
+          return;
+        }
+        tabBody.innerHTML = "";
+        for (const p of posts) {
+          const item = document.createElement("div");
+          item.className = "astral-npc-post";
+          item.innerHTML = `
+                    <div class="astral-npc-post-text">${esc(p.text || "")}</div>
+                    <div class="astral-npc-post-meta">
+                        ${totalReacts ? `\u2764 ${Object.entries(p.reactions || {}).filter(([k]) => k !== "me").reduce((s, [, a]) => s + (Array.isArray(a) ? a.length : 0), 0)}` : ""}
+                        ${p.replies?.length ? `\u{1F4AC} ${p.replies.length}` : ""}
+                        <span class="astral-npc-post-time">${ago(p.timestamp)}</span>
+                    </div>
+                `;
+          tabBody.appendChild(item);
+        }
+      } else {
+        if (!thread.length) {
+          tabBody.innerHTML = `<div class="astral-nc-empty" style="padding:20px">\u041D\u0435\u0442 \u043F\u0435\u0440\u0435\u043F\u0438\u0441\u043A\u0438</div>`;
+          return;
+        }
+        tabBody.innerHTML = "";
+        for (const m of thread.slice(-20)) {
+          const isOut = m.from === "me" || m.fromUser;
+          const item = document.createElement("div");
+          item.className = `astral-npc-msg ${isOut ? "astral-npc-msg--out" : "astral-npc-msg--in"}`;
+          item.innerHTML = `
+                    <div class="astral-npc-msg-text">${esc(m.text || "")}</div>
+                    <div class="astral-npc-msg-time">${ago(m.timestamp)}</div>
+                `;
+          tabBody.appendChild(item);
+        }
+        if (coreRef) {
+          const writeBtn = document.createElement("button");
+          writeBtn.className = "astral-btn astral-btn-primary astral-npc-write-btn";
+          writeBtn.textContent = "\u041D\u0430\u043F\u0438\u0441\u0430\u0442\u044C";
+          writeBtn.addEventListener("click", () => {
+            close();
+            coreRef.openApp("messages", { character: author });
+          });
+          tabBody.appendChild(writeBtn);
+        }
+      }
+    }, "renderTab");
+    renderTab("posts");
+    overlay.querySelectorAll(".astral-npc-tab").forEach((t) => {
+      t.addEventListener("click", () => renderTab(t.dataset.tab));
+    });
+  }
+  __name(openNPCProfile, "openNPCProfile");
+
   // apps/messages.js
   var MessagesApp = class {
     static {
@@ -3652,7 +4033,7 @@ MESSAGE:`;
                     <path d="M19 12H5M5 12l7-7M5 12l7 7"/>
                 </svg>
             </button>
-            <div class="astral-thread-avatar">${this._esc((character[0] || "?").toUpperCase())}</div>
+            <div class="astral-thread-avatar astral-thread-avatar--clickable" id="astral-thread-avatar">${this._esc((character[0] || "?").toUpperCase())}</div>
             <div class="astral-thread-info">
                 <div class="astral-thread-name">${this._esc(character)}</div>
                 ${role ? `<div class="astral-thread-role">${this._esc(role)}</div>` : ""}
@@ -3687,6 +4068,9 @@ MESSAGE:`;
       header.querySelector("#astral-thread-back").addEventListener("click", () => {
         this._thread = null;
         this.render(document.querySelector(".astral-phone-body"));
+      });
+      header.querySelector("#astral-thread-avatar").addEventListener("click", () => {
+        openNPCProfile(character, this.storage, this.context, globalThis.__astralPhoneCore);
       });
       header.querySelector("#astral-thread-edit").addEventListener("click", () => {
         this._openContactEditor(character, role);
@@ -3730,8 +4114,8 @@ MESSAGE:`;
     }
     /* ─────────────────────────── редактирование контакта ─────────────────────────── */
     _openContactEditor(character, currentRole) {
-      const phone = document.querySelector(".astral-phone");
-      if (!phone) return;
+      const phone2 = document.querySelector(".astral-phone");
+      if (!phone2) return;
       const overlay = document.createElement("div");
       overlay.className = "astral-modal";
       overlay.innerHTML = `
@@ -3758,7 +4142,7 @@ MESSAGE:`;
                 </div>
             </div>
         `;
-      phone.appendChild(overlay);
+      phone2.appendChild(overlay);
       const close = /* @__PURE__ */ __name(() => overlay.remove(), "close");
       const nameInput = overlay.querySelector("#astral-contact-name");
       nameInput.focus();
@@ -4067,8 +4451,8 @@ REPLY (text only):`;
     }
     /** Open camera overlay with mode selector and custom instruction settings. */
     _openCamera() {
-      const phone = document.querySelector(".astral-phone");
-      if (!phone) return;
+      const phone2 = document.querySelector(".astral-phone");
+      if (!phone2) return;
       const prefs = this._loadCameraPrefs();
       const overlay = document.createElement("div");
       overlay.className = "astral-camera-overlay";
@@ -4141,7 +4525,7 @@ REPLY (text only):`;
         overlay.remove();
       });
       overlay.querySelector(".astral-camera-close").addEventListener("click", () => overlay.remove());
-      phone.appendChild(overlay);
+      phone2.appendChild(overlay);
     }
     _loadCameraPrefs() {
       try {
@@ -5886,8 +6270,8 @@ ${lines.join("\n")}`;
     /* ─────────────────────────── редактор ─────────────────────────── */
     _openEditor(note, container) {
       const isNew = !note;
-      const phone = document.querySelector(".astral-phone");
-      if (!phone) return;
+      const phone2 = document.querySelector(".astral-phone");
+      if (!phone2) return;
       const overlay = document.createElement("div");
       overlay.className = "astral-modal";
       overlay.innerHTML = `
@@ -5915,7 +6299,7 @@ ${lines.join("\n")}`;
                 </div>
             </div>
         `;
-      phone.appendChild(overlay);
+      phone2.appendChild(overlay);
       const close = /* @__PURE__ */ __name(() => overlay.remove(), "close");
       overlay.querySelector("#astral-note-cancel").addEventListener("click", close);
       overlay.addEventListener("click", (e) => {
@@ -6019,10 +6403,10 @@ ${lines.join("\n")}`;
     return [...String(text || "").matchAll(/#([\wа-яёА-ЯЁ]+)/gi)].map((m) => m[1]);
   }
   __name(extractHashtags, "extractHashtags");
-  function linkHashtags(text, esc) {
-    return esc(text).replace(
+  function linkHashtags(text, esc2) {
+    return esc2(text).replace(
       /#([\wа-яёА-ЯЁ]+)/gi,
-      (_, tag) => `<span class="astral-hashtag" data-tag="${esc(tag)}">#${esc(tag)}</span>`
+      (_, tag) => `<span class="astral-hashtag" data-tag="${esc2(tag)}">#${esc2(tag)}</span>`
     );
   }
   __name(linkHashtags, "linkHashtags");
@@ -6193,55 +6577,7 @@ ${lines.join("\n")}`;
       };
     }
     _openProfile(container) {
-      const phone = document.querySelector(".astral-phone");
-      if (!phone) return;
-      const p = this._profile();
-      const overlay = document.createElement("div");
-      overlay.className = "astral-modal";
-      overlay.innerHTML = `
-            <div class="astral-modal-card astral-modal-card--composer">
-                <div class="astral-modal-title">\u041F\u0440\u043E\u0444\u0438\u043B\u044C</div>
-
-                <label class="astral-field-label">\u041E\u0442\u043E\u0431\u0440\u0430\u0436\u0430\u0435\u043C\u043E\u0435 \u0438\u043C\u044F</label>
-                <input type="text" class="astral-input" id="astral-profile-name"
-                       value="${this._esc(p.displayName)}" placeholder="\u041A\u0430\u043A \u0442\u0435\u0431\u044F \u0432\u0438\u0434\u044F\u0442">
-
-                <label class="astral-field-label">\u041D\u0438\u043A</label>
-                <input type="text" class="astral-input" id="astral-profile-handle"
-                       value="${this._esc(p.handle)}" placeholder="username">
-
-                <label class="astral-field-label">\u041E \u0441\u0435\u0431\u0435</label>
-                <textarea class="astral-textarea" id="astral-profile-bio" rows="3"
-                          placeholder="\u041F\u0430\u0440\u0430 \u0441\u043B\u043E\u0432 \u043E \u0441\u0435\u0431\u0435">${this._esc(p.bio)}</textarea>
-
-                <div class="astral-modal-actions">
-                    <button class="astral-btn" id="astral-profile-cancel">\u041E\u0442\u043C\u0435\u043D\u0430</button>
-                    <button class="astral-btn astral-btn-primary" id="astral-profile-save">\u0421\u043E\u0445\u0440\u0430\u043D\u0438\u0442\u044C</button>
-                </div>
-            </div>
-        `;
-      phone.appendChild(overlay);
-      const close = /* @__PURE__ */ __name(() => overlay.remove(), "close");
-      overlay.querySelector("#astral-profile-cancel").addEventListener("click", close);
-      overlay.addEventListener("click", (e) => {
-        if (e.target === overlay) close();
-      });
-      overlay.querySelector("#astral-profile-save").addEventListener("click", () => {
-        const displayName = overlay.querySelector("#astral-profile-name").value.trim();
-        const handle = overlay.querySelector("#astral-profile-handle").value.trim().replace(/^@/, "");
-        const bio = overlay.querySelector("#astral-profile-bio").value.trim();
-        const state = this.storage.getState();
-        state.socialProfile = {
-          displayName: displayName || this._userName(),
-          handle: handle || this._handle(displayName || this._userName()),
-          bio
-        };
-        this.storage.save();
-        close();
-        success("\u041F\u0440\u043E\u0444\u0438\u043B\u044C \u0441\u043E\u0445\u0440\u0430\u043D\u0451\u043D");
-        this.render(container);
-      });
-      overlay.querySelector("#astral-profile-name").focus();
+      openUserProfile(this.storage, this.context);
     }
     /* ─────────────────────────── пост ─────────────────────────── */
     _buildPost(post, state, container) {
@@ -6315,7 +6651,7 @@ ${lines.join("\n")}`;
       card.querySelector(".astral-social-avatar--clickable")?.addEventListener("click", (e) => {
         e.stopPropagation();
         const author = e.currentTarget.dataset.author;
-        if (author) this._openNPCProfile(author);
+        if (author) openNPCProfile(author, this.storage, this.context, globalThis.__astralPhoneCore);
       });
       card.querySelector('[data-act="repost"]').addEventListener("click", (e) => {
         e.stopPropagation();
@@ -6346,8 +6682,8 @@ ${who}\xAB${preview}${preview.length >= 60 ? "\u2026" : ""}\xBB`)) return;
     }
     /* ─────────────────────────── репост с комментарием ─────────────────────────── */
     _openRepostDialog(postId, container) {
-      const phone = document.querySelector(".astral-phone");
-      if (!phone) return;
+      const phone2 = document.querySelector(".astral-phone");
+      if (!phone2) return;
       const state = this.storage.getState();
       const post = (state.social || []).find((p) => p.id === postId);
       if (!post) return;
@@ -6374,7 +6710,7 @@ ${who}\xAB${preview}${preview.length >= 60 ? "\u2026" : ""}\xBB`)) return;
                 </div>
             </div>
         `;
-      phone.appendChild(overlay);
+      phone2.appendChild(overlay);
       const close = /* @__PURE__ */ __name(() => overlay.remove(), "close");
       overlay.querySelector("#astral-repost-cancel").addEventListener("click", close);
       overlay.addEventListener("click", (e) => {
@@ -6479,8 +6815,8 @@ ${who}\xAB${preview}${preview.length >= 60 ? "\u2026" : ""}\xBB`)) return;
     }
     /* ─────────────────────────── ответ ─────────────────────────── */
     _openReply(postId, container) {
-      const phone = document.querySelector(".astral-phone");
-      if (!phone) return;
+      const phone2 = document.querySelector(".astral-phone");
+      if (!phone2) return;
       const overlay = document.createElement("div");
       overlay.className = "astral-modal";
       overlay.innerHTML = `
@@ -6494,7 +6830,7 @@ ${who}\xAB${preview}${preview.length >= 60 ? "\u2026" : ""}\xBB`)) return;
                 </div>
             </div>
         `;
-      phone.appendChild(overlay);
+      phone2.appendChild(overlay);
       const close = /* @__PURE__ */ __name(() => overlay.remove(), "close");
       overlay.querySelector("#astral-social-reply-cancel").addEventListener("click", close);
       overlay.addEventListener("click", (e) => {
@@ -6542,8 +6878,8 @@ ${who}\xAB${preview}${preview.length >= 60 ? "\u2026" : ""}\xBB`)) return;
     }
     /* ─────────────────────────── вызов поста персонажа ─────────────────────────── */
     _openSummon(container) {
-      const phone = document.querySelector(".astral-phone");
-      if (!phone) return;
+      const phone2 = document.querySelector(".astral-phone");
+      if (!phone2) return;
       const { cast, charName, userName } = collectCast(this.context || {});
       const candidates = cast.filter((n) => n !== userName);
       const list = candidates.length ? candidates : [charName];
@@ -6568,7 +6904,7 @@ ${who}\xAB${preview}${preview.length >= 60 ? "\u2026" : ""}\xBB`)) return;
                 </div>
             </div>
         `;
-      phone.appendChild(overlay);
+      phone2.appendChild(overlay);
       const close = /* @__PURE__ */ __name(() => overlay.remove(), "close");
       overlay.querySelector("#astral-summon-cancel").addEventListener("click", close);
       overlay.addEventListener("click", (e) => {
@@ -6615,8 +6951,8 @@ ${who}\xAB${preview}${preview.length >= 60 ? "\u2026" : ""}\xBB`)) return;
       }
     }
     _openComposer(container) {
-      const phone = document.querySelector(".astral-phone");
-      if (!phone) return;
+      const phone2 = document.querySelector(".astral-phone");
+      if (!phone2) return;
       const gallery = (this.storage.getState().gallery || []).filter((p) => p.imageUrl);
       const overlay = document.createElement("div");
       overlay.className = "astral-modal";
@@ -6648,7 +6984,7 @@ ${who}\xAB${preview}${preview.length >= 60 ? "\u2026" : ""}\xBB`)) return;
                 </div>
             </div>
         `;
-      phone.appendChild(overlay);
+      phone2.appendChild(overlay);
       const close = /* @__PURE__ */ __name(() => overlay.remove(), "close");
       let selectedImageUrl = null;
       overlay.querySelectorAll(".astral-composer-thumb").forEach((btn) => {
@@ -6763,81 +7099,6 @@ ${who}\xAB${preview}${preview.length >= 60 ? "\u2026" : ""}\xBB`)) return;
         return { success: true, message: `${from} \u043F\u043E\u0434\u043F\u0438\u0441\u0430\u043B\u0441\u044F` };
       }
       return { success: false, message: `\u041D\u0435\u0438\u0437\u0432\u0435\u0441\u0442\u043D\u044B\u0439 \u0442\u0438\u043F \u0441\u043E\u0431\u044B\u0442\u0438\u044F: ${type}` };
-    }
-    /* ─────────────────────────── профиль НПС ─────────────────────────── */
-    _openNPCProfile(author) {
-      const phone = document.querySelector(".astral-phone");
-      if (!phone) return;
-      const state = this.storage.getState();
-      const posts = (state.social || []).filter((p) => p.author === author);
-      const totalLikes = posts.reduce((sum, p) => sum + (p.likedBy?.length || 0), 0);
-      const handle = posts[0]?.handle || this._handle(author);
-      const isFollowing = (state.socialFollowing || []).includes(author);
-      const isFollower = (state.socialFollowers || []).includes(author);
-      const avatarLetter = (author[0] || "?").toUpperCase();
-      const overlay = document.createElement("div");
-      overlay.className = "astral-modal";
-      overlay.innerHTML = `
-            <div class="astral-modal-card astral-modal-card--profile">
-                <button class="astral-modal-close" id="astral-npc-close">\u2715</button>
-
-                <div class="astral-npc-header">
-                    <div class="astral-npc-avatar">${this._esc(avatarLetter)}</div>
-                    <div class="astral-npc-info">
-                        <div class="astral-npc-name">${this._esc(author)}</div>
-                        <div class="astral-npc-handle">@${this._esc(handle)}</div>
-                    </div>
-                    <button class="astral-btn ${isFollowing ? "" : "astral-btn-primary"} astral-npc-follow-btn" id="astral-npc-follow">
-                        ${isFollowing ? "\u041E\u0442\u043F\u0438\u0441\u0430\u0442\u044C\u0441\u044F" : "\u041F\u043E\u0434\u043F\u0438\u0441\u0430\u0442\u044C\u0441\u044F"}
-                    </button>
-                </div>
-
-                <div class="astral-npc-stats">
-                    <div class="astral-npc-stat">
-                        <span class="astral-npc-stat-val">${posts.length}</span>
-                        <span class="astral-npc-stat-label">\u043F\u043E\u0441\u0442\u043E\u0432</span>
-                    </div>
-                    <div class="astral-npc-stat">
-                        <span class="astral-npc-stat-val">${totalLikes}</span>
-                        <span class="astral-npc-stat-label">\u043B\u0430\u0439\u043A\u043E\u0432</span>
-                    </div>
-                    ${isFollower ? `<div class="astral-npc-stat">
-                        <span class="astral-npc-stat-val">\u2713</span>
-                        <span class="astral-npc-stat-label">\u043F\u043E\u0434\u043F\u0438\u0441\u0430\u043D \u043D\u0430 \u0442\u0435\u0431\u044F</span>
-                    </div>` : ""}
-                </div>
-
-                <div class="astral-npc-posts">
-                    ${posts.length === 0 ? `<div class="astral-nc-empty">\u041D\u0435\u0442 \u043F\u043E\u0441\u0442\u043E\u0432</div>` : posts.slice(0, 20).map((p) => `
-                            <div class="astral-npc-post">
-                                <div class="astral-npc-post-text">${this._esc(p.text || "")}</div>
-                                <div class="astral-npc-post-meta">
-                                    ${p.likedBy?.length ? `\u2764 ${p.likedBy.length}` : ""}
-                                    ${p.replies?.length ? `\u{1F4AC} ${p.replies.length}` : ""}
-                                    <span class="astral-npc-post-time">${this._ago(p.timestamp)}</span>
-                                </div>
-                            </div>`).join("")}
-                </div>
-            </div>
-        `;
-      phone.appendChild(overlay);
-      const close = /* @__PURE__ */ __name(() => overlay.remove(), "close");
-      overlay.querySelector("#astral-npc-close").addEventListener("click", close);
-      overlay.addEventListener("click", (e) => {
-        if (e.target === overlay) close();
-      });
-      overlay.querySelector("#astral-npc-follow").addEventListener("click", () => {
-        const s = this.storage.getState();
-        if (!Array.isArray(s.socialFollowing)) s.socialFollowing = [];
-        const idx = s.socialFollowing.indexOf(author);
-        if (idx >= 0) {
-          s.socialFollowing.splice(idx, 1);
-        } else {
-          s.socialFollowing.push(author);
-        }
-        this.storage.save();
-        close();
-      });
     }
     /* ─────────────────────────── утилиты ─────────────────────────── */
     /** Имя для своих постов — из профиля соцсети, иначе из персоны. */
