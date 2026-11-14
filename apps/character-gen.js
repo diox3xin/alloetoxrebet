@@ -191,14 +191,20 @@ export async function generateNotes(ctx, opts = {}) {
 
     /*
      * Заметка всегда ПРО юзера — иначе модель уходит в абстрактные
-     * размышления о себе. Угол задаётся по типу записи, и {{user}}
-     * подставляется в инструкцию явно, чтобы он был в каждом варианте.
+     * размышления о себе. Угол задаётся по типу записи, и юзер подставляется
+     * в инструкцию явно, чтобы он был в каждом варианте.
+     *
+     * Инструкция английская (так просил пользователь), но в сцене может быть
+     * русский текст — поэтому в промпте два обращения: имя юзера и
+     * буквальное «the player», чтобы модель понимала, о ком речь, даже если
+     * имя кириллическое.
      */
+    const subject = `the player (${userName})`;
     const angles = {
-        diary: `What ${userName} means to ${charName} right now — what ${charName} felt about ${userName} today, what ${userName} said or did that stuck.`,
-        plan: `What ${charName} plans to do about ${userName} — what ${charName} intends to tell, ask or do to ${userName} next.`,
-        secret: `What ${charName} hides from ${userName} — something ${charName} would never say to ${userName} out loud.`,
-        note: `What ${charName} thinks about ${userName} in this exact minute — a passing thought about ${userName}.`,
+        diary: `What ${subject} means to ${charName} right now — what ${charName} felt about ${subject} today, what ${subject} said or did that stuck.`,
+        plan: `What ${charName} plans to do about ${subject} — what ${charName} intends to tell, ask or do to ${subject} next.`,
+        secret: `What ${charName} hides from ${subject} — something ${charName} would never say to ${subject} out loud.`,
+        note: `What ${charName} thinks about ${subject} in this exact minute — a passing thought about ${subject}.`,
     };
 
     const prompt = `You write a PRIVATE note in the voice of ${charName}.
@@ -211,16 +217,16 @@ ${scene}
 ANGLE FOR THIS NOTE:
 ${angles[kind]}
 
-TASK: write ${count === 1 ? 'this note' : `${count} variants of this note`} about ${userName}.
+TASK: write ${count === 1 ? 'this note' : `${count} variants of this note`} about ${subject}.
 
 RULES:
-- ${userName} MUST be the subject. Every sentence should be about ${userName} or addressed to ${userName}.
-- Refer to ${userName} by name (${userName}) or as "you" if writing it like a letter.
+- ${subject} MUST be the subject. Every sentence should be about ${subject} or addressed to ${subject}.
+- Refer to the player by name (${userName}) or as "you" if writing it like a letter.
 - Write in the SAME LANGUAGE as the scene. Russian scene → Russian note.
 - First person, ${charName}'s own voice and vocabulary.
 - Be concrete: reference what ${userName} actually said or did in the scene, not generic feelings.
 - 1-4 sentences per note. ${count > 1 ? 'Variants must differ in what they focus on.' : ''}
-- ${kind === 'secret' ? `This is hidden — write what ${charName} would never tell ${userName}.` : `Honest, but not necessarily dark.`}
+- ${kind === 'secret' ? `This is hidden — write what ${charName} would never tell ${subject}.` : `Honest, but not necessarily dark.`}
 - No labels, no quotes, no bullet points, no explanation.
 
 Return ONLY the ${count > 1 ? 'notes separated by a line containing only ---' : 'note text'}.`;

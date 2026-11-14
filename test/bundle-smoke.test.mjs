@@ -263,6 +263,14 @@ const exports = await loadBundle(dom, logs);
 // дать сработать отложенному boot() (через jQuery-ready)
 await new Promise(r => setTimeout(r, 20));
 
+/*
+ * Модули, которые тест импортирует напрямую (apps/cast-profiles.js и
+ * apps/character-gen.js), ищут SillyTavern через globalThis. В node это не
+ * окно браузера, поэтому прокидываем его и в глобальную область.
+ */
+globalThis.SillyTavern = dom.window.SillyTavern;
+globalThis.extension_settings = st.context.extensionSettings;
+
 // ST грузит расширения ДО события APP_INITIALIZED и сразу после этого его
 // шлёт — так и делаем.
 st.context.eventSource.emit(st.eventTypes.APP_INITIALIZED);
@@ -389,6 +397,49 @@ await test('приложение Notes получает kind и title из metad
     const note = (state.notes || []).find(n => n.title === 'Заголовок');
     assert.ok(note, 'заметка должна появиться в Notes');
     assert.equal(note.kind, 'diary');
+});
+
+await test('анкеты персонажей: интервал анализа настраивается и сохраняется', async () => {
+    const cast = await import('../apps/cast-profiles.js');
+    assert.equal(typeof cast.analysisInterval, 'function');
+    assert.equal(typeof cast.setAnalysisInterval, 'function');
+
+    // По умолчанию анализ идёт каждые 5 сообщений.
+    assert.equal(cast.analysisInterval(), cast.DEFAULT_INTERVAL);
+
+    // 0 — выключить.
+    assert.equal(cast.setAnalysisInterval(0), true);
+    assert.equal(cast.analysisInterval(), 0);
+
+    // Значение из настроек должно переживать перезапуск.
+    assert.equal(cast.setAnalysisInterval(7), true);
+    assert.equal(cast.analysisInterval(), 7);
+
+    cast.setAnalysisInterval(cast.DEFAULT_INTERVAL);
+});
+
+await test('промпт заметок всегда говорит про игрока', async () => {
+    const gen = await import('../apps/character-gen.js');
+    const ctx = st.context;
+
+    // Перехватываем запрос к модели, чтобы посмотреть сам промпт.
+    let captured = '';
+    const original = ctx.generateRaw;
+    ctx.generateRaw = async ({ prompt }) => {
+        captured = String(prompt || '');
+        return 'заметка';
+    };
+
+    try {
+        await gen.generateNotes(ctx, { kind: 'secret', count: 1 });
+    } finally {
+        ctx.generateRaw = original;
+    }
+
+    assert.ok(captured.length > 0, 'промпт должен уйти модели');
+    assert.ok(/the player/i.test(captured), 'промпт должен называть игрока, а не только имя');
+    assert.ok(/MUST be the subject/i.test(captured), 'игрок должен быть темой заметки');
+    assert.ok(/hides from/i.test(captured), 'угол секрета должен быть в промпте');
 });
 
 console.log(`\n${passed} прошло, ${failed} провалено\n`);
