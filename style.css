@@ -2929,3 +2929,83 @@
   border: 1px dashed rgba(217,154,181,.22);
   border-radius: 10px;
 }
+
+/* ─────────────────────────── in-phone notifications ─────────────────────────── */
+
+.astral-phone-notifications {
+  position: absolute;
+  top: 60px;
+  left: 12px;
+  right: 12px;
+  z-index: 1000;
+  pointer-events: none;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.astral-phone-notification {
+  pointer-events: auto;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 12px 14px;
+  background: var(--phone-card);
+  border: 1px solid var(--phone-border);
+  border-radius: 12px;
+  font-size: 12px;
+  line-height: 1.4;
+  color: var(--phone-text);
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.3);
+  opacity: 0;
+  transform: translateY(-10px);
+  transition: opacity 0.3s ease, transform 0.3s ease;
+  cursor: pointer;
+}
+
+.astral-phone-notification--show {
+  opacity: 1;
+  transform: translateY(0);
+}
+
+.astral-phone-notification--hide {
+  opacity: 0;
+  transform: translateY(-10px);
+}
+
+.astral-phone-notification-icon {
+  flex-shrink: 0;
+  width: 20px;
+  height: 20px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 14px;
+  font-weight: 600;
+  border-radius: 50%;
+}
+
+.astral-phone-notification--success .astral-phone-notification-icon {
+  background: rgba(76, 175, 80, 0.2);
+  color: #4CAF50;
+}
+
+.astral-phone-notification--error .astral-phone-notification-icon {
+  background: rgba(244, 67, 54, 0.2);
+  color: #F44336;
+}
+
+.astral-phone-notification--warning .astral-phone-notification-icon {
+  background: rgba(255, 152, 0, 0.2);
+  color: #FF9800;
+}
+
+.astral-phone-notification--info .astral-phone-notification-icon {
+  background: rgba(33, 150, 243, 0.2);
+  color: #2196F3;
+}
+
+.astral-phone-notification-text {
+  flex: 1;
+  word-break: break-word;
+}

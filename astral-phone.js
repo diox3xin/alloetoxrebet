@@ -2652,6 +2652,69 @@ ${prompt2}
     }
   };
 
+  // apps/phone-notifications.js
+  var NOTIFICATION_DURATION = 5e3;
+  function showInPhoneNotification(message, type = "info") {
+    const text = String(message || "").trim();
+    const kind = String(type || "info");
+    console.log(`[Astral Phone] [${kind.toUpperCase()}]`, text);
+    const phoneBody = document.querySelector(".astral-phone-body");
+    if (!phoneBody) {
+      try {
+        const toastr2 = window.toastr;
+        if (toastr2) {
+          const method = toastr2[kind] || toastr2.info;
+          method.call(toastr2, text);
+        }
+      } catch (err) {
+        console.warn("[Astral Phone] toast fallback failed:", err);
+      }
+      return;
+    }
+    let container = document.querySelector(".astral-phone-notifications");
+    if (!container) {
+      container = document.createElement("div");
+      container.className = "astral-phone-notifications";
+      phoneBody.parentElement.appendChild(container);
+    }
+    const notification = document.createElement("div");
+    notification.className = `astral-phone-notification astral-phone-notification--${kind}`;
+    const icon = {
+      success: "\u2713",
+      error: "\u2715",
+      warning: "\u26A0",
+      info: "\u2139"
+    }[kind] || "\u2139";
+    notification.innerHTML = `
+        <div class="astral-phone-notification-icon">${icon}</div>
+        <div class="astral-phone-notification-text">${escapeHtml(text)}</div>
+    `;
+    container.appendChild(notification);
+    requestAnimationFrame(() => {
+      notification.classList.add("astral-phone-notification--show");
+    });
+    setTimeout(() => {
+      notification.classList.remove("astral-phone-notification--show");
+      notification.classList.add("astral-phone-notification--hide");
+      setTimeout(() => {
+        notification.remove();
+        if (container.children.length === 0) {
+          container.remove();
+        }
+      }, 300);
+    }, NOTIFICATION_DURATION);
+    notification.addEventListener("click", () => {
+      notification.classList.remove("astral-phone-notification--show");
+      notification.classList.add("astral-phone-notification--hide");
+      setTimeout(() => notification.remove(), 300);
+    });
+  }
+  __name(showInPhoneNotification, "showInPhoneNotification");
+  function escapeHtml(str) {
+    return String(str ?? "").replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;");
+  }
+  __name(escapeHtml, "escapeHtml");
+
   // apps/notifications.js
   var MODULE3 = "[Astral Phone]";
   var NotificationType = {
@@ -2664,6 +2727,11 @@ ${prompt2}
     const text = String(message || "\u041E\u043F\u0435\u0440\u0430\u0446\u0438\u044F \u0432\u044B\u043F\u043E\u043B\u043D\u0435\u043D\u0430").trim();
     const kind = String(type || NotificationType.INFO);
     console.log(`${MODULE3} [${kind.toUpperCase()}]`, text);
+    try {
+      showInPhoneNotification(text, kind);
+      return;
+    } catch (err) {
+    }
     try {
       const toastr2 = window.toastr;
       if (!toastr2) return;
@@ -3333,7 +3401,7 @@ MESSAGE:`;
     el.className = "astral-typing";
     el.dataset.typing = "1";
     el.innerHTML = `
-        <span class="astral-typing-name">${escapeHtml(name)}</span>
+        <span class="astral-typing-name">${escapeHtml2(name)}</span>
         <span class="astral-typing-word">\u043F\u0435\u0447\u0430\u0442\u0430\u0435\u0442</span>
         <span class="astral-typing-dots"><i></i><i></i><i></i></span>
     `;
@@ -3347,10 +3415,10 @@ MESSAGE:`;
     };
   }
   __name(showTyping, "showTyping");
-  function escapeHtml(str) {
+  function escapeHtml2(str) {
     return String(str ?? "").replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" })[c]);
   }
-  __name(escapeHtml, "escapeHtml");
+  __name(escapeHtml2, "escapeHtml");
 
   // apps/messages.js
   var MessagesApp = class {

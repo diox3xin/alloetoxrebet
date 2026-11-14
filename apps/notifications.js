@@ -6,6 +6,8 @@
  * функции вместо прямых вызовов toastr или console.error.
  */
 
+import { showInPhoneNotification } from './phone-notifications.js';
+
 const MODULE = '[Astral Phone]';
 
 /**
@@ -31,6 +33,15 @@ export function showNotification(message, type = NotificationType.INFO, opts = {
     
     console.log(`${MODULE} [${kind.toUpperCase()}]`, text);
     
+    // Сначала пробуем показать ВНУТРИ телефона
+    try {
+        showInPhoneNotification(text, kind);
+        return;
+    } catch (err) {
+        // Fallback на toastr, если телефон не открыт или что-то сломалось
+    }
+    
+    // Fallback: toastr (правый верхний угол страницы)
     try {
         const toastr = window.toastr;
         if (!toastr) return;
