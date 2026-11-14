@@ -3496,3 +3496,184 @@
 .astral-btn--danger:hover {
   background: rgba(244, 67, 54, 0.2);
 }
+
+/* ─────────────────────────── reactions ─────────────────────────── */
+
+.astral-social-act--react {
+  position: relative;
+}
+
+.astral-react-emoji {
+  font-size: 14px;
+  line-height: 1;
+}
+
+.astral-reaction-picker {
+  position: absolute;
+  bottom: 100%;
+  left: 0;
+  display: flex;
+  gap: 4px;
+  padding: 6px;
+  background: var(--phone-card);
+  border: 1px solid var(--phone-border);
+  border-radius: 20px;
+  box-shadow: 0 6px 20px rgba(0,0,0,0.5);
+  z-index: 50;
+  margin-bottom: 4px;
+  animation: astral-pop .15s ease;
+}
+
+.astral-reaction-opt {
+  background: none;
+  border: none;
+  font-size: 18px;
+  cursor: pointer;
+  padding: 4px 6px;
+  border-radius: 50%;
+  transition: transform 0.1s, background 0.15s;
+  line-height: 1;
+}
+
+.astral-reaction-opt:hover {
+  transform: scale(1.3);
+  background: rgba(217,154,181,0.15);
+}
+
+/* ─────────────────────────── hashtags ─────────────────────────── */
+
+.astral-hashtag {
+  color: var(--phone-accent);
+  cursor: pointer;
+  font-weight: 500;
+}
+
+.astral-hashtag:hover {
+  text-decoration: underline;
+}
+
+.astral-tag-filter-bar {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  padding: 8px 14px;
+  background: rgba(217,154,181,0.1);
+  border-bottom: 1px solid rgba(217,154,181,0.15);
+}
+
+.astral-tag-filter-label {
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--phone-accent);
+}
+
+.astral-tag-filter-clear {
+  background: rgba(217,154,181,0.15);
+  border: none;
+  border-radius: 50%;
+  width: 20px;
+  height: 20px;
+  color: var(--phone-muted);
+  cursor: pointer;
+  font-size: 11px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.astral-tag-filter-clear:hover {
+  background: rgba(217,154,181,0.3);
+  color: var(--phone-text);
+}
+
+/* ─────────────────────────── verified badge ─────────────────────────── */
+
+.astral-verified {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 14px;
+  height: 14px;
+  background: var(--phone-accent);
+  color: var(--phone-bg);
+  border-radius: 50%;
+  font-size: 9px;
+  font-weight: 700;
+  margin-left: 3px;
+  vertical-align: middle;
+}
+
+/* ─────────────────────────── composer photo attach ─────────────────────────── */
+
+.astral-composer-attach {
+  margin-top: 10px;
+}
+
+.astral-composer-attach-label {
+  font-size: 10px;
+  color: var(--phone-muted);
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  margin-bottom: 6px;
+}
+
+.astral-composer-gallery-row {
+  display: flex;
+  gap: 6px;
+  overflow-x: auto;
+  padding-bottom: 4px;
+}
+
+.astral-composer-thumb {
+  flex-shrink: 0;
+  width: 52px;
+  height: 52px;
+  border-radius: 10px;
+  overflow: hidden;
+  border: 2px solid transparent;
+  cursor: pointer;
+  padding: 0;
+  background: var(--phone-card);
+  transition: border-color 0.15s;
+}
+
+.astral-composer-thumb img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
+.astral-composer-thumb.selected {
+  border-color: var(--phone-accent);
+}
+
+.astral-composer-preview {
+  position: relative;
+  margin-top: 8px;
+  border-radius: 12px;
+  overflow: hidden;
+}
+
+.astral-composer-preview img {
+  width: 100%;
+  max-height: 200px;
+  object-fit: cover;
+}
+
+.astral-composer-remove-photo {
+  position: absolute;
+  top: 6px;
+  right: 6px;
+  background: rgba(0,0,0,0.6);
+  border: none;
+  border-radius: 50%;
+  color: white;
+  cursor: pointer;
+  width: 24px;
+  height: 24px;
+  font-size: 12px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}

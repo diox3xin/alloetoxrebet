@@ -13,6 +13,21 @@ import { ICONS } from './phone-core.js';
 import { generateSocialPost, showTyping, collectCast } from './character-gen.js';
 import { handleGenerationError, success, error as showError } from './notifications.js';
 
+// Эмодзи-реакции: emoji → label
+const REACTIONS = ['❤', '🔥', '😂', '😮', '💔'];
+
+// Парсинг хэштегов из текста поста
+function extractHashtags(text) {
+    return [...(String(text || '').matchAll(/#([\wа-яёА-ЯЁ]+)/gi))].map(m => m[1]);
+}
+
+// Текст поста с кликабельными хэштегами
+function linkHashtags(text, esc) {
+    return esc(text).replace(/#([\wа-яёА-ЯЁ]+)/gi,
+        (_, tag) => `<span class="astral-hashtag" data-tag="${esc(tag)}">#${esc(tag)}</span>`
+    );
+}
+
 export class SocialApp {
     constructor(context, storage, imageGen) {
         this.context = context;
@@ -23,6 +38,7 @@ export class SocialApp {
         this.icon = ICONS.social;
         this._replyTo = null;
         this._filter = 'all';   // all | following
+        this._tagFilter = null; // хэштег-фильтр
     }
 
     render(container) {
@@ -32,18 +48,46 @@ export class SocialApp {
         container.innerHTML = '';
         container.appendChild(this._buildTopBar(container));
 
+        // Плашка активного хэштег-фильтра
+        if (this._tagFilter) {
+            const tagBar = document.createElement('div');
+            tagBar.className = 'astral-tag-filter-bar';
+            tagBar.innerHTML = `
+                <span class="astral-tag-filter-label">#${this._esc(this._tagFilter)}</span>
+                <button class="astral-tag-filter-clear" id="astral-tag-clear">✕</button>
+            `;
+            tagBar.querySelector('#astral-tag-clear').addEventListener('click', () => {
+                this._tagFilter = null;
+                this.render(container);
+            });
+            container.appendChild(tagBar);
+        }
+
         if (posts.length === 0) {
             const empty = document.createElement('div');
             empty.className = 'astral-empty-state';
             empty.innerHTML = `
                 <div class="astral-empty-state-icon">${ICONS.social}</div>
-                <div>Лента пуста</div>
+                <div>${this._tagFilter ? `Нет постов с #${this._esc(this._tagFilter)}` : 'Лента пуста'}</div>
                 <div class="astral-empty-hint">Персонажи начнут писать, когда в сцене что-то произойдёт</div>`;
             container.appendChild(empty);
         } else {
             const feed = document.createElement('div');
             feed.className = 'astral-social-feed';
-            for (const post of posts) feed.appendChild(this._buildPost(post, state, container));
+            for (const post of posts) {
+                const card = this._buildPost(post, state, container);
+                // Хэштеги — делегируем клик на весь feed
+                feed.appendChild(card);
+            }
+            // Делегированный обработчик хэштегов
+            feed.addEventListener('click', (e) => {
+                const tagEl = e.target.closest('.astral-hashtag');
+                if (tagEl) {
+                    e.stopPropagation();
+                    this._tagFilter = tagEl.dataset.tag;
+                    this.render(container);
+                }
+            });
             container.appendChild(feed);
         }
 
@@ -51,13 +95,17 @@ export class SocialApp {
     }
 
     _sortedPosts(state) {
-        const posts = Array.isArray(state.social) ? [...state.social] : [];
-        if (this._filter === 'following') {
+        let posts = Array.isArray(state.social) ? [...state.social] : [];
+
+        if (this._tagFilter) {
+            posts = posts.filter(p =>
+                extractHashtags(p.text).some(t => t.toLowerCase() === this._tagFilter.toLowerCase())
+            );
+        } else if (this._filter === 'following') {
             const following = new Set(state.socialFollowing || []);
-            return posts
-                .filter(p => following.has(p.author))
-                .sort((a, b) => (b.timestamp || 0) - (a.timestamp || 0));
+            posts = posts.filter(p => following.has(p.author));
         }
+
         return posts.sort((a, b) => (b.timestamp || 0) - (a.timestamp || 0));
     }
 
@@ -162,25 +210,36 @@ export class SocialApp {
         const card = document.createElement('div');
         card.className = 'astral-social-post';
 
-        const liked = Array.isArray(post.likedBy) && post.likedBy.includes('me');
+        const myReaction = post.reactions?.me || null;
         const reposted = Array.isArray(post.repostedBy) && post.repostedBy.includes('me');
         const replies = Array.isArray(post.replies) ? post.replies : [];
         const avatarLetter = (post.author || '?')[0].toUpperCase();
+        const charName = this.context?.name2 || '';
+        const isVerified = post.author && charName &&
+            post.author.toLowerCase() === charName.toLowerCase();
+
+        const reactCount = Object.entries(post.reactions || {})
+            .filter(([k]) => k !== 'me')
+            .reduce((sum, [, arr]) => sum + (Array.isArray(arr) ? arr.length : 0), 0);
 
         card.innerHTML = `
             <div class="astral-social-head">
-                <div class="astral-social-avatar astral-social-avatar--clickable" data-author="${this._esc(post.author || '')}">${this._esc(avatarLetter)}</div>
+                <div class="astral-social-avatar astral-social-avatar--clickable"
+                     data-author="${this._esc(post.author || '')}">${this._esc(avatarLetter)}</div>
                 <div class="astral-social-who">
                     <span class="astral-social-name">${this._esc(post.author || 'Неизвестный')}</span>
+                    ${isVerified ? `<span class="astral-verified" title="Верифицирован">✓</span>` : ''}
                     ${post.handle ? `<span class="astral-social-handle">@${this._esc(post.handle)}</span>` : ''}
                     <span class="astral-social-dot">·</span>
                     <span class="astral-social-time">${this._ago(post.timestamp)}</span>
                 </div>
             </div>
 
-            <div class="astral-social-body">${this._esc(post.text || '').replace(/\n/g, '<br>')}</div>
+            <div class="astral-social-body">${linkHashtags(post.text || '', this._esc.bind(this)).replace(/\n/g, '<br>')}</div>
 
-            ${post.imageUrl ? `<div class="astral-social-media"><img src="${post.imageUrl}" alt="" loading="lazy"></div>` : ''}
+            ${post.imageUrl
+                ? `<div class="astral-social-media"><img src="${this._esc(post.imageUrl)}" alt="" loading="lazy"></div>`
+                : ''}
 
             <div class="astral-social-actions">
                 <button class="astral-social-act ${replies.length ? 'has-count' : ''}" data-act="reply">
@@ -195,11 +254,9 @@ export class SocialApp {
                     </svg>
                     <span>${Array.isArray(post.repostedBy) ? post.repostedBy.length || '' : ''}</span>
                 </button>
-                <button class="astral-social-act ${liked ? 'active astral-social-act--liked' : ''}" data-act="like">
-                    <svg viewBox="0 0 24 24" width="15" height="15" fill="${liked ? 'currentColor' : 'none'}" stroke="currentColor" stroke-width="1.9">
-                        <path d="M12 21s-7.2-4.5-9.4-8.6A5.3 5.3 0 0 1 12 6.4a5.3 5.3 0 0 1 9.4 6c-2.2 4.1-9.4 8.6-9.4 8.6z"/>
-                    </svg>
-                    <span>${Array.isArray(post.likedBy) ? post.likedBy.length || '' : ''}</span>
+                <button class="astral-social-act astral-social-act--react ${myReaction ? 'active' : ''}" data-act="react">
+                    <span class="astral-react-emoji">${myReaction || '❤'}</span>
+                    <span>${reactCount || ''}</span>
                 </button>
                 <button class="astral-social-act astral-social-act--del" data-act="delete" title="Удалить пост">
                     <svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="1.9">
@@ -220,13 +277,7 @@ export class SocialApp {
                 </div>` : ''}
         `;
 
-        card.querySelector('[data-act="like"]').addEventListener('click', (e) => {
-            e.stopPropagation();
-            this._toggle(post.id, 'likedBy');
-            this.render(container);
-        });
-
-        // Клик по аватару → профиль НПС
+        // Аватар → профиль НПС
         card.querySelector('.astral-social-avatar--clickable')?.addEventListener('click', (e) => {
             e.stopPropagation();
             const author = e.currentTarget.dataset.author;
@@ -239,29 +290,75 @@ export class SocialApp {
             this.render(container);
         });
 
+        card.querySelector('[data-act="react"]').addEventListener('click', (e) => {
+            e.stopPropagation();
+            this._openReactionPicker(post.id, card, container);
+        });
+
         card.querySelector('[data-act="reply"]').addEventListener('click', (e) => {
             e.stopPropagation();
             this._openReply(post.id, container);
         });
 
-        // удалять можно любой пост, включая чужие: это чистка ленты
         card.querySelector('[data-act="delete"]').addEventListener('click', (e) => {
             e.stopPropagation();
             const preview = String(post.text || '').slice(0, 60);
             const who = post.author ? `${post.author}: ` : '';
             if (!confirm(`Удалить пост?\n\n${who}«${preview}${preview.length >= 60 ? '…' : ''}»`)) return;
-
-            const state = this.storage.getState();
-            const before = (state.social || []).length;
-            state.social = (state.social || []).filter(p => p.id !== post.id);
-            if (state.social.length === before) return;
-
+            const s = this.storage.getState();
+            s.social = (s.social || []).filter(p => p.id !== post.id);
             this.storage.save();
             success('Пост удалён');
             this.render(container);
         });
 
         return card;
+    }
+
+    /* ─────────────────────────── пикер реакций ─────────────────────────── */
+
+    _openReactionPicker(postId, card, container) {
+        document.querySelectorAll('.astral-reaction-picker').forEach(el => el.remove());
+
+        const picker = document.createElement('div');
+        picker.className = 'astral-reaction-picker';
+        picker.innerHTML = REACTIONS.map(e =>
+            `<button class="astral-reaction-opt" data-emoji="${e}">${e}</button>`
+        ).join('');
+
+        card.appendChild(picker);
+        const close = () => picker.remove();
+        setTimeout(() => document.addEventListener('click', close, { once: true }), 10);
+
+        picker.addEventListener('click', (e) => {
+            e.stopPropagation();
+            const emoji = e.target.closest('[data-emoji]')?.dataset.emoji;
+            if (!emoji) return;
+
+            const s = this.storage.getState();
+            const post = (s.social || []).find(p => p.id === postId);
+            if (!post) { close(); return; }
+            if (!post.reactions) post.reactions = {};
+
+            // Снимаем старую реакцию юзера
+            for (const arr of Object.values(post.reactions)) {
+                if (Array.isArray(arr)) {
+                    const i = arr.indexOf('me'); if (i >= 0) arr.splice(i, 1);
+                }
+            }
+            // Та же — снимаем. Новая — ставим.
+            if (post.reactions.me !== emoji) {
+                if (!Array.isArray(post.reactions[emoji])) post.reactions[emoji] = [];
+                post.reactions[emoji].push('me');
+                post.reactions.me = emoji;
+            } else {
+                delete post.reactions.me;
+            }
+
+            this.storage.save();
+            close();
+            this.render(container);
+        });
     }
 
     _toggle(postId, field) {
@@ -399,8 +496,6 @@ export class SocialApp {
 
     /** Запросить пост у модели и показать «<имя> печатает…» */
     async _summonPost(author, container) {
-        // имя для индикатора: если рандом — показываем первого кандидата сцены,
-        // после ответа индикатор заменится реальным постом
         const { cast, charName, userName } = collectCast(this.context || {});
         const guess = String(author || '').trim()
             || cast.find(n => n !== userName)
@@ -426,9 +521,9 @@ export class SocialApp {
                 handle: this._handle(result.author),
                 text: result.text,
                 timestamp: Date.now(),
-                likedBy: [],
                 repostedBy: [],
                 replies: [],
+                reactions: {},
             });
 
             this.storage.save();
@@ -436,7 +531,6 @@ export class SocialApp {
             this.render(container);
         } catch (err) {
             stopTyping();
-            console.error('[Social] summon failed:', err);
             handleGenerationError(err, 'пост');
         }
     }
@@ -445,13 +539,34 @@ export class SocialApp {
         const phone = document.querySelector('.astral-phone');
         if (!phone) return;
 
+        const gallery = (this.storage.getState().gallery || []).filter(p => p.imageUrl);
+
         const overlay = document.createElement('div');
         overlay.className = 'astral-modal';
+
+        const galleryRow = gallery.length ? `
+            <div class="astral-composer-attach">
+                <div class="astral-composer-attach-label">Прикрепить фото</div>
+                <div class="astral-composer-gallery-row">
+                    ${gallery.slice(0, 8).map((p, i) => `
+                        <button class="astral-composer-thumb" data-idx="${i}">
+                            <img src="${this._esc(p.imageUrl)}" alt="" />
+                        </button>
+                    `).join('')}
+                </div>
+            </div>
+        ` : '';
+
         overlay.innerHTML = `
             <div class="astral-modal-card astral-modal-card--composer">
                 <div class="astral-modal-title">Новый пост</div>
-                <textarea class="astral-textarea" id="astral-social-text" rows="5"
-                          placeholder="Что происходит?"></textarea>
+                <textarea class="astral-textarea" id="astral-social-text" rows="4"
+                          placeholder="Что происходит? #хэштеги приветствуются"></textarea>
+                ${galleryRow}
+                <div id="astral-composer-preview" class="astral-composer-preview" style="display:none">
+                    <img id="astral-composer-preview-img" src="" alt="" />
+                    <button class="astral-composer-remove-photo" id="astral-remove-photo">✕</button>
+                </div>
                 <div class="astral-modal-actions">
                     <button class="astral-btn" id="astral-social-cancel">Отмена</button>
                     <button class="astral-btn astral-btn-primary" id="astral-social-go">Опубликовать</button>
@@ -461,6 +576,34 @@ export class SocialApp {
 
         phone.appendChild(overlay);
         const close = () => overlay.remove();
+
+        let selectedImageUrl = null;
+
+        // Выбор фото из галереи
+        overlay.querySelectorAll('.astral-composer-thumb').forEach(btn => {
+            btn.addEventListener('click', () => {
+                const idx = Number(btn.dataset.idx);
+                selectedImageUrl = gallery[idx]?.imageUrl || null;
+
+                overlay.querySelectorAll('.astral-composer-thumb').forEach(b =>
+                    b.classList.toggle('selected', b === btn)
+                );
+
+                const preview = overlay.querySelector('#astral-composer-preview');
+                const img = overlay.querySelector('#astral-composer-preview-img');
+                if (selectedImageUrl && preview && img) {
+                    img.src = selectedImageUrl;
+                    preview.style.display = 'block';
+                }
+            });
+        });
+
+        overlay.querySelector('#astral-remove-photo')?.addEventListener('click', () => {
+            selectedImageUrl = null;
+            overlay.querySelectorAll('.astral-composer-thumb').forEach(b => b.classList.remove('selected'));
+            const preview = overlay.querySelector('#astral-composer-preview');
+            if (preview) preview.style.display = 'none';
+        });
 
         overlay.querySelector('#astral-social-cancel').addEventListener('click', close);
         overlay.addEventListener('click', (e) => { if (e.target === overlay) close(); });
@@ -472,18 +615,21 @@ export class SocialApp {
             const state = this.storage.getState();
             if (!Array.isArray(state.social)) state.social = [];
 
-            state.social.push({
+            const post = {
                 id: `post_${Date.now()}_${Math.random().toString(36).slice(2, 7)}`,
                 author: this._userName(),
                 handle: this._myHandle(),
                 text,
                 timestamp: Date.now(),
                 mine: true,
-                likedBy: [],
                 repostedBy: [],
                 replies: [],
-            });
+                reactions: {},
+            };
 
+            if (selectedImageUrl) post.imageUrl = selectedImageUrl;
+
+            state.social.push(post);
             this.storage.save();
             close();
             success('Опубликовано');

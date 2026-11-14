@@ -6014,6 +6014,18 @@ ${lines.join("\n")}`;
   __name(buildNotesPromptBlock, "buildNotesPromptBlock");
 
   // apps/social.js
+  var REACTIONS = ["\u2764", "\u{1F525}", "\u{1F602}", "\u{1F62E}", "\u{1F494}"];
+  function extractHashtags(text) {
+    return [...String(text || "").matchAll(/#([\wа-яёА-ЯЁ]+)/gi)].map((m) => m[1]);
+  }
+  __name(extractHashtags, "extractHashtags");
+  function linkHashtags(text, esc) {
+    return esc(text).replace(
+      /#([\wа-яёА-ЯЁ]+)/gi,
+      (_, tag) => `<span class="astral-hashtag" data-tag="${esc(tag)}">#${esc(tag)}</span>`
+    );
+  }
+  __name(linkHashtags, "linkHashtags");
   var SocialApp = class {
     static {
       __name(this, "SocialApp");
@@ -6027,33 +6039,62 @@ ${lines.join("\n")}`;
       this.icon = ICONS.social;
       this._replyTo = null;
       this._filter = "all";
+      this._tagFilter = null;
     }
     render(container) {
       const state = this.storage.getState();
       const posts = this._sortedPosts(state);
       container.innerHTML = "";
       container.appendChild(this._buildTopBar(container));
+      if (this._tagFilter) {
+        const tagBar = document.createElement("div");
+        tagBar.className = "astral-tag-filter-bar";
+        tagBar.innerHTML = `
+                <span class="astral-tag-filter-label">#${this._esc(this._tagFilter)}</span>
+                <button class="astral-tag-filter-clear" id="astral-tag-clear">\u2715</button>
+            `;
+        tagBar.querySelector("#astral-tag-clear").addEventListener("click", () => {
+          this._tagFilter = null;
+          this.render(container);
+        });
+        container.appendChild(tagBar);
+      }
       if (posts.length === 0) {
         const empty = document.createElement("div");
         empty.className = "astral-empty-state";
         empty.innerHTML = `
                 <div class="astral-empty-state-icon">${ICONS.social}</div>
-                <div>\u041B\u0435\u043D\u0442\u0430 \u043F\u0443\u0441\u0442\u0430</div>
+                <div>${this._tagFilter ? `\u041D\u0435\u0442 \u043F\u043E\u0441\u0442\u043E\u0432 \u0441 #${this._esc(this._tagFilter)}` : "\u041B\u0435\u043D\u0442\u0430 \u043F\u0443\u0441\u0442\u0430"}</div>
                 <div class="astral-empty-hint">\u041F\u0435\u0440\u0441\u043E\u043D\u0430\u0436\u0438 \u043D\u0430\u0447\u043D\u0443\u0442 \u043F\u0438\u0441\u0430\u0442\u044C, \u043A\u043E\u0433\u0434\u0430 \u0432 \u0441\u0446\u0435\u043D\u0435 \u0447\u0442\u043E-\u0442\u043E \u043F\u0440\u043E\u0438\u0437\u043E\u0439\u0434\u0451\u0442</div>`;
         container.appendChild(empty);
       } else {
         const feed = document.createElement("div");
         feed.className = "astral-social-feed";
-        for (const post of posts) feed.appendChild(this._buildPost(post, state, container));
+        for (const post of posts) {
+          const card = this._buildPost(post, state, container);
+          feed.appendChild(card);
+        }
+        feed.addEventListener("click", (e) => {
+          const tagEl = e.target.closest(".astral-hashtag");
+          if (tagEl) {
+            e.stopPropagation();
+            this._tagFilter = tagEl.dataset.tag;
+            this.render(container);
+          }
+        });
         container.appendChild(feed);
       }
       container.appendChild(this._buildComposerBar(container));
     }
     _sortedPosts(state) {
-      const posts = Array.isArray(state.social) ? [...state.social] : [];
-      if (this._filter === "following") {
+      let posts = Array.isArray(state.social) ? [...state.social] : [];
+      if (this._tagFilter) {
+        posts = posts.filter(
+          (p) => extractHashtags(p.text).some((t) => t.toLowerCase() === this._tagFilter.toLowerCase())
+        );
+      } else if (this._filter === "following") {
         const following = new Set(state.socialFollowing || []);
-        return posts.filter((p) => following.has(p.author)).sort((a, b) => (b.timestamp || 0) - (a.timestamp || 0));
+        posts = posts.filter((p) => following.has(p.author));
       }
       return posts.sort((a, b) => (b.timestamp || 0) - (a.timestamp || 0));
     }
@@ -6149,24 +6190,29 @@ ${lines.join("\n")}`;
     _buildPost(post, state, container) {
       const card = document.createElement("div");
       card.className = "astral-social-post";
-      const liked = Array.isArray(post.likedBy) && post.likedBy.includes("me");
+      const myReaction = post.reactions?.me || null;
       const reposted = Array.isArray(post.repostedBy) && post.repostedBy.includes("me");
       const replies = Array.isArray(post.replies) ? post.replies : [];
       const avatarLetter = (post.author || "?")[0].toUpperCase();
+      const charName = this.context?.name2 || "";
+      const isVerified = post.author && charName && post.author.toLowerCase() === charName.toLowerCase();
+      const reactCount = Object.entries(post.reactions || {}).filter(([k]) => k !== "me").reduce((sum, [, arr]) => sum + (Array.isArray(arr) ? arr.length : 0), 0);
       card.innerHTML = `
             <div class="astral-social-head">
-                <div class="astral-social-avatar astral-social-avatar--clickable" data-author="${this._esc(post.author || "")}">${this._esc(avatarLetter)}</div>
+                <div class="astral-social-avatar astral-social-avatar--clickable"
+                     data-author="${this._esc(post.author || "")}">${this._esc(avatarLetter)}</div>
                 <div class="astral-social-who">
                     <span class="astral-social-name">${this._esc(post.author || "\u041D\u0435\u0438\u0437\u0432\u0435\u0441\u0442\u043D\u044B\u0439")}</span>
+                    ${isVerified ? `<span class="astral-verified" title="\u0412\u0435\u0440\u0438\u0444\u0438\u0446\u0438\u0440\u043E\u0432\u0430\u043D">\u2713</span>` : ""}
                     ${post.handle ? `<span class="astral-social-handle">@${this._esc(post.handle)}</span>` : ""}
                     <span class="astral-social-dot">\xB7</span>
                     <span class="astral-social-time">${this._ago(post.timestamp)}</span>
                 </div>
             </div>
 
-            <div class="astral-social-body">${this._esc(post.text || "").replace(/\n/g, "<br>")}</div>
+            <div class="astral-social-body">${linkHashtags(post.text || "", this._esc.bind(this)).replace(/\n/g, "<br>")}</div>
 
-            ${post.imageUrl ? `<div class="astral-social-media"><img src="${post.imageUrl}" alt="" loading="lazy"></div>` : ""}
+            ${post.imageUrl ? `<div class="astral-social-media"><img src="${this._esc(post.imageUrl)}" alt="" loading="lazy"></div>` : ""}
 
             <div class="astral-social-actions">
                 <button class="astral-social-act ${replies.length ? "has-count" : ""}" data-act="reply">
@@ -6181,11 +6227,9 @@ ${lines.join("\n")}`;
                     </svg>
                     <span>${Array.isArray(post.repostedBy) ? post.repostedBy.length || "" : ""}</span>
                 </button>
-                <button class="astral-social-act ${liked ? "active astral-social-act--liked" : ""}" data-act="like">
-                    <svg viewBox="0 0 24 24" width="15" height="15" fill="${liked ? "currentColor" : "none"}" stroke="currentColor" stroke-width="1.9">
-                        <path d="M12 21s-7.2-4.5-9.4-8.6A5.3 5.3 0 0 1 12 6.4a5.3 5.3 0 0 1 9.4 6c-2.2 4.1-9.4 8.6-9.4 8.6z"/>
-                    </svg>
-                    <span>${Array.isArray(post.likedBy) ? post.likedBy.length || "" : ""}</span>
+                <button class="astral-social-act astral-social-act--react ${myReaction ? "active" : ""}" data-act="react">
+                    <span class="astral-react-emoji">${myReaction || "\u2764"}</span>
+                    <span>${reactCount || ""}</span>
                 </button>
                 <button class="astral-social-act astral-social-act--del" data-act="delete" title="\u0423\u0434\u0430\u043B\u0438\u0442\u044C \u043F\u043E\u0441\u0442">
                     <svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="1.9">
@@ -6205,11 +6249,6 @@ ${lines.join("\n")}`;
                     ${replies.length > 3 ? `<div class="astral-social-more">\u0435\u0449\u0451 ${replies.length - 3}\u2026</div>` : ""}
                 </div>` : ""}
         `;
-      card.querySelector('[data-act="like"]').addEventListener("click", (e) => {
-        e.stopPropagation();
-        this._toggle(post.id, "likedBy");
-        this.render(container);
-      });
       card.querySelector(".astral-social-avatar--clickable")?.addEventListener("click", (e) => {
         e.stopPropagation();
         const author = e.currentTarget.dataset.author;
@@ -6219,6 +6258,10 @@ ${lines.join("\n")}`;
         e.stopPropagation();
         this._toggle(post.id, "repostedBy");
         this.render(container);
+      });
+      card.querySelector('[data-act="react"]').addEventListener("click", (e) => {
+        e.stopPropagation();
+        this._openReactionPicker(post.id, card, container);
       });
       card.querySelector('[data-act="reply"]').addEventListener("click", (e) => {
         e.stopPropagation();
@@ -6231,15 +6274,53 @@ ${lines.join("\n")}`;
         if (!confirm(`\u0423\u0434\u0430\u043B\u0438\u0442\u044C \u043F\u043E\u0441\u0442?
 
 ${who}\xAB${preview}${preview.length >= 60 ? "\u2026" : ""}\xBB`)) return;
-        const state2 = this.storage.getState();
-        const before = (state2.social || []).length;
-        state2.social = (state2.social || []).filter((p) => p.id !== post.id);
-        if (state2.social.length === before) return;
+        const s = this.storage.getState();
+        s.social = (s.social || []).filter((p) => p.id !== post.id);
         this.storage.save();
         success("\u041F\u043E\u0441\u0442 \u0443\u0434\u0430\u043B\u0451\u043D");
         this.render(container);
       });
       return card;
+    }
+    /* ─────────────────────────── пикер реакций ─────────────────────────── */
+    _openReactionPicker(postId, card, container) {
+      document.querySelectorAll(".astral-reaction-picker").forEach((el) => el.remove());
+      const picker = document.createElement("div");
+      picker.className = "astral-reaction-picker";
+      picker.innerHTML = REACTIONS.map(
+        (e) => `<button class="astral-reaction-opt" data-emoji="${e}">${e}</button>`
+      ).join("");
+      card.appendChild(picker);
+      const close = /* @__PURE__ */ __name(() => picker.remove(), "close");
+      setTimeout(() => document.addEventListener("click", close, { once: true }), 10);
+      picker.addEventListener("click", (e) => {
+        e.stopPropagation();
+        const emoji = e.target.closest("[data-emoji]")?.dataset.emoji;
+        if (!emoji) return;
+        const s = this.storage.getState();
+        const post = (s.social || []).find((p) => p.id === postId);
+        if (!post) {
+          close();
+          return;
+        }
+        if (!post.reactions) post.reactions = {};
+        for (const arr of Object.values(post.reactions)) {
+          if (Array.isArray(arr)) {
+            const i = arr.indexOf("me");
+            if (i >= 0) arr.splice(i, 1);
+          }
+        }
+        if (post.reactions.me !== emoji) {
+          if (!Array.isArray(post.reactions[emoji])) post.reactions[emoji] = [];
+          post.reactions[emoji].push("me");
+          post.reactions.me = emoji;
+        } else {
+          delete post.reactions.me;
+        }
+        this.storage.save();
+        close();
+        this.render(container);
+      });
     }
     _toggle(postId, field) {
       const state = this.storage.getState();
@@ -6376,29 +6457,46 @@ ${who}\xAB${preview}${preview.length >= 60 ? "\u2026" : ""}\xBB`)) return;
           handle: this._handle(result.author),
           text: result.text,
           timestamp: Date.now(),
-          likedBy: [],
           repostedBy: [],
-          replies: []
+          replies: [],
+          reactions: {}
         });
         this.storage.save();
         success(`${result.author}: \u043F\u043E\u0441\u0442 \u043E\u043F\u0443\u0431\u043B\u0438\u043A\u043E\u0432\u0430\u043D`);
         this.render(container);
       } catch (err) {
         stopTyping();
-        console.error("[Social] summon failed:", err);
         handleGenerationError(err, "\u043F\u043E\u0441\u0442");
       }
     }
     _openComposer(container) {
       const phone = document.querySelector(".astral-phone");
       if (!phone) return;
+      const gallery = (this.storage.getState().gallery || []).filter((p) => p.imageUrl);
       const overlay = document.createElement("div");
       overlay.className = "astral-modal";
+      const galleryRow = gallery.length ? `
+            <div class="astral-composer-attach">
+                <div class="astral-composer-attach-label">\u041F\u0440\u0438\u043A\u0440\u0435\u043F\u0438\u0442\u044C \u0444\u043E\u0442\u043E</div>
+                <div class="astral-composer-gallery-row">
+                    ${gallery.slice(0, 8).map((p, i) => `
+                        <button class="astral-composer-thumb" data-idx="${i}">
+                            <img src="${this._esc(p.imageUrl)}" alt="" />
+                        </button>
+                    `).join("")}
+                </div>
+            </div>
+        ` : "";
       overlay.innerHTML = `
             <div class="astral-modal-card astral-modal-card--composer">
                 <div class="astral-modal-title">\u041D\u043E\u0432\u044B\u0439 \u043F\u043E\u0441\u0442</div>
-                <textarea class="astral-textarea" id="astral-social-text" rows="5"
-                          placeholder="\u0427\u0442\u043E \u043F\u0440\u043E\u0438\u0441\u0445\u043E\u0434\u0438\u0442?"></textarea>
+                <textarea class="astral-textarea" id="astral-social-text" rows="4"
+                          placeholder="\u0427\u0442\u043E \u043F\u0440\u043E\u0438\u0441\u0445\u043E\u0434\u0438\u0442? #\u0445\u044D\u0448\u0442\u0435\u0433\u0438 \u043F\u0440\u0438\u0432\u0435\u0442\u0441\u0442\u0432\u0443\u044E\u0442\u0441\u044F"></textarea>
+                ${galleryRow}
+                <div id="astral-composer-preview" class="astral-composer-preview" style="display:none">
+                    <img id="astral-composer-preview-img" src="" alt="" />
+                    <button class="astral-composer-remove-photo" id="astral-remove-photo">\u2715</button>
+                </div>
                 <div class="astral-modal-actions">
                     <button class="astral-btn" id="astral-social-cancel">\u041E\u0442\u043C\u0435\u043D\u0430</button>
                     <button class="astral-btn astral-btn-primary" id="astral-social-go">\u041E\u043F\u0443\u0431\u043B\u0438\u043A\u043E\u0432\u0430\u0442\u044C</button>
@@ -6407,6 +6505,28 @@ ${who}\xAB${preview}${preview.length >= 60 ? "\u2026" : ""}\xBB`)) return;
         `;
       phone.appendChild(overlay);
       const close = /* @__PURE__ */ __name(() => overlay.remove(), "close");
+      let selectedImageUrl = null;
+      overlay.querySelectorAll(".astral-composer-thumb").forEach((btn) => {
+        btn.addEventListener("click", () => {
+          const idx = Number(btn.dataset.idx);
+          selectedImageUrl = gallery[idx]?.imageUrl || null;
+          overlay.querySelectorAll(".astral-composer-thumb").forEach(
+            (b) => b.classList.toggle("selected", b === btn)
+          );
+          const preview = overlay.querySelector("#astral-composer-preview");
+          const img = overlay.querySelector("#astral-composer-preview-img");
+          if (selectedImageUrl && preview && img) {
+            img.src = selectedImageUrl;
+            preview.style.display = "block";
+          }
+        });
+      });
+      overlay.querySelector("#astral-remove-photo")?.addEventListener("click", () => {
+        selectedImageUrl = null;
+        overlay.querySelectorAll(".astral-composer-thumb").forEach((b) => b.classList.remove("selected"));
+        const preview = overlay.querySelector("#astral-composer-preview");
+        if (preview) preview.style.display = "none";
+      });
       overlay.querySelector("#astral-social-cancel").addEventListener("click", close);
       overlay.addEventListener("click", (e) => {
         if (e.target === overlay) close();
@@ -6416,17 +6536,19 @@ ${who}\xAB${preview}${preview.length >= 60 ? "\u2026" : ""}\xBB`)) return;
         if (!text) return;
         const state = this.storage.getState();
         if (!Array.isArray(state.social)) state.social = [];
-        state.social.push({
+        const post = {
           id: `post_${Date.now()}_${Math.random().toString(36).slice(2, 7)}`,
           author: this._userName(),
           handle: this._myHandle(),
           text,
           timestamp: Date.now(),
           mine: true,
-          likedBy: [],
           repostedBy: [],
-          replies: []
-        });
+          replies: [],
+          reactions: {}
+        };
+        if (selectedImageUrl) post.imageUrl = selectedImageUrl;
+        state.social.push(post);
         this.storage.save();
         close();
         success("\u041E\u043F\u0443\u0431\u043B\u0438\u043A\u043E\u0432\u0430\u043D\u043E");
@@ -6914,6 +7036,8 @@ SOCIAL \u2014 \u043F\u043E\u0441\u0442\u044B:
 - \u041D\u041F\u0421 \u043F\u0443\u0431\u043B\u0438\u043A\u0443\u044E\u0442 \u043F\u043E\u0441\u0442\u044B \u043E \u0441\u0432\u043E\u0435\u0439 \u0436\u0438\u0437\u043D\u0438 \u0438\u043B\u0438 \u0440\u0435\u0430\u043A\u0446\u0438\u044F\u0445 \u043D\u0430 \u0441\u043E\u0431\u044B\u0442\u0438\u044F
 - \u0427\u0430\u0441\u0442\u043E\u0442\u0430: 1-2 \u043F\u043E\u0441\u0442\u0430 \u043D\u0430 8-12 \u0441\u043E\u043E\u0431\u0449\u0435\u043D\u0438\u0439 \u0447\u0430\u0442\u0430 (\u0440\u0430\u043D\u0434\u043E\u043C\u043D\u043E)
 - \u0422\u0435\u0433: <phone-event type="social_post" character="\u0418\u043C\u044F" description="\u0442\u0435\u043A\u0441\u0442 \u043F\u043E\u0441\u0442\u0430" />
+- \u0418\u0441\u043F\u043E\u043B\u044C\u0437\u0443\u0439 \u0445\u044D\u0448\u0442\u0435\u0433\u0438 \u0432 \u0442\u0435\u043A\u0441\u0442\u0435 \u043F\u043E\u0441\u0442\u0430 (#mood #life #night \u0438 \u0442.\u0434.) \u2014 1-2 \u043D\u0430 \u043F\u043E\u0441\u0442
+- \u0423 \u043A\u0430\u0436\u0434\u043E\u0433\u043E \u043F\u0435\u0440\u0441\u043E\u043D\u0430\u0436\u0430 \u0441\u0432\u043E\u0439 \u0441\u0442\u0438\u043B\u044C: \u043A\u0442\u043E-\u0442\u043E \u043F\u0438\u0448\u0435\u0442 \u043C\u0440\u0430\u0447\u043D\u043E (#dark #void), \u043A\u0442\u043E-\u0442\u043E \u043A\u043E\u0440\u043E\u0442\u043A\u043E \u0438 \u0437\u0430\u0433\u0430\u0434\u043E\u0447\u043D\u043E, \u043A\u0442\u043E-\u0442\u043E \u0430\u043A\u0442\u0438\u0432\u043D\u043E \u043F\u043E\u0441\u0442\u0438\u0442 \u0444\u043E\u0442\u043E \u0441 \u0445\u044D\u0448\u0442\u0435\u0433\u0430\u043C\u0438
 
 SOCIAL \u2014 \u043B\u0430\u0439\u043A\u0438 \u0438 \u043A\u043E\u043C\u043C\u0435\u043D\u0442\u044B (\u0442\u043E\u043B\u044C\u043A\u043E \u043F\u043E\u0434 \u043F\u043E\u0441\u0442\u0430\u043C\u0438 \u044E\u0437\u0435\u0440\u0430):
 - \u041D\u041F\u0421 \u043C\u043E\u0433\u0443\u0442 \u043B\u0430\u0439\u043A\u043D\u0443\u0442\u044C \u043F\u043E\u0441\u0442 \u044E\u0437\u0435\u0440\u0430: <phone-event type="social_like" character="\u0418\u043C\u044F" description="" />
