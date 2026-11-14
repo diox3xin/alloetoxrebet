@@ -26,6 +26,8 @@ import { refreshPhonePrompt } from './apps/phone-prompt.js';
 import { extractPhoneEvents, normaliseEvent } from './apps/event-parser.js';
 import { analysisInterval, analyseCast } from './apps/cast-profiles.js';
 import { error as showError } from './apps/notifications.js';
+import { scanChatHistory, mergeRecoveredState } from './apps/chat-scanner.js';
+import { startPhoneTimers } from './apps/phone-timers.js';
 
 const MODULE_NAME = 'astral-phone';
 
@@ -34,6 +36,7 @@ let storage = null;
 let imageGen = null;
 let seeder = null;
 let initialized = false;
+let stopTimers = null; // функция для остановки таймеров
 
 /* ────────────────────────────── prompt block ────────────────────────────── */
 
@@ -130,6 +133,16 @@ function init() {
 
     initialized = true;
     console.log('[Astral Phone] ready');
+    
+    // Запускаем таймеры автономных событий
+    // Таймеры стартуют только если у персонажа есть Creator Studio (аккаунт)
+    // Останавливаются при смене чата
+    try {
+        stopTimers = startPhoneTimers(core);
+        console.log('[Astral Phone] autonomous event timers started');
+    } catch (err) {
+        console.warn('[Astral Phone] timers failed to start:', err);
+    }
 }
 
 /* ────────────────────────────── launcher button ────────────────────────────── */
@@ -475,12 +488,42 @@ function registerChatSwitchHandler(context) {
 
     const onSwitch = () => {
         try {
+            // Останавливаем таймеры для старого чата
+            if (typeof stopTimers === 'function') {
+                stopTimers();
+                stopTimers = null;
+            }
+            
             core?.storage?.flush?.();
             core?.accountManager?.invalidate();
             core?.accountManager?.getCurrentAccount();
+            
+            // Восстановление состояния из истории чата
+            try {
+                const ctx = SillyTavern.getContext();
+                if (ctx?.chat && storage) {
+                    console.log('[Astral Phone] scanning chat history...');
+                    const currentState = storage.getState();
+                    const recovered = scanChatHistory(ctx.chat, currentState);
+                    const merged = mergeRecoveredState(currentState, recovered);
+                    Object.assign(currentState, merged);
+                    storage.save();
+                    console.log('[Astral Phone] state recovered from chat history');
+                }
+            } catch (err) {
+                console.warn('[Astral Phone] chat scan failed:', err);
+            }
+            
             if (core?.isOpen) {
                 if (core.currentAppId) core.openApp(core.currentAppId);
                 else core.showHome();
+            }
+            
+            // Перезапускаем таймеры для нового чата
+            try {
+                stopTimers = startPhoneTimers(core);
+            } catch (err) {
+                console.warn('[Astral Phone] timers restart failed:', err);
             }
         } catch (err) {
             console.warn('[Astral Phone] chat switch refresh failed:', err);

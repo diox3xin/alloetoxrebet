@@ -40,14 +40,10 @@ function buildSocialMetrics(state) {
  */
 function buildCreatorMetrics(state) {
     const creator = state.creator || {};
-    const account = creator.account || {};
-    const posts = creator.posts || [];
-    
     return {
-        subscribers: account.subscribers || 0,
-        balance: account.balance || 0,
-        totalPosts: posts.length,
-        totalEarned: account.totalEarned || 0,
+        subscribers: creator.subscribers || 0,
+        revenue: creator.revenue || 0,
+        totalPosts: (creator.posts || []).length,
     };
 }
 
@@ -95,10 +91,9 @@ export function buildPhoneContext(state, storageRef) {
         if (creator.subscribers > 0 || creator.totalPosts > 0) {
             const metrics = [
                 `Подписчиков: ${creator.subscribers}`,
-                `Баланс: $${creator.balance.toFixed(2)}`,
+                `Заработано: $${(creator.revenue || 0).toFixed(2)}`,
                 `Постов опубликовано: ${creator.totalPosts}`,
-                creator.totalEarned > 0 ? `Всего заработано: $${creator.totalEarned.toFixed(2)}` : null,
-            ].filter(Boolean).join('\n');
+            ].join('\n');
             parts.push(`[Astral Phone — Creator Studio]\n${metrics}`);
         }
     } catch (_) { /* ignore */ }
