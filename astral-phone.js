@@ -3657,6 +3657,12 @@ MESSAGE:`;
                 <div class="astral-thread-name">${this._esc(character)}</div>
                 ${role ? `<div class="astral-thread-role">${this._esc(role)}</div>` : ""}
             </div>
+            <button class="astral-thread-edit-btn" id="astral-thread-edit" title="\u0420\u0435\u0434\u0430\u043A\u0442\u0438\u0440\u043E\u0432\u0430\u0442\u044C \u043A\u043E\u043D\u0442\u0430\u043A\u0442">
+                <svg viewBox="0 0 24 24" width="15" height="15" stroke="currentColor" fill="none" stroke-width="2">
+                    <path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/>
+                    <path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4z"/>
+                </svg>
+            </button>
         `;
       container.appendChild(header);
       const wrap = document.createElement("div");
@@ -3681,6 +3687,9 @@ MESSAGE:`;
       header.querySelector("#astral-thread-back").addEventListener("click", () => {
         this._thread = null;
         this.render(document.querySelector(".astral-phone-body"));
+      });
+      header.querySelector("#astral-thread-edit").addEventListener("click", () => {
+        this._openContactEditor(character, role);
       });
       const composer = document.createElement("div");
       composer.className = "astral-msg-composer";
@@ -3717,6 +3726,91 @@ MESSAGE:`;
       });
       composer.querySelector("#astral-msg-reply-btn").addEventListener("click", () => {
         this._requestCharacterReply(character);
+      });
+    }
+    /* ─────────────────────────── редактирование контакта ─────────────────────────── */
+    _openContactEditor(character, currentRole) {
+      const phone = document.querySelector(".astral-phone");
+      if (!phone) return;
+      const overlay = document.createElement("div");
+      overlay.className = "astral-modal";
+      overlay.innerHTML = `
+            <div class="astral-modal-card astral-modal-card--sheet">
+                <div class="astral-modal-title">\u041A\u043E\u043D\u0442\u0430\u043A\u0442</div>
+
+                <label class="astral-field-label">\u0418\u043C\u044F</label>
+                <input class="astral-text-input" id="astral-contact-name"
+                       type="text" value="${this._esc(character)}" placeholder="\u0418\u043C\u044F \u043A\u043E\u043D\u0442\u0430\u043A\u0442\u0430" />
+
+                <label class="astral-field-label">\u0420\u043E\u043B\u044C / \u043E\u043F\u0438\u0441\u0430\u043D\u0438\u0435</label>
+                <input class="astral-text-input" id="astral-contact-role"
+                       type="text" value="${this._esc(currentRole)}"
+                       placeholder="\u041D\u0430\u043F\u0440\u0438\u043C\u0435\u0440: \u043B\u0443\u0447\u0448\u0438\u0439 \u0434\u0440\u0443\u0433, \u043C\u0435\u043D\u0435\u0434\u0436\u0435\u0440, \u0431\u044B\u0432\u0448\u0438\u0439\u2026" />
+
+                <div class="astral-contact-editor-actions">
+                    <button class="astral-btn astral-btn--danger" id="astral-contact-delete">
+                        \u0423\u0434\u0430\u043B\u0438\u0442\u044C \u043F\u0435\u0440\u0435\u043F\u0438\u0441\u043A\u0443
+                    </button>
+                    <div class="astral-contact-editor-right">
+                        <button class="astral-btn" id="astral-contact-cancel">\u041E\u0442\u043C\u0435\u043D\u0430</button>
+                        <button class="astral-btn astral-btn-primary" id="astral-contact-save">\u0421\u043E\u0445\u0440\u0430\u043D\u0438\u0442\u044C</button>
+                    </div>
+                </div>
+            </div>
+        `;
+      phone.appendChild(overlay);
+      const close = /* @__PURE__ */ __name(() => overlay.remove(), "close");
+      const nameInput = overlay.querySelector("#astral-contact-name");
+      nameInput.focus();
+      nameInput.select();
+      overlay.querySelector("#astral-contact-cancel").addEventListener("click", close);
+      overlay.addEventListener("click", (e) => {
+        if (e.target === overlay) close();
+      });
+      overlay.querySelector("#astral-contact-save").addEventListener("click", () => {
+        const newName = nameInput.value.trim();
+        const newRole = overlay.querySelector("#astral-contact-role").value.trim();
+        if (!newName) return;
+        const state = this.storage.getState();
+        for (const msg of state.messages || []) {
+          if (msg.character === character) {
+            msg.character = newName;
+            if (newRole) msg.role = newRole;
+          }
+        }
+        this.storage.save();
+        try {
+          globalThis.__astralRefreshPrompt?.();
+        } catch {
+        }
+        close();
+        this._thread = newName;
+        this.render(document.querySelector(".astral-phone-body"));
+        success("\u041A\u043E\u043D\u0442\u0430\u043A\u0442 \u043E\u0431\u043D\u043E\u0432\u043B\u0451\u043D");
+      });
+      overlay.querySelector("#astral-contact-delete").addEventListener("click", () => {
+        const preview = character;
+        if (!confirm(`\u0423\u0434\u0430\u043B\u0438\u0442\u044C \u043F\u0435\u0440\u0435\u043F\u0438\u0441\u043A\u0443 \u0441 \xAB${preview}\xBB?
+
+\u0412\u0441\u0435 \u0441\u043E\u043E\u0431\u0449\u0435\u043D\u0438\u044F \u0431\u0443\u0434\u0443\u0442 \u0443\u0434\u0430\u043B\u0435\u043D\u044B.`)) return;
+        const state = this.storage.getState();
+        state.messages = (state.messages || []).filter((m) => m.character !== character);
+        this.storage.save();
+        try {
+          globalThis.__astralRefreshPrompt?.();
+        } catch {
+        }
+        close();
+        this._thread = null;
+        this.render(document.querySelector(".astral-phone-body"));
+        success("\u041F\u0435\u0440\u0435\u043F\u0438\u0441\u043A\u0430 \u0443\u0434\u0430\u043B\u0435\u043D\u0430");
+      });
+      overlay.addEventListener("keydown", (e) => {
+        if (e.key === "Enter" && !e.shiftKey) {
+          e.preventDefault();
+          overlay.querySelector("#astral-contact-save").click();
+        }
+        if (e.key === "Escape") close();
       });
     }
     /**

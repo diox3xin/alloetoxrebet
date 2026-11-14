@@ -3447,3 +3447,52 @@
 }
 
 .astral-social-avatar--clickable:hover { opacity: 0.75; }
+
+/* ─────────────────────────── contact editor ─────────────────────────── */
+
+.astral-thread-edit-btn {
+  margin-left: auto;
+  background: none;
+  border: none;
+  color: var(--phone-muted);
+  cursor: pointer;
+  padding: 6px;
+  border-radius: 8px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: color 0.15s, background 0.15s;
+}
+
+.astral-thread-edit-btn:hover {
+  color: var(--phone-accent);
+  background: rgba(217,154,181,0.1);
+}
+
+.astral-contact-editor-actions {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-top: 8px;
+  gap: 8px;
+}
+
+.astral-contact-editor-right {
+  display: flex;
+  gap: 8px;
+}
+
+.astral-btn--danger {
+  background: rgba(244, 67, 54, 0.1);
+  border: 1px solid rgba(244, 67, 54, 0.3);
+  color: #F44336;
+  font-size: 11px;
+  padding: 7px 11px;
+  border-radius: 10px;
+  cursor: pointer;
+  transition: background 0.15s;
+}
+
+.astral-btn--danger:hover {
+  background: rgba(244, 67, 54, 0.2);
+}

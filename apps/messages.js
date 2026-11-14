@@ -146,6 +146,12 @@ export class MessagesApp {
                 <div class="astral-thread-name">${this._esc(character)}</div>
                 ${role ? `<div class="astral-thread-role">${this._esc(role)}</div>` : ''}
             </div>
+            <button class="astral-thread-edit-btn" id="astral-thread-edit" title="Редактировать контакт">
+                <svg viewBox="0 0 24 24" width="15" height="15" stroke="currentColor" fill="none" stroke-width="2">
+                    <path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/>
+                    <path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4z"/>
+                </svg>
+            </button>
         `;
         container.appendChild(header);
 
@@ -180,6 +186,10 @@ export class MessagesApp {
         header.querySelector('#astral-thread-back').addEventListener('click', () => {
             this._thread = null;
             this.render(document.querySelector('.astral-phone-body'));
+        });
+
+        header.querySelector('#astral-thread-edit').addEventListener('click', () => {
+            this._openContactEditor(character, role);
         });
 
         // ── composer ──
@@ -218,6 +228,100 @@ export class MessagesApp {
         // ── reply button: trigger character response ──
         composer.querySelector('#astral-msg-reply-btn').addEventListener('click', () => {
             this._requestCharacterReply(character);
+        });
+    }
+
+    /* ─────────────────────────── редактирование контакта ─────────────────────────── */
+
+    _openContactEditor(character, currentRole) {
+        const phone = document.querySelector('.astral-phone');
+        if (!phone) return;
+
+        const overlay = document.createElement('div');
+        overlay.className = 'astral-modal';
+        overlay.innerHTML = `
+            <div class="astral-modal-card astral-modal-card--sheet">
+                <div class="astral-modal-title">Контакт</div>
+
+                <label class="astral-field-label">Имя</label>
+                <input class="astral-text-input" id="astral-contact-name"
+                       type="text" value="${this._esc(character)}" placeholder="Имя контакта" />
+
+                <label class="astral-field-label">Роль / описание</label>
+                <input class="astral-text-input" id="astral-contact-role"
+                       type="text" value="${this._esc(currentRole)}"
+                       placeholder="Например: лучший друг, менеджер, бывший…" />
+
+                <div class="astral-contact-editor-actions">
+                    <button class="astral-btn astral-btn--danger" id="astral-contact-delete">
+                        Удалить переписку
+                    </button>
+                    <div class="astral-contact-editor-right">
+                        <button class="astral-btn" id="astral-contact-cancel">Отмена</button>
+                        <button class="astral-btn astral-btn-primary" id="astral-contact-save">Сохранить</button>
+                    </div>
+                </div>
+            </div>
+        `;
+
+        phone.appendChild(overlay);
+        const close = () => overlay.remove();
+
+        const nameInput = overlay.querySelector('#astral-contact-name');
+        nameInput.focus();
+        nameInput.select();
+
+        overlay.querySelector('#astral-contact-cancel').addEventListener('click', close);
+        overlay.addEventListener('click', (e) => { if (e.target === overlay) close(); });
+
+        overlay.querySelector('#astral-contact-save').addEventListener('click', () => {
+            const newName = nameInput.value.trim();
+            const newRole = overlay.querySelector('#astral-contact-role').value.trim();
+
+            if (!newName) return;
+
+            const state = this.storage.getState();
+
+            // Переименовываем все сообщения в треде
+            for (const msg of (state.messages || [])) {
+                if (msg.character === character) {
+                    msg.character = newName;
+                    if (newRole) msg.role = newRole;
+                }
+            }
+
+            this.storage.save();
+            try { globalThis.__astralRefreshPrompt?.(); } catch { /* ignore */ }
+
+            close();
+            // Переходим в переименованный тред
+            this._thread = newName;
+            this.render(document.querySelector('.astral-phone-body'));
+            success('Контакт обновлён');
+        });
+
+        overlay.querySelector('#astral-contact-delete').addEventListener('click', () => {
+            const preview = character;
+            if (!confirm(`Удалить переписку с «${preview}»?\n\nВсе сообщения будут удалены.`)) return;
+
+            const state = this.storage.getState();
+            state.messages = (state.messages || []).filter(m => m.character !== character);
+            this.storage.save();
+            try { globalThis.__astralRefreshPrompt?.(); } catch { /* ignore */ }
+
+            close();
+            this._thread = null;
+            this.render(document.querySelector('.astral-phone-body'));
+            success('Переписка удалена');
+        });
+
+        // Enter — сохранить
+        overlay.addEventListener('keydown', (e) => {
+            if (e.key === 'Enter' && !e.shiftKey) {
+                e.preventDefault();
+                overlay.querySelector('#astral-contact-save').click();
+            }
+            if (e.key === 'Escape') close();
         });
     }
 
