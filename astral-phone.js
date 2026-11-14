@@ -3959,8 +3959,14 @@ MESSAGE:`;
                 <div class="astral-empty-state">
                     <div class="astral-empty-state-icon">${ICONS.messages}</div>
                     <div>\u041D\u0435\u0442 \u043F\u0435\u0440\u0435\u043F\u0438\u0441\u043A\u0438</div>
-                    <div class="astral-empty-hint">\u041F\u0435\u0440\u0435\u043F\u0438\u0441\u043A\u0430 \u043F\u043E\u044F\u0432\u0438\u0442\u0441\u044F, \u043A\u043E\u0433\u0434\u0430 \u043E\u0442\u043A\u0440\u043E\u0435\u0448\u044C \u044D\u0442\u043E\u0442 \u044D\u043A\u0440\u0430\u043D \u0432\u043F\u0435\u0440\u0432\u044B\u0435</div>
+                    <div class="astral-empty-hint">\u041F\u0435\u0440\u0435\u043F\u0438\u0441\u043A\u0430 \u043F\u043E\u044F\u0432\u0438\u0442\u0441\u044F \u0430\u0432\u0442\u043E\u043C\u0430\u0442\u0438\u0447\u0435\u0441\u043A\u0438, \u0438\u043B\u0438 \u0441\u0433\u0435\u043D\u0435\u0440\u0438\u0440\u0443\u0439 \u0432\u0440\u0443\u0447\u043D\u0443\u044E</div>
+                    <button class="astral-btn astral-btn-primary astral-regen-btn" id="astral-seed-now">
+                        \u0421\u0433\u0435\u043D\u0435\u0440\u0438\u0440\u043E\u0432\u0430\u0442\u044C \u043F\u0435\u0440\u0435\u043F\u0438\u0441\u043A\u0443
+                    </button>
                 </div>`;
+        container.querySelector("#astral-seed-now")?.addEventListener("click", () => {
+          this._runSeed(container, false);
+        });
         return;
       }
       const threads = /* @__PURE__ */ new Map();
@@ -3977,8 +3983,17 @@ MESSAGE:`;
       searchWrap.className = "astral-search-wrap";
       searchWrap.innerHTML = `
             <input class="astral-search-input" id="astral-msg-search"
-                   placeholder="\u041F\u043E\u0438\u0441\u043A\u2026" autocomplete="off" type="search" />`;
+                   placeholder="\u041F\u043E\u0438\u0441\u043A\u2026" autocomplete="off" type="search" />
+            <button class="astral-msg-regen-btn" id="astral-msg-regen" title="\u041F\u0435\u0440\u0435\u0433\u0435\u043D\u0435\u0440\u0438\u0440\u043E\u0432\u0430\u0442\u044C \u043F\u0435\u0440\u0435\u043F\u0438\u0441\u043A\u0443">
+                <svg viewBox="0 0 24 24" width="14" height="14" stroke="currentColor" fill="none" stroke-width="2.2">
+                    <path d="M23 4v6h-6M1 20v-6h6"/>
+                    <path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15"/>
+                </svg>
+            </button>`;
       container.appendChild(searchWrap);
+      searchWrap.querySelector("#astral-msg-regen").addEventListener("click", () => {
+        this._runSeed(container, true);
+      });
       const list = document.createElement("div");
       list.className = "astral-thread-list";
       const renderItems = /* @__PURE__ */ __name((query = "") => {
@@ -4018,6 +4033,27 @@ MESSAGE:`;
         renderItems(e.target.value);
       });
       container.appendChild(list);
+    }
+    /* ─────────────────────────── seed ─────────────────────────── */
+    async _runSeed(container, force) {
+      const seeder2 = globalThis.__astralSeeder;
+      if (!seeder2) {
+        error("\u0421\u0438\u0434\u0435\u0440 \u043D\u0435\u0434\u043E\u0441\u0442\u0443\u043F\u0435\u043D \u2014 \u043E\u0431\u043D\u043E\u0432\u0438\u0442\u0435 \u0441\u0442\u0440\u0430\u043D\u0438\u0446\u0443");
+        return;
+      }
+      globalThis.__astralSeeding = true;
+      this.render(container);
+      try {
+        const res = await seeder2.seed({ force, onProgress: /* @__PURE__ */ __name(() => {
+        }, "onProgress") });
+        if (res.skipped) {
+        }
+      } catch (err) {
+        error(`\u041D\u0435 \u0443\u0434\u0430\u043B\u043E\u0441\u044C \u0441\u0433\u0435\u043D\u0435\u0440\u0438\u0440\u043E\u0432\u0430\u0442\u044C \u043F\u0435\u0440\u0435\u043F\u0438\u0441\u043A\u0443: ${err.message}`);
+      } finally {
+        globalThis.__astralSeeding = false;
+        this.render(container);
+      }
     }
     /* ─────────────────────────── single thread ─────────────────────────── */
     _renderThread(container, character) {
@@ -4285,9 +4321,9 @@ MESSAGE:`;
     /** Build a prompt asking the character to respond. */
     _buildReplyPrompt(character, lastMsg, state) {
       const ctx = this.context || globalThis.SillyTavern?.getContext?.() || {};
-      const charName = ctx.name2 || "\u043F\u0435\u0440\u0441\u043E\u043D\u0430\u0436";
-      const userName = ctx.name1 || "\u0442\u044B";
-      const thread = (state.messages || []).filter((m) => m.character === character).slice(-8).map((m) => `${m.from === "me" ? "\u0422\u044B" : "\u041F\u0435\u0440\u0441\u043E\u043D\u0430\u0436"}: ${m.text}`).join("\n");
+      const charName = character || String(ctx?.characters?.[ctx?.characterId]?.name || ctx?.name2 || "\u041F\u0435\u0440\u0441\u043E\u043D\u0430\u0436").trim();
+      const userName = String(ctx?.name1 || "").trim() || "\u0422\u044B";
+      const thread = (state.messages || []).filter((m) => m.character === character).slice(-8).map((m) => `${m.from === "me" ? userName : charName}: ${m.text}`).join("\n");
       return `[MESSAGE_REPLY] Character: ${charName}
 
 You are ${charName} messaging ${userName} on the phone. The last thing they wrote was: "${lastMsg?.text || "(no message)"}".
@@ -6465,8 +6501,15 @@ ${lines.join("\n")}`;
         empty.innerHTML = `
                 <div class="astral-empty-state-icon">${ICONS.social}</div>
                 <div>${this._tagFilter ? `\u041D\u0435\u0442 \u043F\u043E\u0441\u0442\u043E\u0432 \u0441 #${this._esc(this._tagFilter)}` : "\u041B\u0435\u043D\u0442\u0430 \u043F\u0443\u0441\u0442\u0430"}</div>
-                <div class="astral-empty-hint">\u041F\u0435\u0440\u0441\u043E\u043D\u0430\u0436\u0438 \u043D\u0430\u0447\u043D\u0443\u0442 \u043F\u0438\u0441\u0430\u0442\u044C, \u043A\u043E\u0433\u0434\u0430 \u0432 \u0441\u0446\u0435\u043D\u0435 \u0447\u0442\u043E-\u0442\u043E \u043F\u0440\u043E\u0438\u0437\u043E\u0439\u0434\u0451\u0442</div>`;
+                <div class="astral-empty-hint">\u041F\u0435\u0440\u0441\u043E\u043D\u0430\u0436\u0438 \u043D\u0430\u0447\u043D\u0443\u0442 \u043F\u0438\u0441\u0430\u0442\u044C, \u043A\u043E\u0433\u0434\u0430 \u0432 \u0441\u0446\u0435\u043D\u0435 \u0447\u0442\u043E-\u0442\u043E \u043F\u0440\u043E\u0438\u0437\u043E\u0439\u0434\u0451\u0442</div>
+                ${!this._tagFilter ? `<button class="astral-btn astral-btn-primary astral-regen-btn" id="astral-social-seed-now">
+                    \u0417\u0430\u043F\u043E\u043B\u043D\u0438\u0442\u044C \u043B\u0435\u043D\u0442\u0443
+                </button>` : ""}
+            `;
         container.appendChild(empty);
+        empty.querySelector("#astral-social-seed-now")?.addEventListener("click", () => {
+          this._seedFeed(container, false);
+        });
       } else {
         const feed = document.createElement("div");
         feed.className = "astral-social-feed";
@@ -6559,6 +6602,15 @@ ${lines.join("\n")}`;
       bar.appendChild(trending);
       bar.appendChild(searchBtn);
       bar.appendChild(profile);
+      const regenBtn = document.createElement("button");
+      regenBtn.className = "astral-social-tab astral-social-tab--icon";
+      regenBtn.title = "\u041F\u0435\u0440\u0435\u0433\u0435\u043D\u0435\u0440\u0438\u0440\u043E\u0432\u0430\u0442\u044C \u043B\u0435\u043D\u0442\u0443";
+      regenBtn.innerHTML = `<svg viewBox="0 0 24 24" width="13" height="13" stroke="currentColor" fill="none" stroke-width="2.2">
+            <path d="M23 4v6h-6M1 20v-6h6"/>
+            <path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15"/>
+        </svg>`;
+      regenBtn.addEventListener("click", () => this._seedFeed(container, true));
+      bar.appendChild(regenBtn);
       return bar;
     }
     _toggleSearch(container) {
@@ -7099,6 +7151,54 @@ ${who}\xAB${preview}${preview.length >= 60 ? "\u2026" : ""}\xBB`)) return;
         return { success: true, message: `${from} \u043F\u043E\u0434\u043F\u0438\u0441\u0430\u043B\u0441\u044F` };
       }
       return { success: false, message: `\u041D\u0435\u0438\u0437\u0432\u0435\u0441\u0442\u043D\u044B\u0439 \u0442\u0438\u043F \u0441\u043E\u0431\u044B\u0442\u0438\u044F: ${type}` };
+    }
+    /* ─────────────────────────── seed ленты ─────────────────────────── */
+    async _seedFeed(container, force) {
+      const ctx = this.context || globalThis.SillyTavern?.getContext?.() || {};
+      const state = this.storage.getState();
+      if (force) {
+        state.social = (state.social || []).filter((p) => p.mine);
+        this.storage.save();
+      }
+      const { cast: castList } = collectCast(ctx);
+      const myName = String(ctx.name1 || "").trim() || "\u0422\u044B";
+      const npcs = castList.filter((n) => n !== myName).slice(0, 5);
+      if (!npcs.length) {
+        error("\u041D\u0435\u0442 \u043F\u0435\u0440\u0441\u043E\u043D\u0430\u0436\u0435\u0439 \u0432 \u0441\u0446\u0435\u043D\u0435");
+        return;
+      }
+      const count = Math.min(npcs.length, 4 + Math.floor(Math.random() * 3));
+      container.innerHTML = `<div class="astral-empty-state astral-seeding">
+            <div class="astral-seeding-dots"><span></span><span></span><span></span></div>
+            <div>\u0417\u0430\u043F\u043E\u043B\u043D\u044F\u044E \u043B\u0435\u043D\u0442\u0443\u2026</div>
+        </div>`;
+      let generated = 0;
+      for (let i = 0; i < count; i++) {
+        const author = npcs[i % npcs.length];
+        try {
+          const result = await generateSocialPost(ctx, { author });
+          if (result.text) {
+            if (!Array.isArray(state.social)) state.social = [];
+            state.social.push({
+              id: `seed_${Date.now()}_${Math.random().toString(36).slice(2, 7)}`,
+              author: result.author,
+              handle: result.author.toLowerCase().replace(/\s+/g, "_").replace(/[^a-z0-9_]/g, ""),
+              text: result.text,
+              timestamp: Date.now() - (count - i) * 6e4 * (5 + Math.floor(Math.random() * 30)),
+              reactions: {},
+              replies: [],
+              repostedBy: [],
+              seeded: true
+            });
+            this.storage.save();
+            generated++;
+          }
+        } catch (err) {
+          console.warn("[Social] seed post failed:", err);
+        }
+      }
+      if (generated === 0) error("\u041D\u0435 \u0443\u0434\u0430\u043B\u043E\u0441\u044C \u0441\u0433\u0435\u043D\u0435\u0440\u0438\u0440\u043E\u0432\u0430\u0442\u044C \u043F\u043E\u0441\u0442\u044B");
+      this.render(container);
     }
     /* ─────────────────────────── утилиты ─────────────────────────── */
     /** Имя для своих постов — из профиля соцсети, иначе из персоны. */
@@ -7983,6 +8083,7 @@ description \u043F\u0438\u0448\u0438 \u043A\u0430\u043A \u043F\u0440\u043E\u043C
     core = new PhoneCore(context, storage, imageGen);
     seeder = new ContactSeeder(context, storage);
     globalThis.__astralRefreshPrompt = () => refreshPhonePrompt(storage);
+    globalThis.__astralSeeder = seeder;
     window.__astralPhoneCore = core;
     injectLauncher();
     const apps = [

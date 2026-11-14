@@ -88,8 +88,15 @@ export class SocialApp {
             empty.innerHTML = `
                 <div class="astral-empty-state-icon">${ICONS.social}</div>
                 <div>${this._tagFilter ? `Нет постов с #${this._esc(this._tagFilter)}` : 'Лента пуста'}</div>
-                <div class="astral-empty-hint">Персонажи начнут писать, когда в сцене что-то произойдёт</div>`;
+                <div class="astral-empty-hint">Персонажи начнут писать, когда в сцене что-то произойдёт</div>
+                ${!this._tagFilter ? `<button class="astral-btn astral-btn-primary astral-regen-btn" id="astral-social-seed-now">
+                    Заполнить ленту
+                </button>` : ''}
+            `;
             container.appendChild(empty);
+            empty.querySelector('#astral-social-seed-now')?.addEventListener('click', () => {
+                this._seedFeed(container, false);
+            });
         } else {
             const feed = document.createElement('div');
             feed.className = 'astral-social-feed';
@@ -184,6 +191,18 @@ export class SocialApp {
         bar.appendChild(trending);
         bar.appendChild(searchBtn);
         bar.appendChild(profile);
+
+        // Кнопка перегенерации постов
+        const regenBtn = document.createElement('button');
+        regenBtn.className = 'astral-social-tab astral-social-tab--icon';
+        regenBtn.title = 'Перегенерировать ленту';
+        regenBtn.innerHTML = `<svg viewBox="0 0 24 24" width="13" height="13" stroke="currentColor" fill="none" stroke-width="2.2">
+            <path d="M23 4v6h-6M1 20v-6h6"/>
+            <path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15"/>
+        </svg>`;
+        regenBtn.addEventListener('click', () => this._seedFeed(container, true));
+        bar.appendChild(regenBtn);
+
         return bar;
     }
 
@@ -832,6 +851,59 @@ export class SocialApp {
         }
 
         return { success: false, message: `Неизвестный тип события: ${type}` };
+    }
+
+    /* ─────────────────────────── seed ленты ─────────────────────────── */
+
+    async _seedFeed(container, force) {
+        const ctx = this.context || globalThis.SillyTavern?.getContext?.() || {};
+        const state = this.storage.getState();
+
+        if (force) {
+            state.social = (state.social || []).filter(p => p.mine);
+            this.storage.save();
+        }
+
+        const { cast: castList } = collectCast(ctx);
+        const myName = String(ctx.name1 || '').trim() || 'Ты';
+        const npcs = castList.filter(n => n !== myName).slice(0, 5);
+        if (!npcs.length) { showError('Нет персонажей в сцене'); return; }
+
+        const count = Math.min(npcs.length, 4 + Math.floor(Math.random() * 3));
+
+        container.innerHTML = `<div class="astral-empty-state astral-seeding">
+            <div class="astral-seeding-dots"><span></span><span></span><span></span></div>
+            <div>Заполняю ленту…</div>
+        </div>`;
+
+        let generated = 0;
+        for (let i = 0; i < count; i++) {
+            const author = npcs[i % npcs.length];
+            try {
+                const result = await generateSocialPost(ctx, { author });
+                if (result.text) {
+                    if (!Array.isArray(state.social)) state.social = [];
+                    state.social.push({
+                        id: `seed_${Date.now()}_${Math.random().toString(36).slice(2, 7)}`,
+                        author: result.author,
+                        handle: result.author.toLowerCase().replace(/\s+/g, '_').replace(/[^a-z0-9_]/g, ''),
+                        text: result.text,
+                        timestamp: Date.now() - (count - i) * 60_000 * (5 + Math.floor(Math.random() * 30)),
+                        reactions: {},
+                        replies: [],
+                        repostedBy: [],
+                        seeded: true,
+                    });
+                    this.storage.save();
+                    generated++;
+                }
+            } catch (err) {
+                console.warn('[Social] seed post failed:', err);
+            }
+        }
+
+        if (generated === 0) showError('Не удалось сгенерировать посты');
+        this.render(container);
     }
 
     /* ─────────────────────────── утилиты ─────────────────────────── */

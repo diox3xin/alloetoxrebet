@@ -91,6 +91,7 @@ function init() {
     // Exposed so apps (Messages composer, event handlers) can refresh the
     // dynamic prompt without importing back into index.js and creating a cycle.
     globalThis.__astralRefreshPrompt = () => refreshPhonePrompt(storage);
+    globalThis.__astralSeeder = seeder;
 
     // Launcher first — the icon must appear even if an app fails to construct.
     window.__astralPhoneCore = core;

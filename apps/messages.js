@@ -51,8 +51,15 @@ export class MessagesApp {
                 <div class="astral-empty-state">
                     <div class="astral-empty-state-icon">${ICONS.messages}</div>
                     <div>Нет переписки</div>
-                    <div class="astral-empty-hint">Переписка появится, когда откроешь этот экран впервые</div>
+                    <div class="astral-empty-hint">Переписка появится автоматически, или сгенерируй вручную</div>
+                    <button class="astral-btn astral-btn-primary astral-regen-btn" id="astral-seed-now">
+                        Сгенерировать переписку
+                    </button>
                 </div>`;
+
+            container.querySelector('#astral-seed-now')?.addEventListener('click', () => {
+                this._runSeed(container, false);
+            });
             return;
         }
 
@@ -68,13 +75,23 @@ export class MessagesApp {
             }
         }
 
-        // ── Поиск ──
+        // ── Поиск + кнопка перегенерации ──
         const searchWrap = document.createElement('div');
         searchWrap.className = 'astral-search-wrap';
         searchWrap.innerHTML = `
             <input class="astral-search-input" id="astral-msg-search"
-                   placeholder="Поиск…" autocomplete="off" type="search" />`;
+                   placeholder="Поиск…" autocomplete="off" type="search" />
+            <button class="astral-msg-regen-btn" id="astral-msg-regen" title="Перегенерировать переписку">
+                <svg viewBox="0 0 24 24" width="14" height="14" stroke="currentColor" fill="none" stroke-width="2.2">
+                    <path d="M23 4v6h-6M1 20v-6h6"/>
+                    <path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15"/>
+                </svg>
+            </button>`;
         container.appendChild(searchWrap);
+
+        searchWrap.querySelector('#astral-msg-regen').addEventListener('click', () => {
+            this._runSeed(container, true);
+        });
 
         const list = document.createElement('div');
         list.className = 'astral-thread-list';
@@ -122,6 +139,30 @@ export class MessagesApp {
         });
 
         container.appendChild(list);
+    }
+
+    /* ─────────────────────────── seed ─────────────────────────── */
+
+    async _runSeed(container, force) {
+        const seeder = globalThis.__astralSeeder;
+        if (!seeder) {
+            showError('Сидер недоступен — обновите страницу');
+            return;
+        }
+        globalThis.__astralSeeding = true;
+        this.render(container);
+
+        try {
+            const res = await seeder.seed({ force, onProgress: () => {} });
+            if (res.skipped) {
+                // force=false и уже засеяно — не должно быть, но на всякий
+            }
+        } catch (err) {
+            showError(`Не удалось сгенерировать переписку: ${err.message}`);
+        } finally {
+            globalThis.__astralSeeding = false;
+            this.render(container);
+        }
     }
 
     /* ─────────────────────────── single thread ─────────────────────────── */
@@ -429,13 +470,13 @@ export class MessagesApp {
     /** Build a prompt asking the character to respond. */
     _buildReplyPrompt(character, lastMsg, state) {
         const ctx = this.context || globalThis.SillyTavern?.getContext?.() || {};
-        const charName = ctx.name2 || 'персонаж';
-        const userName = ctx.name1 || 'ты';
+        const charName = character || String(ctx?.characters?.[ctx?.characterId]?.name || ctx?.name2 || 'Персонаж').trim();
+        const userName = String(ctx?.name1 || '').trim() || 'Ты';
 
         const thread = (state.messages || [])
             .filter(m => m.character === character)
             .slice(-8)
-            .map(m => `${m.from === 'me' ? 'Ты' : 'Персонаж'}: ${m.text}`)
+            .map(m => `${m.from === 'me' ? userName : charName}: ${m.text}`)
             .join('\n');
 
         return `[MESSAGE_REPLY] Character: ${charName}
