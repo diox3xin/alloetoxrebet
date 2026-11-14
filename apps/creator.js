@@ -93,6 +93,12 @@ export class CreatorApp {
     /* ─────────────────────────── profile ─────────────────────────── */
 
     _renderProfile(body, creator) {
+        // Аккаунт ещё не создан — показываем онбординг
+        if (!creator.active) {
+            this._renderOnboarding(body);
+            return;
+        }
+
         const name = creator.displayName || this.context.name2 || 'Персонаж';
         const handle = creator.handle || this._slug(name);
         const avatar = creator.avatar || null;
@@ -147,6 +153,103 @@ export class CreatorApp {
         body.querySelector('#astral-ava-btn').addEventListener('click', () => this._openAvatarPicker());
         body.querySelector('#astral-edit-name-btn').addEventListener('click', () => this._openInlineEdit('name', name));
         body.querySelector('#astral-edit-handle-btn').addEventListener('click', () => this._openInlineEdit('handle', handle));
+    }
+
+    /* ─────────────────────────── onboarding ─────────────────────────── */
+
+    _renderOnboarding(body) {
+        const charName = this.context.name2 || 'Персонаж';
+        const suggestedHandle = this._slug(charName);
+
+        body.innerHTML = `
+            <div class="astral-onboarding">
+                <div class="astral-onboarding-icon">${ICONS.creator}</div>
+                <div class="astral-onboarding-title">Creator Studio</div>
+                <div class="astral-onboarding-desc">
+                    Платформа для эксклюзивного контента.<br>
+                    Подписчики платят за доступ, фанаты присылают донаты.
+                </div>
+
+                <div class="astral-onboarding-form">
+                    <label class="astral-field-label">Ник аккаунта</label>
+                    <div class="astral-handle-input-row">
+                        <span class="astral-handle-at">@</span>
+                        <input
+                            id="astral-ob-handle"
+                            class="astral-text-input"
+                            type="text"
+                            placeholder="${this._esc(suggestedHandle)}"
+                            value="${this._esc(suggestedHandle)}"
+                            maxlength="32"
+                        />
+                    </div>
+
+                    <label class="astral-field-label">Описание профиля</label>
+                    <textarea
+                        id="astral-ob-bio"
+                        class="astral-text-input astral-text-input--area"
+                        placeholder="Расскажи о себе…"
+                        rows="3"
+                    ></textarea>
+
+                    <label class="astral-field-label">Цена подписки ($/мес)</label>
+                    <input
+                        id="astral-ob-price"
+                        class="astral-text-input"
+                        type="number"
+                        min="1"
+                        max="999"
+                        value="9"
+                    />
+
+                    <button class="astral-btn astral-btn-primary astral-btn-wide" id="astral-ob-create">
+                        Создать аккаунт
+                    </button>
+                </div>
+            </div>
+        `;
+
+        body.querySelector('#astral-ob-create').addEventListener('click', () => {
+            const handleRaw = body.querySelector('#astral-ob-handle').value.trim();
+            const bio = body.querySelector('#astral-ob-bio').value.trim();
+            const price = Math.max(1, Number(body.querySelector('#astral-ob-price').value) || 9);
+
+            const handle = handleRaw
+                .replace(/^@/, '')
+                .replace(/\s+/g, '_')
+                .replace(/[^\p{L}\p{N}_]/gu, '')
+                .toLowerCase() || suggestedHandle;
+
+            const state = this.storage.getState();
+            if (!state.creator) state.creator = { posts: [], subscribers: 0, revenue: 0, fans: [] };
+
+            state.creator.active = true;
+            state.creator.handle = handle;
+            state.creator.bio = bio;
+            state.creator.subscriptionPrice = price;
+            state.creator.displayName = state.creator.displayName || charName;
+            state.creator.createdAt = Date.now();
+
+            this.storage.save();
+
+            // Запускаем таймеры донатов/подписчиков теперь когда аккаунт есть
+            try { globalThis.__astralStartTimers?.(); } catch { /* ignore */ }
+
+            success('Аккаунт создан!');
+            this.render(document.querySelector('.astral-phone-body'));
+        });
+
+        // Нормализуем хэндл при вводе
+        body.querySelector('#astral-ob-handle').addEventListener('input', (e) => {
+            const start = e.target.selectionStart;
+            const clean = e.target.value
+                .replace(/^@/, '')
+                .replace(/\s+/g, '_')
+                .replace(/[^\p{L}\p{N}_]/gu, '')
+                .toLowerCase();
+            e.target.value = clean;
+            e.target.setSelectionRange(start, start);
+        });
     }
 
     /* ─────────────────────────── avatar picker ─────────────────────────── */

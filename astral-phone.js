@@ -4380,6 +4380,10 @@ REPLY (text only):`;
     }
     /* ─────────────────────────── profile ─────────────────────────── */
     _renderProfile(body, creator) {
+      if (!creator.active) {
+        this._renderOnboarding(body);
+        return;
+      }
       const name = creator.displayName || this.context.name2 || "\u041F\u0435\u0440\u0441\u043E\u043D\u0430\u0436";
       const handle = creator.handle || this._slug(name);
       const avatar = creator.avatar || null;
@@ -4429,6 +4433,85 @@ REPLY (text only):`;
       body.querySelector("#astral-ava-btn").addEventListener("click", () => this._openAvatarPicker());
       body.querySelector("#astral-edit-name-btn").addEventListener("click", () => this._openInlineEdit("name", name));
       body.querySelector("#astral-edit-handle-btn").addEventListener("click", () => this._openInlineEdit("handle", handle));
+    }
+    /* ─────────────────────────── onboarding ─────────────────────────── */
+    _renderOnboarding(body) {
+      const charName = this.context.name2 || "\u041F\u0435\u0440\u0441\u043E\u043D\u0430\u0436";
+      const suggestedHandle = this._slug(charName);
+      body.innerHTML = `
+            <div class="astral-onboarding">
+                <div class="astral-onboarding-icon">${ICONS.creator}</div>
+                <div class="astral-onboarding-title">Creator Studio</div>
+                <div class="astral-onboarding-desc">
+                    \u041F\u043B\u0430\u0442\u0444\u043E\u0440\u043C\u0430 \u0434\u043B\u044F \u044D\u043A\u0441\u043A\u043B\u044E\u0437\u0438\u0432\u043D\u043E\u0433\u043E \u043A\u043E\u043D\u0442\u0435\u043D\u0442\u0430.<br>
+                    \u041F\u043E\u0434\u043F\u0438\u0441\u0447\u0438\u043A\u0438 \u043F\u043B\u0430\u0442\u044F\u0442 \u0437\u0430 \u0434\u043E\u0441\u0442\u0443\u043F, \u0444\u0430\u043D\u0430\u0442\u044B \u043F\u0440\u0438\u0441\u044B\u043B\u0430\u044E\u0442 \u0434\u043E\u043D\u0430\u0442\u044B.
+                </div>
+
+                <div class="astral-onboarding-form">
+                    <label class="astral-field-label">\u041D\u0438\u043A \u0430\u043A\u043A\u0430\u0443\u043D\u0442\u0430</label>
+                    <div class="astral-handle-input-row">
+                        <span class="astral-handle-at">@</span>
+                        <input
+                            id="astral-ob-handle"
+                            class="astral-text-input"
+                            type="text"
+                            placeholder="${this._esc(suggestedHandle)}"
+                            value="${this._esc(suggestedHandle)}"
+                            maxlength="32"
+                        />
+                    </div>
+
+                    <label class="astral-field-label">\u041E\u043F\u0438\u0441\u0430\u043D\u0438\u0435 \u043F\u0440\u043E\u0444\u0438\u043B\u044F</label>
+                    <textarea
+                        id="astral-ob-bio"
+                        class="astral-text-input astral-text-input--area"
+                        placeholder="\u0420\u0430\u0441\u0441\u043A\u0430\u0436\u0438 \u043E \u0441\u0435\u0431\u0435\u2026"
+                        rows="3"
+                    ></textarea>
+
+                    <label class="astral-field-label">\u0426\u0435\u043D\u0430 \u043F\u043E\u0434\u043F\u0438\u0441\u043A\u0438 ($/\u043C\u0435\u0441)</label>
+                    <input
+                        id="astral-ob-price"
+                        class="astral-text-input"
+                        type="number"
+                        min="1"
+                        max="999"
+                        value="9"
+                    />
+
+                    <button class="astral-btn astral-btn-primary astral-btn-wide" id="astral-ob-create">
+                        \u0421\u043E\u0437\u0434\u0430\u0442\u044C \u0430\u043A\u043A\u0430\u0443\u043D\u0442
+                    </button>
+                </div>
+            </div>
+        `;
+      body.querySelector("#astral-ob-create").addEventListener("click", () => {
+        const handleRaw = body.querySelector("#astral-ob-handle").value.trim();
+        const bio = body.querySelector("#astral-ob-bio").value.trim();
+        const price = Math.max(1, Number(body.querySelector("#astral-ob-price").value) || 9);
+        const handle = handleRaw.replace(/^@/, "").replace(/\s+/g, "_").replace(/[^\p{L}\p{N}_]/gu, "").toLowerCase() || suggestedHandle;
+        const state = this.storage.getState();
+        if (!state.creator) state.creator = { posts: [], subscribers: 0, revenue: 0, fans: [] };
+        state.creator.active = true;
+        state.creator.handle = handle;
+        state.creator.bio = bio;
+        state.creator.subscriptionPrice = price;
+        state.creator.displayName = state.creator.displayName || charName;
+        state.creator.createdAt = Date.now();
+        this.storage.save();
+        try {
+          globalThis.__astralStartTimers?.();
+        } catch {
+        }
+        success("\u0410\u043A\u043A\u0430\u0443\u043D\u0442 \u0441\u043E\u0437\u0434\u0430\u043D!");
+        this.render(document.querySelector(".astral-phone-body"));
+      });
+      body.querySelector("#astral-ob-handle").addEventListener("input", (e) => {
+        const start = e.target.selectionStart;
+        const clean2 = e.target.value.replace(/^@/, "").replace(/\s+/g, "_").replace(/[^\p{L}\p{N}_]/gu, "").toLowerCase();
+        e.target.value = clean2;
+        e.target.setSelectionRange(start, start);
+      });
     }
     /* ─────────────────────────── avatar picker ─────────────────────────── */
     _openAvatarPicker() {
@@ -7225,12 +7308,21 @@ description \u043F\u0438\u0448\u0438 \u043A\u0430\u043A \u043F\u0440\u043E\u043C
     }
     initialized = true;
     console.log("[Astral Phone] ready");
-    try {
-      stopTimers = startPhoneTimers(core);
-      console.log("[Astral Phone] autonomous event timers started");
-    } catch (err) {
-      console.warn("[Astral Phone] timers failed to start:", err);
-    }
+    globalThis.__astralStartTimers = () => {
+      if (typeof stopTimers === "function") {
+        stopTimers();
+        stopTimers = null;
+      }
+      const state = storage?.getState?.();
+      if (!state?.creator?.active) return;
+      try {
+        stopTimers = startPhoneTimers(core);
+        console.log("[Astral Phone] timers started (account active)");
+      } catch (err) {
+        console.warn("[Astral Phone] timers failed:", err);
+      }
+    };
+    globalThis.__astralStartTimers();
   }
   __name(init, "init");
   function injectLauncher() {
@@ -7522,11 +7614,7 @@ description \u043F\u0438\u0448\u0438 \u043A\u0430\u043A \u043F\u0440\u043E\u043C
           if (core.currentAppId) core.openApp(core.currentAppId);
           else core.showHome();
         }
-        try {
-          stopTimers = startPhoneTimers(core);
-        } catch (err) {
-          console.warn("[Astral Phone] timers restart failed:", err);
-        }
+        globalThis.__astralStartTimers?.();
       } catch (err) {
         console.warn("[Astral Phone] chat switch refresh failed:", err);
       }

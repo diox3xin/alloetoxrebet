@@ -133,16 +133,22 @@ function init() {
 
     initialized = true;
     console.log('[Astral Phone] ready');
-    
-    // Запускаем таймеры автономных событий
-    // Таймеры стартуют только если у персонажа есть Creator Studio (аккаунт)
-    // Останавливаются при смене чата
-    try {
-        stopTimers = startPhoneTimers(core);
-        console.log('[Astral Phone] autonomous event timers started');
-    } catch (err) {
-        console.warn('[Astral Phone] timers failed to start:', err);
-    }
+
+    // Глобальный хук для запуска таймеров из Creator Studio при создании аккаунта
+    globalThis.__astralStartTimers = () => {
+        if (typeof stopTimers === 'function') { stopTimers(); stopTimers = null; }
+        const state = storage?.getState?.();
+        if (!state?.creator?.active) return; // аккаунта нет — таймеры не нужны
+        try {
+            stopTimers = startPhoneTimers(core);
+            console.log('[Astral Phone] timers started (account active)');
+        } catch (err) {
+            console.warn('[Astral Phone] timers failed:', err);
+        }
+    };
+
+    // Запускаем таймеры только если аккаунт уже создан
+    globalThis.__astralStartTimers();
 }
 
 /* ────────────────────────────── launcher button ────────────────────────────── */
@@ -519,12 +525,8 @@ function registerChatSwitchHandler(context) {
                 else core.showHome();
             }
             
-            // Перезапускаем таймеры для нового чата
-            try {
-                stopTimers = startPhoneTimers(core);
-            } catch (err) {
-                console.warn('[Astral Phone] timers restart failed:', err);
-            }
+            // Перезапускаем таймеры для нового чата (только если аккаунт активен)
+            globalThis.__astralStartTimers?.();
         } catch (err) {
             console.warn('[Astral Phone] chat switch refresh failed:', err);
         }

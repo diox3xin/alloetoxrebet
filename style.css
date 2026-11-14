@@ -3009,3 +3009,108 @@
   flex: 1;
   word-break: break-word;
 }
+
+/* ─────────────────────────── creator onboarding ─────────────────────────── */
+
+.astral-onboarding {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  padding: 28px 20px 32px;
+  gap: 8px;
+}
+
+.astral-onboarding-icon {
+  width: 56px;
+  height: 56px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: rgba(217, 154, 181, 0.12);
+  border-radius: 18px;
+  margin-bottom: 4px;
+}
+
+.astral-onboarding-icon svg {
+  width: 28px;
+  height: 28px;
+  fill: var(--phone-accent);
+  stroke: none;
+}
+
+.astral-onboarding-title {
+  font-size: 18px;
+  font-weight: 600;
+  color: var(--phone-text);
+}
+
+.astral-onboarding-desc {
+  font-size: 12px;
+  color: var(--phone-muted);
+  text-align: center;
+  line-height: 1.5;
+  margin-bottom: 8px;
+}
+
+.astral-onboarding-form {
+  width: 100%;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.astral-field-label {
+  font-size: 11px;
+  font-weight: 500;
+  color: var(--phone-muted);
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  margin-bottom: 2px;
+}
+
+.astral-handle-input-row {
+  display: flex;
+  align-items: center;
+  background: var(--phone-card);
+  border: 1px solid var(--phone-border);
+  border-radius: 10px;
+  overflow: hidden;
+}
+
+.astral-handle-at {
+  padding: 0 10px;
+  font-size: 14px;
+  color: var(--phone-accent);
+  font-weight: 600;
+  user-select: none;
+}
+
+.astral-handle-input-row .astral-text-input {
+  border: none;
+  border-radius: 0;
+  background: transparent;
+  flex: 1;
+}
+
+.astral-text-input {
+  width: 100%;
+  background: var(--phone-card);
+  border: 1px solid var(--phone-border);
+  border-radius: 10px;
+  color: var(--phone-text);
+  font-size: 13px;
+  padding: 10px 12px;
+  outline: none;
+  box-sizing: border-box;
+  font-family: inherit;
+  transition: border-color 0.2s;
+}
+
+.astral-text-input:focus {
+  border-color: var(--phone-accent);
+}
+
+.astral-text-input--area {
+  resize: none;
+  line-height: 1.4;
+}
