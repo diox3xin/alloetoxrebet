@@ -6799,7 +6799,8 @@ function registerEventTagFallback(context) {
     }
     if (cleanText !== text) {
       message.mes = cleanText;
-      const el = document.querySelector(`#chat .mes[mesid="${messageId}"] .mes_text`);
+      const idx = Array.isArray(live?.chat) ? live.chat.indexOf(message) : -1;
+      const el = document.querySelector(`#chat .mes[mesid="${messageId}"] .mes_text`) || (idx >= 0 ? document.querySelector(`#chat .mes[mesid="${idx}"] .mes_text`) : null);
       if (el) {
         el.innerHTML = live.messageFormatting(
           message.mes,
