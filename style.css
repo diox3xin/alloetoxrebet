@@ -697,15 +697,21 @@
   flex-direction: column;
   gap: 9px;
   padding-bottom: 6px;
+  width: 100%;
+  box-sizing: border-box;
 }
 
 .astral-bubble {
   max-width: 82%;
+  min-width: 60px;
   padding: 9px 12px;
   border-radius: 15px;
   font-size: 12px;
   line-height: 1.5;
   animation: astral-pop .22s ease;
+  word-wrap: break-word;
+  word-break: break-word;
+  overflow-wrap: break-word;
 }
 
 @keyframes astral-pop {

@@ -186,7 +186,8 @@ Rules:
                     character: name,
                     role: String(contact.role || ''),
                     text,
-                    from,          // 'them' | 'me'
+                    from,                       // 'them' | 'me'
+                    fromUser: from === 'me',     // явный флаг для совместимости
                     isIncoming: from === 'them',
                     timestamp: now - minutesAgo * 60_000,
                     seeded: true,

@@ -6610,6 +6610,8 @@ Rules:
             text,
             from,
             // 'them' | 'me'
+            fromUser: from === "me",
+            // явный флаг для совместимости
             isIncoming: from === "them",
             timestamp: now - minutesAgo * 6e4,
             seeded: true
