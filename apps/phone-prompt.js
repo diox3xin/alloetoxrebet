@@ -1,13 +1,36 @@
 /**
- * Builds the dynamic half of the phone prompt: the recent phone transcript,
- * social metrics, creator stats, and autonomous NPC activity rules.
+ * Промпт телефона.
  *
- * Kept separate from index.js so it can be unit-tested without booting the
- * whole extension (index.js has top-level side effects).
+ * Две части:
+ *  - PHONE_RULES — статичные правила, кладутся один раз в системную часть
+ *    промпта (не двигаются по чату, хорошо кэшируются провайдером);
+ *  - buildPhoneContext — короткая сводка «что сейчас в телефоне», обновляется
+ *    после каждого сообщения. Жёстко ограничена по длине.
+ *
+ * Живость мира достигается без дополнительных запросов: модель сама вставляет
+ * скрытые теги в обычный ответ, а сводка подсказывает ей, кто ждёт ответа и
+ * как давно телефон молчит.
  */
 
-import { buildNotesPromptBlock } from './notes.js';
 import { buildCastPromptBlock } from './cast-profiles.js';
+
+export const PHONE_RULES = `[Телефон]
+У игрока и у всех персонажей есть смартфоны. Мир живёт и за кадром: знакомые НПС пишут игроку, постят в соцсеть, реагируют на его посты — у каждого свои дела, настроение и причины.
+Когда это естественно по сюжету, добавь в САМЫЙ КОНЕЦ ответа скрытый тег (игрок его не увидит, событие появится в телефоне):
+<phone-event type="message_received" character="Имя" description="текст смс"/>
+<phone-event type="social_post" character="Имя" description="текст поста" photo="что на фото"/>
+<phone-event type="social_comment" character="Имя" description="коммент к последнему посту игрока"/>
+<phone-event type="social_like" character="Имя"/>
+<phone-event type="social_follow" character="Имя"/>
+<phone-event type="photo_taken" character="Имя" description="что в кадре"/>
+Правила:
+- Не описывай телефон прозой («пришло сообщение») — только тег.
+- Обычно тегов 0, иногда 1–2. Не каждый ответ.
+- Пиши как настоящие смс и посты: коротко, живым языком, голосом персонажа, на языке сцены.
+- Писать может любой знакомый НПС, даже если его нет в сцене. Повод — его жизнь или то, что случилось в сюжете.
+- photo и description для фото — визуально: кто, внешность, одежда, поза, место, свет. photo у поста необязателен.
+- Если игрок написал кому-то с телефона и ему не ответили — этот НПС отвечает (message_received), когда может.
+- Телефонная жизнь влияет на сцену: персонажи помнят переписку и посты.`;
 
 /** Message is outgoing if it came from the user, either field works. */
 function isOutgoing(m) {
@@ -16,156 +39,92 @@ function isOutgoing(m) {
     return Boolean(m.fromUser);
 }
 
-/**
- * Собрать метрики социальных сетей из состояния.
- */
-function buildSocialMetrics(state) {
-    const social = state.social || [];
-    const myPosts = social.filter(p => p.isOwn);
-    const totalLikes = myPosts.reduce((sum, p) => sum + (p.likedBy?.length || p.likes || 0), 0);
-    const followers = (state.socialFollowers || []).length;
-    const following = (state.socialFollowing || []).length;
-    const recentPosts = social.slice(-3).map(p =>
-        `"${(p.text || '').slice(0, 40)}" от ${p.author} (❤${p.likedBy?.length || p.likes || 0}${p.replies?.length ? ` 💬${p.replies.length}` : ''})`
-    );
-
-    return { totalPosts: social.length, myPosts: myPosts.length, totalLikes, followers, following, recentPosts };
+/** Настройки расширения (живость). */
+function phoneSettings() {
+    try {
+        const ctx = globalThis.SillyTavern?.getContext?.();
+        return ctx?.extensionSettings?.['astral-phone'] || {};
+    } catch {
+        return {};
+    }
 }
 
-/**
- * Собрать метрики Creator Studio.
- */
-function buildCreatorMetrics(state) {
-    const creator = state.creator || {};
-    return {
-        subscribers: creator.subscribers || 0,
-        revenue: creator.revenue || 0,
-        totalPosts: (creator.posts || []).length,
-    };
-}
+/** Через сколько ответов без событий подтолкнуть модель. */
+const NUDGE_AFTER = { calm: 14, normal: 7, busy: 3 };
+
+const cut = (s, n) => {
+    const t = String(s || '').replace(/\s+/g, ' ').trim();
+    return t.length > n ? `${t.slice(0, n - 1)}…` : t;
+};
 
 /**
  * Pure: build the context block from a phone state snapshot.
- * @param {object} state phone state (messages, sinceEvent)
+ * @param {object} state phone state
  * @returns {string}
  */
-export function buildPhoneContext(state, storageRef) {
-    const msgs = Array.isArray(state?.messages) ? state.messages : [];
-    const recent = msgs.slice(-24);
-
-    // Quiet Mode: короткий блок вместо полного промпта
+export function buildPhoneContext(state, storageRef, settings = phoneSettings()) {
     if (state?.quietMode) {
-        return `[Astral Phone — ПАУЗА]
-Входящая активность телефона приостановлена пользователем. НЕ генерируй:
-- входящие сообщения (message_received)
-- посты НПС (social_post)
-- лайки и комменты (social_like, social_comment, social_follow)
-- донаты и подписчики (donation_received, subscriber_joined)
-Телефон существует, photo_taken и note_written — по-прежнему работают.`;
+        return '[Телефон — беззвучный режим] Сейчас не добавляй входящие phone-event (смс, посты, реакции). photo_taken можно.';
     }
 
-    const lines = recent.map((m) => {
-        const who = isOutgoing(m) ? 'Ты' : (m.character || 'Контакт');
-        return `${who}: ${String(m.text || '').slice(0, 160)}`;
+    const msgs = Array.isArray(state?.messages) ? state.messages : [];
+    const social = Array.isArray(state?.social) ? state.social : [];
+    const parts = [];
+
+    // Контакты: кто вообще есть в телефоне — чтобы модель знала, кому писать.
+    const contacts = [];
+    for (let i = msgs.length - 1; i >= 0 && contacts.length < 8; i--) {
+        const name = String(msgs[i]?.character || '').trim();
+        if (name && !contacts.includes(name)) contacts.push(name);
+    }
+    if (contacts.length) parts.push(`Контакты: ${contacts.join(', ')}`);
+
+    // Последние сообщения — коротко.
+    const recent = msgs.slice(-6).map((m) => {
+        const who = m.character || 'Контакт';
+        return isOutgoing(m) ? `Игрок → ${who}: ${cut(m.text, 110)}` : `${who}: ${cut(m.text, 110)}`;
     });
+    if (recent.length) parts.push(`Переписка (последнее):\n${recent.join('\n')}`);
 
-    const sinceEvent = Number(state?.sinceEvent) || 0;
-    const nudge = sinceEvent >= 4
-        ? `\nТелефон молчит уже ${sinceEvent} сообщений — уместно добавить событие.`
-        : '';
+    // Кто ждёт ответа: последний сообщение в треде — от игрока.
+    const lastByThread = new Map();
+    for (const m of msgs) {
+        const name = String(m?.character || '').trim();
+        if (name) lastByThread.set(name, m);
+    }
+    const waiting = [...lastByThread.entries()].filter(([, m]) => isOutgoing(m)).map(([n]) => n);
+    if (waiting.length) parts.push(`Ждут ответа игроку: ${waiting.slice(0, 4).join(', ')}`);
 
-    const body = lines.length
-        ? `Последние сообщения в телефоне (старые выше):\n${lines.join('\n')}${nudge}`
-        : `Переписки пока нет.${nudge}`;
+    // Соцсеть: последний пост игрока и пара свежих чужих.
+    const mine = [...social].reverse().find(p => p.mine || p.isOwn);
+    if (mine) {
+        const likes = mine.likedBy?.length || mine.likes || 0;
+        const replies = mine.replies?.length || 0;
+        parts.push(`Последний пост игрока: «${cut(mine.text, 90)}» (❤${likes}, 💬${replies})`);
+    }
+    const others = social.filter(p => !(p.mine || p.isOwn)).slice(-2)
+        .map(p => `${p.author}: «${cut(p.text, 70)}»`);
+    if (others.length) parts.push(`Лента: ${others.join('; ')}`);
 
-    const parts = [`[Astral Phone — переписка]\n${body}`];
-    
-    // Метрики социальных сетей
     try {
-        const social = buildSocialMetrics(state);
-        if (social.totalPosts > 0) {
-            const metrics = [
-                `Всего постов: ${social.totalPosts}`,
-                social.followers > 0 ? `Подписчиков: ${social.followers}` : null,
-                social.following > 0 ? `Подписок: ${social.following}` : null,
-                social.totalLikes > 0 ? `Лайков на постах юзера: ${social.totalLikes}` : null,
-                social.recentPosts.length ? `Последние посты: ${social.recentPosts.join('; ')}` : null,
-            ].filter(Boolean).join('\n');
-            parts.push(`[Astral Phone — Social]\n${metrics}`);
-        }
-    } catch (_) { /* ignore */ }
-    
-    // Метрики Creator Studio
-    try {
-        const creator = buildCreatorMetrics(state);
-        if (creator.subscribers > 0 || creator.totalPosts > 0) {
-            const metrics = [
-                `Подписчиков: ${creator.subscribers}`,
-                `Заработано: $${(creator.revenue || 0).toFixed(2)}`,
-                `Постов опубликовано: ${creator.totalPosts}`,
-            ].join('\n');
-            parts.push(`[Astral Phone — Creator Studio]\n${metrics}`);
-        }
-    } catch (_) { /* ignore */ }
-
-    // Заметки персонажа: он должен помнить, что сам записал — это его
-    // приватные мысли, и они влияют на поведение в сцене.
-    try {
-        const notesBlock = buildNotesPromptBlock(state);
-        if (notesBlock) parts.push(notesBlock);
-    } catch (_) { /* ignore */ }
-
-    // Анкеты персонажей: модель видит, кем были побочные лица, даже если
-    // их нет в карточке — иначе она выдумывает их заново каждый раз.
-    try {
-        const castBlock = buildCastPromptBlock(storageRef);
+        const castBlock = buildCastPromptBlock(storageRef, 5);
         if (castBlock) parts.push(castBlock);
     } catch (_) { /* ignore */ }
-    
-    // ПРАВИЛА ДЛЯ АВТОНОМНЫХ НПС
-    const npcRules = `[Astral Phone — автономная активность НПС]
 
-НПС и персонажи могут взаимодействовать с телефоном САМОСТОЯТЕЛЬНО, когда это уместно по сцене:
+    // Подталкивание: телефон давно молчит — пусть мир напомнит о себе.
+    const level = NUDGE_AFTER[settings?.liveliness] ? settings.liveliness : 'normal';
+    const sinceEvent = Number(state?.sinceEvent) || 0;
+    if (sinceEvent >= NUDGE_AFTER[level]) {
+        parts.push(`Телефон молчит уже ${sinceEvent} ответов — если уместно, пусть кто-то напишет или запостит.`);
+    }
 
-SOCIAL — посты:
-- НПС публикуют посты о своей жизни или реакциях на события
-- Частота: 1-2 поста на 8-12 сообщений чата (рандомно)
-- Тег: <phone-event type="social_post" character="Имя" description="текст поста" />
-- Используй хэштеги в тексте поста (#mood #life #night и т.д.) — 1-2 на пост
-- У каждого персонажа свой стиль: кто-то пишет мрачно (#dark #void), кто-то коротко и загадочно, кто-то активно постит фото с хэштегами
-
-SOCIAL — лайки и комменты (только под постами юзера):
-- НПС могут лайкнуть пост юзера: <phone-event type="social_like" character="Имя" description="" />
-- НПС могут прокомментировать: <phone-event type="social_comment" character="Имя" description="текст комментария" />
-- Лайки и комменты приходят через 1-3 сообщения после публикации поста юзера
-- Частота: 1-3 реакции на новый пост, не из каждого сообщения
-
-SOCIAL — подписки на юзера:
-- НПС могут подписаться: <phone-event type="social_follow" character="Имя" description="" />
-- Только когда это органично — после интересного поста или события в сцене
-
-MESSAGES — сообщения:
-- НПС пишут сообщения юзеру, если есть конкретная причина
-- Частота: не чаще 1 сообщения на 10-15 сообщений чата
-- Тег: <phone-event type="message_received" character="Имя" description="текст сообщения" />
-
-CREATOR STUDIO — только если аккаунт активен:
-- Подписчики: <phone-event type="subscriber_joined" count="N" />
-- Донаты: <phone-event type="donation_received" amount="N" character="Имя фаната" />
-
-ВАЖНО:
-- Не спамить — события дополняют сцену, не заменяют её
-- Один тег = одно событие
-- НПС не знают о приватных заметках персонажа`;
-
-    parts.push(npcRules);
-
-    return parts.join('\n\n');
+    if (!parts.length) return '';
+    return `[Телефон — сейчас]\n${parts.join('\n')}`;
 }
 
 /**
- * Push the current transcript into the prompt via setExtensionPrompt.
- * Safe to call often — every chat message and every phone write triggers it.
+ * Push the current phone summary into the prompt via setExtensionPrompt.
+ * Safe to call often — it only builds a short string.
  */
 export function refreshPhonePrompt(storage) {
     const context = globalThis.SillyTavern?.getContext?.();
@@ -177,7 +136,7 @@ export function refreshPhonePrompt(storage) {
             'astral-phone-context',
             buildPhoneContext(state, storage),
             context.extension_prompt_types?.IN_CHAT ?? 1,
-            2,
+            1,
             false,
         );
     } catch (err) {

@@ -39,20 +39,19 @@ const ATTR_ALIASES = {
     kind: 'kind',
     amount: 'amount',
     count: 'count',
+    photo: 'photo',
+    image: 'photo',
+    pic: 'photo',
 };
 
 /** События, которые телефон умеет принимать. */
 export const KNOWN_EVENT_TYPES = new Set([
     'photo_taken',
     'message_received',
-    'content_posted',
-    'note_written',
     'social_post',
     'social_like',
     'social_comment',
     'social_follow',
-    'donation_received',
-    'subscriber_joined',
 ]);
 
 /**
@@ -173,6 +172,7 @@ export function extractPhoneEvents(text) {
                     kind: (attrs.kind || '').trim(),
                     amount: attrs.amount !== undefined ? Number(attrs.amount) : undefined,
                     count: attrs.count !== undefined ? Number(attrs.count) : undefined,
+                    photo: (attrs.photo || '').trim(),
                 });
             }
             cursor = tag.openEnd;
@@ -194,6 +194,7 @@ export function extractPhoneEvents(text) {
                 kind: (attrs.kind || '').trim(),
                 amount: attrs.amount !== undefined ? Number(attrs.amount) : undefined,
                 count: attrs.count !== undefined ? Number(attrs.count) : undefined,
+                    photo: (attrs.photo || '').trim(),
             });
         }
 
@@ -217,5 +218,6 @@ export function normaliseEvent(event) {
     if (event.kind) out.metadata = { ...(out.metadata || {}), kind: String(event.kind) };
     if (Number.isFinite(event.amount)) out.metadata = { ...(out.metadata || {}), amount: event.amount };
     if (Number.isFinite(event.count)) out.metadata = { ...(out.metadata || {}), count: event.count };
+    if (event.photo) out.photo = String(event.photo).trim();
     return out;
 }

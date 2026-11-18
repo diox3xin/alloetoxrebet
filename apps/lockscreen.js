@@ -125,8 +125,7 @@ export class LockScreen {
         return ({
             messages: 'Messages',
             gallery: 'Gallery',
-            spicy: 'Spicy (удалён)',
-            creator: 'Creator Studio',
+            social: 'Social',
         })[app] || app || '';
     }
 

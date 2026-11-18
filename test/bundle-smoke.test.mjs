@@ -154,6 +154,7 @@ function makeSt(dom) {
         MESSAGE_UPDATED: 'message_updated',
         CHARACTER_MESSAGE_RENDERED: 'character_message_rendered',
         CHAT_CHANGED: 'chat_changed',
+        MESSAGE_SWIPED: 'message_swiped',
         CHAT_LOADED: 'chat_loaded',
     };
 
@@ -289,31 +290,28 @@ await test('модуль экспортирует onActivate', () => {
 });
 
 await test('расширение инициализировалось (APP_INITIALIZED)', () => {
-    // init() вызывается по событию APP_INITIALIZED — так же, как в ST.
     const core = dom.window.__astralPhoneCore;
     assert.ok(core, 'ядро телефона должно существовать');
-    assert.ok(core.apps && typeof core.apps.size === 'number', 'приложения должны быть зарегистрированы');
-    assert.ok(core.apps.size >= 5, `приложений должно быть >= 5, а их ${core.apps.size}`);
+    const ids = [...core.apps.keys()].sort().join(',');
+    assert.equal(ids, 'gallery,messages,settings,social', `набор приложений: ${ids}`);
 });
 
-await test('функция phone_event зарегистрирована', () => {
+await test('function tool не регистрируется (он заставляет ST делать второй запрос)', () => {
     const tools = st.context.__tools || {};
-    assert.ok(tools.phone_event, 'инструмент phone_event должен быть зарегистрирован');
-    assert.equal(tools.phone_event.parameters.required.includes('type'), true);
+    assert.ok(!tools.phone_event, 'инструмента phone_event быть не должно');
 });
 
-await test('промпт-блок телефона попал в контекст', () => {
+await test('правила телефона короткие и описывают тег', () => {
     const prompts = st.context.__prompts || {};
     const block = prompts['astral-phone'];
-    assert.ok(block, 'блок с описанием телефона должен быть установлен');
-    assert.ok(block.includes('phone_event'), 'блок должен упоминать инструмент');
+    assert.ok(block, 'блок с правилами должен быть установлен');
     assert.ok(block.includes('<phone-event'), 'блок должен содержать пример тега');
+    assert.ok(block.length < 2000, `правила должны быть короткими, а их ${block.length} символов`);
 });
 
 await test('событие из ответа модели доезжает до телефона', () => {
     const core = dom.window.__astralPhoneCore;
 
-    // Модель ответила: описала действие и добавила тег (как в жалобе).
     st.chat.push({
         mes: 'Она смотрит на экран -> потом отводит взгляд.'
             + '<phone-event type="message_received" character="Лиза" description="ты не спишь?" />',
@@ -335,20 +333,6 @@ await test('тег вырезан из текста сообщения в чат
     assert.ok(message.mes.includes('отводит взгляд'), 'текст должен сохраниться');
 });
 
-await test('вызов инструмента phone_event кладёт событие в телефон', async () => {
-    const core = dom.window.__astralPhoneCore;
-    const tool = st.context.__tools.phone_event;
-
-    await tool.action({
-        type: 'photo_taken',
-        character: 'Лиза',
-        description: 'у окна, вечерний свет',
-    });
-
-    const state = core.storage.getState();
-    assert.equal(state.gallery.length, 1, 'фото должно попасть в галерею');
-});
-
 await test('повторная обработка того же сообщения не дублирует событие', () => {
     const core = dom.window.__astralPhoneCore;
     const before = core.storage.getState().messages.length;
@@ -359,12 +343,35 @@ await test('повторная обработка того же сообщени
         name: 'Лиза Воронова',
     });
     const idx = st.chat.length - 1;
+    const original = st.chat[idx].mes;
 
     st.context.eventSource.emit(st.eventTypes.MESSAGE_RECEIVED, idx);
     st.context.eventSource.emit(st.eventTypes.MESSAGE_UPDATED, idx);
+    // Даже если текст с тегом вернулся (перезагрузка) — дубля нет.
+    st.chat[idx].mes = original;
+    st.context.eventSource.emit(st.eventTypes.CHARACTER_MESSAGE_RENDERED, idx);
 
     const after = core.storage.getState().messages.length;
     assert.equal(after, before + 1, 'событие должно добавиться ровно один раз');
+});
+
+await test('свайп убирает события прошлого варианта ответа', () => {
+    const core = dom.window.__astralPhoneCore;
+    st.chat.push({
+        mes: 'ok<phone-event type="message_received" character="Макс" description="вариант 1" />',
+        is_user: false, name: 'Макс', swipe_id: 0,
+    });
+    const idx = st.chat.length - 1;
+    st.context.eventSource.emit(st.eventTypes.MESSAGE_RECEIVED, idx);
+    assert.ok(core.storage.getState().messages.some(m => m.text === 'вариант 1'));
+
+    st.chat[idx].swipe_id = 1;
+    st.chat[idx].mes = 'ok2<phone-event type="message_received" character="Макс" description="вариант 2" />';
+    st.context.eventSource.emit(st.eventTypes.MESSAGE_SWIPED, idx);
+
+    const texts = core.storage.getState().messages.map(m => m.text);
+    assert.ok(!texts.includes('вариант 1'), 'старый вариант должен исчезнуть');
+    assert.ok(texts.includes('вариант 2'), 'новый вариант должен появиться');
 });
 
 await test('аккаунт персоны создан в состоянии чата', () => {
@@ -376,27 +383,54 @@ await test('аккаунт персоны создан в состоянии ч�
 
 await test('все типы событий обрабатываются без ошибок', async () => {
     const core = dom.window.__astralPhoneCore;
-    const types = [
-        'message_received', 'photo_taken', 'spicy_posted', 'content_posted',
-        'note_written', 'social_post', 'donation_received', 'subscriber_joined',
-    ];
-    for (const type of types) {
-        const res = await core.handleEvent({
-            type,
-            character: 'Лиза',
-            description: 'тестовое описание',
-            metadata: { amount: 5, count: 1, title: 'Заголовок', kind: 'diary' },
-        });
+    for (const type of ['message_received', 'photo_taken', 'social_post', 'social_follow']) {
+        const res = await core.handleEvent({ type, character: 'Лиза', description: 'тестовое описание' });
         assert.equal(res.success, true, `событие ${type} должно обрабатываться: ${res.error || ''}`);
     }
 });
 
-await test('приложение Notes получает kind и title из metadata', () => {
+await test('пост с фото кладёт снимок в галерею и связывает их', async () => {
+    const core = dom.window.__astralPhoneCore;
+    const before = core.storage.getState().gallery.length;
+    st.chat.push({
+        mes: 'x<phone-event type="social_post" character="Мира" description="закат" photo="девушка на крыше, закат" />',
+        is_user: false, name: 'Мира',
+    });
+    st.context.eventSource.emit(st.eventTypes.MESSAGE_RECEIVED, st.chat.length - 1);
+    await new Promise(r => setTimeout(r, 10));
+
+    const state = core.storage.getState();
+    const post = state.social.find(p => p.text === 'закат');
+    assert.ok(post, 'пост должен появиться');
+    assert.ok(post.photoId, 'у поста должна быть ссылка на снимок');
+    assert.equal(state.gallery.length, before + 1, 'снимок должен попасть в галерею');
+    assert.ok(state.gallery.some(g => g.id === post.photoId && g.description.includes('крыше')));
+});
+
+await test('compact убирает дубли старого сканера, но не обычные сообщения', () => {
     const core = dom.window.__astralPhoneCore;
     const state = core.storage.getState();
-    const note = (state.notes || []).find(n => n.title === 'Заголовок');
-    assert.ok(note, 'заметка должна появиться в Notes');
-    assert.equal(note.kind, 'diary');
+    state.messages.push({ character: 'Ян', text: 'ок', from: 'them' });
+    state.messages.push({ character: 'Ян', text: 'ок', from: 'them' });
+    state.messages.push({ id: 'scan_1_a', character: 'Ян', text: 'ок', from: 'them' });
+    state.messages.push({ id: 'scan_2_b', character: 'Ян', text: 'ок', from: 'them' });
+    state.creator = { posts: [] };
+    const before = state.messages.length;
+    core.storage.compact();
+    const after = core.storage.getState();
+    assert.equal(after.messages.length, before - 2, 'должны уйти только scan_-дубли');
+    assert.ok(!('creator' in after), 'данные удалённых приложений должны быть убраны');
+});
+
+await test('сводка телефона короткая и показывает, кто ждёт ответа', async () => {
+    const { buildPhoneContext } = await import('../apps/phone-prompt.js');
+    const msgs = [];
+    for (let i = 0; i < 200; i++) msgs.push({ character: `НПС${i % 5}`, text: 'очень длинное сообщение '.repeat(20), from: 'them' });
+    msgs.push({ character: 'НПС1', text: 'ответь мне', from: 'me' });
+    const text = buildPhoneContext({ messages: msgs, social: [], sinceEvent: 20 }, null, { liveliness: 'normal' });
+    assert.ok(text.length < 1500, `сводка должна быть короткой, а она ${text.length}`);
+    assert.ok(text.includes('Ждут ответа игроку: НПС1'));
+    assert.ok(text.includes('молчит'), 'должно быть подталкивание');
 });
 
 await test('анкеты персонажей: интервал анализа настраивается и сохраняется', async () => {
@@ -404,7 +438,7 @@ await test('анкеты персонажей: интервал анализа �
     assert.equal(typeof cast.analysisInterval, 'function');
     assert.equal(typeof cast.setAnalysisInterval, 'function');
 
-    // По умолчанию анализ идёт каждые 5 сообщений.
+    // По умолчанию анализ выключен (отдельный запрос к модели).
     assert.equal(cast.analysisInterval(), cast.DEFAULT_INTERVAL);
 
     // 0 — выключить.

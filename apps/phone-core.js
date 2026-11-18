@@ -396,10 +396,6 @@ export class PhoneCore {
         const routing = {
             photo_taken: 'gallery',
             message_received: 'messages',
-            content_posted: 'creator',
-            donation_received: 'creator',
-            subscriber_joined: 'creator',
-            note_written: 'notes',
             social_post: 'social',
             social_like: 'social',
             social_comment: 'social',
@@ -427,12 +423,42 @@ export class PhoneCore {
                 st.sinceEvent = 0;
                 this.storage.save();
             } catch { /* ignore */ }
+            try { globalThis.__astralRefreshPrompt?.(); } catch { /* ignore */ }
             this.refresh();
             return result || { success: true };
         } catch (err) {
             console.error('[Astral Phone] Event handling failed:', err);
             return { success: false, error: err.message };
         }
+    }
+
+    /**
+     * Убрать всё, что пришло из тегов с данным префиксом ключа (например,
+     * «12:» — все события сообщения №12). Нужно при свайпе: прошлый вариант
+     * ответа больше не случился.
+     * @returns {number} сколько записей убрано
+     */
+    removeEventsFrom(prefix) {
+        const state = this.storage.getState();
+        const has = (x) => typeof x?.src === 'string' && x.src.startsWith(prefix);
+        let removed = 0;
+        for (const list of ['messages', 'social', 'gallery']) {
+            const before = state[list].length;
+            state[list] = state[list].filter(x => !has(x));
+            removed += before - state[list].length;
+        }
+        for (const post of state.social) {
+            if (Array.isArray(post.replies)) {
+                const before = post.replies.length;
+                post.replies = post.replies.filter(r => !has(r));
+                removed += before - post.replies.length;
+            }
+        }
+        if (removed) {
+            this.storage.save();
+            this.refresh();
+        }
+        return removed;
     }
 
     /* ─────────────────────────── unread / notifications ─────────────────────────── */
@@ -532,9 +558,7 @@ export class PhoneCore {
         const appLabels = {
             messages: 'Messages',
             gallery: 'Gallery',
-            notes: 'Notes',
             social: 'Social',
-            creator: 'Creator Studio',
         };
 
         if (list.length === 0) {

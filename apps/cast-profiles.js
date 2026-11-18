@@ -17,7 +17,7 @@ import { resolveName } from './character-gen.js';
 const MODULE = '[AstralCast]';
 
 /** Сколько сообщений по умолчанию между анализами. */
-export const DEFAULT_INTERVAL = 5;
+export const DEFAULT_INTERVAL = 0;
 
 /* ─────────────────────────── настройки ─────────────────────────── */
 

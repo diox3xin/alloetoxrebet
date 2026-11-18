@@ -10,6 +10,7 @@
  */
 
 import { ICONS } from './phone-core.js';
+import { autoImagesEnabled } from './gallery.js';
 import { generateSocialPost, showTyping, collectCast } from './character-gen.js';
 import { handleGenerationError, success, error as showError } from './notifications.js';
 import { openUserProfile, openNPCProfile } from './profile-view.js';
@@ -269,7 +270,7 @@ export class SocialApp {
 
             ${post.imageUrl
                 ? `<div class="astral-social-media"><img src="${this._esc(post.imageUrl)}" alt="" loading="lazy"></div>`
-                : ''}
+                : (post.photoId ? `<button class="astral-social-media astral-social-media--pending" data-act="draw-photo">📷 Нарисовать фото</button>` : '')}
 
             <div class="astral-social-actions">
                 <button class="astral-social-act ${replies.length ? 'has-count' : ''}" data-act="reply">
@@ -312,6 +313,20 @@ export class SocialApp {
             e.stopPropagation();
             const author = e.currentTarget.dataset.author;
             if (author) openNPCProfile(author, this.storage, this.context, globalThis.__astralPhoneCore);
+        });
+
+        card.querySelector('[data-act="draw-photo"]')?.addEventListener('click', async (e) => {
+            e.stopPropagation();
+            const btn = e.currentTarget;
+            const gallery = this._gallery();
+            if (!gallery || !post.photoId) return;
+            btn.disabled = true;
+            btn.textContent = 'Рисую…';
+            const url = await gallery.generateById(post.photoId).catch(() => null);
+            if (!url) {
+                btn.disabled = false;
+                btn.textContent = '📷 Нарисовать фото';
+            }
         });
 
         card.querySelector('[data-act="repost"]').addEventListener('click', (e) => {
@@ -762,6 +777,11 @@ export class SocialApp {
         overlay.querySelector('#astral-social-text').focus();
     }
 
+    /** Приложение галереи (для фото к постам). */
+    _gallery() {
+        try { return globalThis.__astralPhoneCore?.apps?.get?.('gallery') || null; } catch { return null; }
+    }
+
     /* ─────────────────────────── события ─────────────────────────── */
 
     async handleEvent(eventData) {
@@ -777,7 +797,7 @@ export class SocialApp {
 
             const author = String(eventData.character || this.context?.name2 || '').trim() || 'Неизвестный';
 
-            state.social.push({
+            const post = {
                 id: `post_${Date.now()}_${Math.random().toString(36).slice(2, 7)}`,
                 author,
                 handle: this._handle(author),
@@ -786,9 +806,23 @@ export class SocialApp {
                 likedBy: [],
                 repostedBy: [],
                 replies: [],
-            });
+            };
+            if (eventData.src) post.src = eventData.src;
 
-            this.storage.save();
+            // Фото к посту: снимок кладётся и в галерею, картинка рисуется
+            // сразу (если включено) или по нажатию на заглушку.
+            const gallery = this._gallery();
+            const photoText = String(eventData.photo || '').trim();
+            if (photoText && gallery) {
+                const photo = gallery.addPhoto({ character: author, description: photoText, src: eventData.src });
+                post.photoId = photo.id;
+                state.social.push(post);
+                this.storage.save();
+                if (autoImagesEnabled()) gallery.generateById(photo.id).catch(() => {});
+            } else {
+                state.social.push(post);
+                this.storage.save();
+            }
             return { success: true, message: 'Пост опубликован' };
         }
 
@@ -826,11 +860,9 @@ export class SocialApp {
 
             if (!post) return { success: false, message: 'Пост не найден' };
             if (!Array.isArray(post.replies)) post.replies = [];
-            post.replies.push({
-                author: from,
-                text,
-                timestamp: Date.now(),
-            });
+            const reply = { author: from, text, timestamp: Date.now() };
+            if (eventData.src) reply.src = eventData.src;
+            post.replies.push(reply);
 
             this.storage.save();
             return { success: true, message: `${from} прокомментировал` };

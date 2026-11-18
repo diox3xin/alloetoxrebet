@@ -519,14 +519,16 @@ REPLY (text only):`;
         const state = this.storage.getState();
         if (!Array.isArray(state.messages)) state.messages = [];
 
-        state.messages.push({
+        const msg = {
             character: eventData.character || this.context.name2 || '',
             text: eventData.description || '',
             timestamp: Date.now(),
             fromUser: false,
             from: 'them',
             isIncoming: true,
-        });
+        };
+        if (eventData.src) msg.src = eventData.src;
+        state.messages.push(msg);
         this.storage.save();
         try { globalThis.__astralRefreshPrompt?.(); } catch { /* ignore */ }
         return { success: true, message: 'Сообщение добавлено' };

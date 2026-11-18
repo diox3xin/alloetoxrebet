@@ -166,12 +166,7 @@ function makeCore(state, save, apps) {
     const routing = {
         message_received: 'messages',
         photo_taken: 'gallery',
-        note_written: 'notes',
         social_post: 'social',
-        content_posted: 'creator',
-        spicy_posted: 'spicy',
-        donation_received: 'creator',
-        subscriber_joined: 'creator',
     };
     return {
         handleEvent(eventData) {

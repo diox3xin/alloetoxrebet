@@ -8,6 +8,16 @@ import { buildPhotoPrompt } from './prompt-builder.js';
 import { ask as askLLM, resolveStyle, ensureStyle } from './prompt-llm.js';
 import { handleImageGenerationError, handleGenerationError, success, error as showError, info } from './notifications.js';
 
+/** Рисовать ли фото сразу (настройка «Сразу рисовать фото»). По умолчанию да. */
+export function autoImagesEnabled() {
+    try {
+        const ctx = globalThis.SillyTavern?.getContext?.();
+        return ctx?.extensionSettings?.['astral-phone']?.autoImages !== false;
+    } catch {
+        return true;
+    }
+}
+
 export class GalleryApp {
     constructor(context, storage, imageGen) {
         this.context = context;
@@ -299,7 +309,7 @@ export class GalleryApp {
         if (this._busy.has(index)) return;
 
         this._busy.add(index);
-        info('Генерирую изображение…');
+        if (!silent) info('Генерирую изображение…');
 
         try {
             const state = this.storage.getState();
@@ -320,7 +330,7 @@ export class GalleryApp {
 
             state.gallery[index].imageUrl = url;
             this.storage.save();
-            success('Готово');
+            if (!silent) success('Готово');
             if (!silent) this.render(document.querySelector('.astral-phone-body'));
         } catch (err) {
             handleImageGenerationError(err);
@@ -431,15 +441,52 @@ export class GalleryApp {
     }
 
     async handleEvent(eventData) {
-        const state = this.storage.getState();
-        state.gallery.push({
+        const photo = this.addPhoto({
             character: eventData.character || this.context.name2 || '',
             description: eventData.description || '',
+            src: eventData.src,
+        });
+        if (autoImagesEnabled()) this.generateById(photo.id).catch(() => {});
+        return { success: true, message: 'Фото добавлено в галерею', id: photo.id };
+    }
+
+    /** Добавить снимок-заглушку (без картинки) и вернуть запись. */
+    addPhoto({ character = '', description = '', src } = {}) {
+        const state = this.storage.getState();
+        const photo = {
+            id: `photo_${Date.now()}_${Math.random().toString(36).slice(2, 7)}`,
+            character,
+            description,
             timestamp: Date.now(),
             imageUrl: null,
-        });
+        };
+        if (src) photo.src = src;
+        state.gallery.push(photo);
         this.storage.save();
-        return { success: true, message: 'Фото добавлено в галерею' };
+        return photo;
+    }
+
+    /**
+     * Нарисовать снимок по id. Возвращает url или null. Тихо — без
+     * перерисовки галереи, вызывающий сам решает, что обновить.
+     */
+    async generateById(id) {
+        const state = this.storage.getState();
+        const index = state.gallery.findIndex(p => p.id === id);
+        if (index < 0) return null;
+        if (state.gallery[index].imageUrl) return state.gallery[index].imageUrl;
+        if (!this.imageGen?.isAvailable?.()) return null;
+        await this._generate(index, true);
+        const url = this.storage.getState().gallery.find(p => p.id === id)?.imageUrl || null;
+        if (url) {
+            // Пост в соцсети, к которому привязан снимок, получает картинку.
+            for (const post of this.storage.getState().social || []) {
+                if (post.photoId === id && !post.imageUrl) post.imageUrl = url;
+            }
+            this.storage.save();
+            try { globalThis.__astralPhoneCore?.refresh?.(); } catch { /* ignore */ }
+        }
+        return url;
     }
 
     _time(ts) {

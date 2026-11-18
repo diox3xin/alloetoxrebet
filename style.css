@@ -4037,3 +4037,12 @@
   display: flex;
   align-items: center;
 }
+
+/* Заглушка фото у поста — нажать, чтобы нарисовать */
+.astral-social-media--pending {
+    display: flex; align-items: center; justify-content: center;
+    width: 100%; min-height: 120px; border: 1px dashed rgba(255,255,255,.18);
+    background: rgba(255,255,255,.04); color: inherit; font: inherit; opacity: .8;
+    cursor: pointer; border-radius: 12px;
+}
+.astral-social-media--pending:disabled { cursor: progress; opacity: .5; }

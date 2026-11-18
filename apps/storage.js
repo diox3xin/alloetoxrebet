@@ -66,21 +66,16 @@ export class PhoneStorage {
         return {
             messages: [],
             gallery: [],
-            notes: [],
             social: [],
             socialFollowing: [],
-            creator: {
-                posts: [],
-                subscribers: 0,
-                revenue: 0,
-                fans: [],
-            },
             /** Unread counters per app — drive the home-screen badges. */
-            unread: { messages: 0, gallery: 0, notes: 0, social: 0, creator: 0 },
+            unread: { messages: 0, gallery: 0, social: 0 },
             /** Latest RP events for the lock screen (newest last, capped). */
             notifications: [],
-            /** How many chat messages have passed since the last phone_event. */
+            /** How many model replies have passed since the last phone event. */
             sinceEvent: 0,
+            /** Keys of chat tags already turned into phone events (dedupe). */
+            seenEvents: [],
         };
     }
 
@@ -96,23 +91,13 @@ export class PhoneStorage {
         for (const k of Object.keys(d)) {
             if (root.state[k] === undefined) root.state[k] = d[k];
         }
-        if (!root.state.creator) root.state.creator = d.creator;
-        for (const k of Object.keys(d.creator)) {
-            if (root.state.creator[k] === undefined) root.state.creator[k] = d.creator[k];
-        }
-        for (const list of ['messages', 'gallery']) {
+        for (const list of ['messages', 'gallery', 'social', 'socialFollowing', 'notifications', 'seenEvents']) {
             if (!Array.isArray(root.state[list])) root.state[list] = [];
         }
-        if (!Array.isArray(root.state.creator.posts)) root.state.creator.posts = [];
-        if (!Array.isArray(root.state.creator.fans)) root.state.creator.fans = [];
-        if (!Array.isArray(root.state.notifications)) root.state.notifications = [];
         if (!root.state.unread || typeof root.state.unread !== 'object') {
-            root.state.unread = { messages: 0, gallery: 0, notes: 0, social: 0, creator: 0 };
+            root.state.unread = { messages: 0, gallery: 0, social: 0 };
         }
-        if (!Array.isArray(root.state.notes)) root.state.notes = [];
-        if (!Array.isArray(root.state.social)) root.state.social = [];
-        if (!Array.isArray(root.state.socialFollowing)) root.state.socialFollowing = [];
-        for (const key of ['messages', 'gallery', 'notes', 'social', 'creator']) {
+        for (const key of ['messages', 'gallery', 'social']) {
             if (typeof root.state.unread[key] !== 'number') root.state.unread[key] = 0;
         }
         if (typeof root.state.sinceEvent !== 'number') root.state.sinceEvent = 0;
@@ -187,6 +172,60 @@ export class PhoneStorage {
         } catch (err) {
             console.warn('[Astral Phone] could not persist chat metadata:', err);
         }
+    }
+
+    /**
+     * Почистить состояние: убрать дубли, которые плодила старая версия
+     * (сканер истории при каждой смене чата), выкинуть данные удалённых
+     * приложений и ограничить размер списков — всё это лежит прямо в файле
+     * чата и перезаписывается вместе с ним.
+     * @returns {number} сколько записей удалено
+     */
+    compact() {
+        const root = this._root();
+        if (!root.state) return 0;
+        const state = this.getState();
+        let removed = 0;
+
+        for (const dead of ['creator', 'notes', 'spicy']) {
+            if (dead in state) { delete state[dead]; removed++; }
+        }
+        for (const key of Object.keys(state.unread)) {
+            if (!['messages', 'gallery', 'social'].includes(key)) delete state.unread[key];
+        }
+        if (Array.isArray(state.notifications)) {
+            state.notifications = state.notifications.filter(n => ['messages', 'gallery', 'social'].includes(n.app));
+        }
+
+        // Дубли от старого сканера истории помечены id «scan_…». Обычные записи
+        // не трогаем: два одинаковых «ок» от одного НПС — нормальная переписка.
+        const dedupe = (list, keyOf, cap) => {
+            const isScan = (item) => String(item?.id || '').startsWith('scan_');
+            const seen = new Set(list.filter(i => !isScan(i)).map(keyOf));
+            const out = [];
+            for (const item of list) {
+                if (isScan(item)) {
+                    const k = keyOf(item);
+                    if (seen.has(k)) { removed++; continue; }
+                    seen.add(k);
+                }
+                out.push(item);
+            }
+            if (out.length > cap) { removed += out.length - cap; return out.slice(-cap); }
+            return out;
+        };
+        const norm = (s) => String(s || '').replace(/\s+/g, ' ').trim().toLowerCase();
+
+        state.messages = dedupe(state.messages,
+            m => `${norm(m.character)}|${m.from || (m.fromUser ? 'me' : 'them')}|${norm(m.text)}`, 400);
+        state.social = dedupe(state.social, p => `${norm(p.author)}|${norm(p.text)}`, 200);
+        state.gallery = dedupe(state.gallery, g => g.imageUrl || `${norm(g.character)}|${norm(g.description)}`, 300);
+
+        if (removed) {
+            console.log(`[Astral Phone] compact: убрано ${removed} лишних записей`);
+            this.save();
+        }
+        return removed;
     }
 
     reset() {
